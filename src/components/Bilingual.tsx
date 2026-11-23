@@ -51,8 +51,9 @@ export function Bilingual({
 
   return (
     <div className="flex flex-col gap-3">
-      <SegmentedControl
-        label="Language"
+      <div>
+        <SegmentedControl
+          label="Language"
         value={view}
         onChange={setView}
         options={[
@@ -60,7 +61,8 @@ export function Bilingual({
           { value: 'local', label: LANGUAGE_NATIVE[language] },
           { value: 'en', label: 'English' },
         ]}
-      />
+        />
+      </div>
       <div className={cx('grid gap-4', view === 'both' && 'lg:grid-cols-2')}>
         {view !== 'en' && pane(`What ${recipient} will receive`, local!, onChangeLocal, language, true)}
         {view !== 'local' && pane('English, for your review', en, onChangeEn, 'en', false)}
