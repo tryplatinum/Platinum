@@ -524,7 +524,6 @@ export type Database = {
           created_at: string
           event_date: string | null
           event_date_approx: boolean
-          uses: Json
           firm_id: string
           id: string
           meeting_id: string | null
@@ -533,13 +532,13 @@ export type Database = {
           student_id: string
           text: string
           updated_at: string
+          uses: Json
         }
         Insert: {
           approval: Json
           created_at?: string
           event_date?: string | null
           event_date_approx?: boolean
-          uses?: Json
           firm_id: string
           id?: string
           meeting_id?: string | null
@@ -548,13 +547,13 @@ export type Database = {
           student_id: string
           text: string
           updated_at?: string
+          uses?: Json
         }
         Update: {
           approval?: Json
           created_at?: string
           event_date?: string | null
           event_date_approx?: boolean
-          uses?: Json
           firm_id?: string
           id?: string
           meeting_id?: string | null
@@ -563,6 +562,7 @@ export type Database = {
           student_id?: string
           text?: string
           updated_at?: string
+          uses?: Json
         }
         Relationships: [
           {
