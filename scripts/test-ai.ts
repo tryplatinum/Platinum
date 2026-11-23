@@ -1,0 +1,69 @@
+// End-to-end check of the AI endpoint: calls the real handler in api/ai.ts once
+// per feature with realistic sample input built from the seed data, and prints
+// each draft. Run with:  npm run test:ai
+//
+// Needs ANTHROPIC_API_KEY and PLATINUM_PASSCODE in .env.local. Each run makes
+// five real model calls. Pass a feature name to run just one:
+//   npm run test:ai -- parentReport
+
+import { POST } from '../api/ai.js'
+import { PASSCODE_HEADER } from '../shared/constants.js'
+import type { Feature } from '../shared/contract.js'
+import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '../src/data/fixtures.js'
+import { buildSeed } from '../src/data/seed.js'
+import { briefFacts, buildFacts, reportFacts } from '../src/lib/facts.js'
+
+const data = buildSeed()
+const student = (id: string) => data.students.find((s) => s.id === id)!
+const kevin = student(IDS.kevin)
+const sophia = student(IDS.sophia)
+const kevinMeeting = data.meetings.find((m) => m.id === IDS.kevinMeeting)!
+const kevinNext = data.meetings.find((m) => m.studentId === kevin.id && m.status === 'scheduled')!
+const brief = briefFacts(data, kevinNext, kevin)
+
+const inputs: Record<Feature, unknown> = {
+  draftFromMeeting: {
+    facts: buildFacts(data, kevin),
+    meeting: { title: kevinMeeting.title, date: kevinMeeting.date },
+    source: kevinMeeting.transcript,
+  },
+  readNotes: { facts: buildFacts(data, sophia), notes: sampleCounselorNote() },
+  preMeetingBrief: {
+    facts: buildFacts(data, kevin),
+    meeting: { title: kevinNext.title, date: kevinNext.date },
+    computed: {
+      changesSinceLastMeeting: brief.changes,
+      overdue: brief.overdue.map((o) => `${o.title} — owner: ${o.owner}; ${o.daysLate} days late`),
+      deadlinesNext14Days: brief.deadlines.map((d) => `${d.label} — ${d.date}`),
+      waitingOnCounselor: brief.waitingOnCounselor,
+    },
+    counselorNotes: kevin.counselorNotes,
+  },
+  parentReport: { facts: buildFacts(data, kevin), parentId: IDS.kevinDad, reportFacts: reportFacts(data, kevin, IDS.kevinDad) },
+  essayFeedback: { studentFirstName: kevin.firstName, prompt: KEVIN_ESSAY_PROMPT, essay: KEVIN_ESSAY_TEXT },
+}
+
+const only = process.argv[2] as Feature | undefined
+let failed = 0
+
+for (const feature of Object.keys(inputs) as Feature[]) {
+  if (only && feature !== only) continue
+  const started = Date.now()
+  const response = await POST(
+    new Request('http://localhost/api/ai', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [PASSCODE_HEADER]: process.env.PLATINUM_PASSCODE ?? '' },
+      body: JSON.stringify({ feature, input: inputs[feature] }),
+    }),
+  )
+  const body = await response.json()
+  const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  console.log(`\n━━ ${feature} · HTTP ${response.status} · ${seconds}s ${'━'.repeat(40)}`)
+  console.log(JSON.stringify(body, null, 2))
+  if (!body.ok) failed += 1
+}
+
+if (failed > 0) {
+  console.error(`\n${failed} feature(s) failed.`)
+  process.exit(1)
+}

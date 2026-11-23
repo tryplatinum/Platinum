@@ -5,6 +5,7 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from '
 import { findStudent, fullName, pendingApprovals } from '../lib/derive'
 import { reminderQueue } from '../lib/reminders'
 import { useData, useStore } from '../store/store'
+import { AiConnection } from './AiConnection'
 import { Avatar, cx } from './ui'
 
 const DEFAULT_STUDENT = 's-kevin'
@@ -113,7 +114,10 @@ export function CounselorLayout() {
                 </NavLink>
               ))}
             </nav>
-            <div className="mt-auto hidden items-center gap-2 px-2 pt-4 md:flex">
+            <div className="mt-auto hidden pt-4 md:block">
+              <AiConnection />
+            </div>
+            <div className="hidden items-center gap-2 px-2 pt-3 md:flex">
               <Avatar name={data.firm.counselorName} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-ink">{data.firm.counselorName}</p>

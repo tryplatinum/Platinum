@@ -37,7 +37,9 @@ import {
   KEVIN_ESSAY_TEXT,
   SOPHIA_ESSAY_PROMPT,
   SOPHIA_ESSAY_TEXT,
+  danielMeetingTranscript,
   kevinMeetingDrafts,
+  kevinMeetingTranscript,
 } from './fixtures'
 
 export const DEFAULT_REMINDER_RULES: ReminderRule[] = [
@@ -267,7 +269,7 @@ export function buildSeed(): AppData {
     majors: ['Computer Science', 'Data Science'],
     interests: ['Robotics', 'Competitive programming', 'Teaching'],
     activities: [
-      { id: 'act-kevin-1', name: 'FRC Robotics Team 8841', role: 'Software lead', detail: 'Leads six programmers; Innovation in Control award at regionals.' },
+      { id: 'act-kevin-1', name: 'FRC Robotics Team 8841', role: 'Software lead', detail: 'Leads six programrs; Innovation in Control award at regionals.' },
       { id: 'act-kevin-2', name: 'USACO', role: 'Gold division' },
       { id: 'act-kevin-3', name: 'Math Club', role: 'Treasurer' },
     ],
@@ -367,6 +369,9 @@ export function buildSeed(): AppData {
   met(kevin.id, 'Weekly check-in: ED2 decision and essay triage', -1, '16:30', {
     id: IDS.kevinMeeting,
     durationMin: 42,
+    transcript: kevinMeetingTranscript(),
+    // A placeholder draft, labelled as one, so the demo opens with something to review.
+    // "Redraft with AI" on the meeting page replaces it with a real draft.
     ai: kevinDrafts.ai,
     recap: kevinDrafts.recap,
   })
@@ -407,7 +412,7 @@ export function buildSeed(): AppData {
   )
   did(kevin.id, -9, '22:14', 'student', 'Kevin linked “Personal statement (Google Doc)” to the third-draft task')
   did(kevin.id, -4, '21:02', 'student', 'Kevin updated “Common App personal statement: third draft”: Stuck on the middle section')
-  did(kevin.id, -1, '17:15', 'ai', 'AI notetaker drafted 5 tasks, 2 parent updates and 3 profile changes from the weekly check-in')
+  did(kevin.id, -1, '17:15', 'ai', 'Drafts from the weekly check-in are ready for review: 5 tasks, 2 parent updates, 3 profile changes')
 
   // ══ 2. Emily Chen: senior, on track ═══════════════════════════════════════
 
@@ -578,7 +583,7 @@ export function buildSeed(): AppData {
       { id: 'act-jason-3', name: 'JV Tennis', role: 'Doubles' },
     ],
     counselorNotes:
-      'Parents want a top-10 economics programme and ask about rankings in every message. Jason is more interested in fit than they are. PSAT 1410; first SAT planned for March.',
+      'Parents want a top-10 economics program and ask about rankings in every message. Jason is more interested in fit than they are. PSAT 1410; first SAT planned for March.',
     onboardedOn: d(-150),
     parents: [
       { id: 'p-jason-dad', name: 'Wu Jianguo', localName: '吴建国', relationship: 'Father', language: 'zh-Hans', channel: 'wechat', contact: 'WeChat: wujg88' },
@@ -587,7 +592,7 @@ export function buildSeed(): AppData {
   }
   task(jason.id, 'Register for the March SAT', 'testing', 'student', 10)
   task(jason.id, 'DECA regionals: finish the written event', 'planning', 'student', 6, { status: 'in_progress' })
-  task(jason.id, 'Shortlist five summer programmes', 'planning', 'student', 14)
+  task(jason.id, 'Shortlist five summer programs', 'planning', 'student', 14)
   task(jason.id, 'Build Jason’s junior-year testing timeline', 'testing', 'counselor', 4)
   task(jason.id, 'Choose senior-year courses with school counselor', 'planning', 'student', -18, { doneOn: -19 })
   task(jason.id, 'Send sophomore transcript', 'application', 'parent', -40, { ownerParentId: 'p-jason-mom', doneOn: -42 })
@@ -599,18 +604,18 @@ export function buildSeed(): AppData {
   doc(jason.id, 'Sophomore transcript.pdf', 'transcript', -42, 'parent')
   doc(jason.id, 'PSAT score report.pdf', 'score_report', -30, 'student')
   met(jason.id, 'Junior-year plan', -12, '17:30', {
-    ...recap('We set the plan for junior year: first SAT in March, one strong summer programme, and keep the investment club growing.', [
+    ...recap('We set the plan for junior year: first SAT in March, one strong summer program, and keep the investment club growing.', [
       `Register for the March SAT by ${en(10)}.`,
-      `Shortlist five summer programmes by ${en(14)}.`,
+      `Shortlist five summer programs by ${en(14)}.`,
     ]),
   })
-  met(jason.id, 'Summer programme shortlist', 16, '17:30')
+  met(jason.id, 'Summer program shortlist', 16, '17:30')
   sentReport(
     jason,
     'p-jason-dad',
     -12,
     'Junior-year plan',
-    `Hello Mr. Wu, this is Sarah, Jason's counselor. Jason is having a good semester: his GPA is holding at 3.88 and his DECA written event for regionals is nearly finished. Next we will set his testing timeline; the plan is a first SAT in March. Before winter break I will send you and Ms. Chen a shortlist of summer programmes to look at together.`,
+    `Hello Mr. Wu, this is Sarah, Jason's counselor. Jason is having a good semester: his GPA is holding at 3.88 and his DECA written event for regionals is nearly finished. Next we will set his testing timeline; the plan is a first SAT in March. Before winter break I will send you and Ms. Chen a shortlist of summer programs to look at together.`,
     `吴先生您好，我是子轩的升学顾问 Sarah。子轩这学期状态不错：GPA 保持在 3.88，DECA 区域赛的书面项目也快完成了。接下来我们会把 11 年级的标化考试时间表定下来，初步计划是明年 3 月第一次考 SAT。寒假前我会把暑期项目的备选名单发给您和子轩妈妈，到时候可以一起商量。`,
   )
 
@@ -634,7 +639,7 @@ export function buildSeed(): AppData {
       { id: 'act-aarav-2', name: 'County science fair', role: 'Second place, engineering' },
       { id: 'act-aarav-3', name: 'Cricket club', role: 'Co-founder' },
     ],
-    counselorNotes: 'Organised and early with everything. Both parents are engineers and read every draft; remind them the essays must stay in his voice.',
+    counselorNotes: 'Organized and early with everything. Both parents are engineers and read every draft; remind them the essays must stay in his voice.',
     onboardedOn: d(-300),
     parents: [
       { id: 'p-aarav-mom', name: 'Priya Patel', relationship: 'Mother', language: 'en', channel: 'email', contact: 'priya.patel@example.com' },
@@ -699,8 +704,8 @@ export function buildSeed(): AppData {
       { id: 'p-mia-dad', name: 'David Lin', relationship: 'Father', language: 'en', channel: 'email', contact: 'david.lin@example.com' },
     ],
   }
-  task(mia.id, 'Portfolio: choose eight pieces and photograph them', 'application', 'student', -6, { detail: 'Needed for summer programme applications.' })
-  task(mia.id, 'Research summer architecture programmes (Cornell, USC, Cal Poly)', 'planning', 'student', 7)
+  task(mia.id, 'Portfolio: choose eight pieces and photograph them', 'application', 'student', -6, { detail: 'Needed for summer program applications.' })
+  task(mia.id, 'Research summer architecture programs (Cornell, USC, Cal Poly)', 'planning', 'student', 7)
   task(mia.id, 'Confirm winter-break dates for campus visits', 'planning', 'parent', 3, { ownerParentId: IDS.miaMom })
   task(mia.id, 'Schedule Mia’s next meeting', 'planning', 'counselor', 1)
   task(mia.id, 'Take TOEFL', 'testing', 'student', -60, { doneOn: -62 })
@@ -714,7 +719,7 @@ export function buildSeed(): AppData {
   met(mia.id, 'Portfolio planning', -37, '16:00', {
     ...recap('You have more than enough work for a portfolio. The job now is choosing.', [
       'Pick eight pieces and photograph them in daylight.',
-      'Look at three summer programmes and note what each asks for.',
+      'Look at three summer programs and note what each asks for.',
     ]),
   })
 
@@ -769,9 +774,9 @@ export function buildSeed(): AppData {
       `Add hours to your activities list by ${en(-3)}.`,
     ]),
   })
-  // This meeting was recorded but its drafts are not generated yet, so the
-  // demo can show the AI "processing" a meeting live.
-  met(daniel.id, 'Check-in after Kelley admit', -3, '19:00', { id: IDS.danielMeeting, durationMin: 35 })
+  // This meeting has notes but no drafts yet, so the demo can show the AI
+  // drafting from a meeting live.
+  met(daniel.id, 'Check-in after Kelley admit', -3, '19:00', { id: IDS.danielMeeting, durationMin: 35, transcript: danielMeetingTranscript() })
   met(daniel.id, 'UC final check', 4, '19:00', { durationMin: 30 })
   sent(
     daniel.id,
@@ -841,7 +846,7 @@ export function buildSeed(): AppData {
       { id: 'act-ethan-2', name: 'Community clinic', role: 'Volunteer', detail: 'Front desk and Vietnamese interpretation.' },
       { id: 'act-ethan-3', name: 'Cross country', role: 'Varsity' },
     ],
-    counselorNotes: 'Sure about nursing, which narrows the list early: direct-admit programmes only. Mom is a nurse and a great resource.',
+    counselorNotes: 'Sure about nursing, which narrows the list early: direct-admit programs only. Mom is a nurse and a great resource.',
     onboardedOn: d(-120),
     parents: [
       { id: 'p-ethan-mom', name: 'Linh Nguyen', relationship: 'Mother', language: 'en', channel: 'email', contact: 'linh.nguyen@example.com' },
@@ -849,7 +854,7 @@ export function buildSeed(): AppData {
   }
   task(ethan.id, 'Register for the December SAT retake', 'testing', 'student', 5)
   task(ethan.id, 'Shadowing log: reach 20 hours at the clinic', 'planning', 'student', 21, { status: 'in_progress', progressNote: '13 of 20 hours.' })
-  task(ethan.id, 'List direct-admit nursing programmes with their prerequisites', 'planning', 'student', 12)
+  task(ethan.id, 'List direct-admit nursing programs with their prerequisites', 'planning', 'student', 12)
   task(ethan.id, 'Take the August SAT', 'testing', 'student', -90, { doneOn: -90 })
   task(ethan.id, 'HOSA competitive event: choose a category', 'planning', 'student', -15, { doneOn: -16 })
   college(ethan.id, 'UCLA (Nursing)', 'UC', 372, 'considering', 'Reach')
@@ -859,8 +864,8 @@ export function buildSeed(): AppData {
   college(ethan.id, 'Cal State Fullerton', 'RD', 372, 'considering', 'Likely')
   doc(ethan.id, 'SAT score report, August.pdf', 'score_report', -70, 'student')
   doc(ethan.id, 'Shadowing log (Google Sheet)', 'other', -20, 'student', { url: 'https://docs.google.com/spreadsheets/d/demo-ethan-log/edit' })
-  met(ethan.id, 'Nursing programme research', -10, '17:00', {
-    ...recap('Direct-admit nursing is the filter for your whole list. A higher SAT opens two more programmes.', [
+  met(ethan.id, 'Nursing program research', -10, '17:00', {
+    ...recap('Direct-admit nursing is the filter for your whole list. A higher SAT opens two more programs.', [
       `Register for the December SAT by ${en(5)}.`,
       'Keep the shadowing log up to date.',
     ]),

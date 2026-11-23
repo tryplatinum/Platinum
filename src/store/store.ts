@@ -13,6 +13,7 @@ import { simulateSend, type OutgoingMessage } from '../services/outbox'
 import type {
   Actor,
   AppData,
+  Approval,
   CollegeApp,
   DraftParentUpdate,
   DraftTask,
@@ -30,7 +31,7 @@ import type {
 } from '../types'
 
 /** Bump when the shape of AppData changes, so old saved demos are thrown away. */
-const SCHEMA = 1
+const SCHEMA = 2
 const STORAGE_KEY = 'platinum-v0'
 
 export type Decision = 'approved' | 'dismissed'
@@ -68,6 +69,8 @@ interface Actions {
   updateCollege: (id: ID, patch: Partial<Omit<CollegeApp, 'id' | 'studentId'>>) => void
 
   addDocument: (doc: Omit<StudentDocument, 'id' | 'addedOn'>) => void
+  /** The essay text and prompt the AI reads. */
+  updateDocument: (docId: ID, patch: Partial<Pick<StudentDocument, 'essayText' | 'essayPrompt'>>) => void
   setEssayFeedback: (docId: ID, feedback: EssayFeedback) => void
   updateEssayFeedback: (docId: ID, patch: Partial<EssayFeedback>) => void
   reviewEssayFeedback: (docId: ID, decision: Decision) => void
@@ -131,7 +134,10 @@ function applyProfilePatch(student: Student, patch: ProfilePatch): Student {
   }
 }
 
-function taskFromDraft(studentId: ID, draft: DraftTask, source: Task['source'], meetingId?: ID): Task {
+/** The record of a counselor's approval. Every approved AI draft carries one. */
+const approvalBy = (data: AppData): Approval => ({ by: data.firm.counselorName, at: nowTimestamp() })
+
+function taskFromDraft(studentId: ID, draft: DraftTask, source: Task['source'], approval: Approval, meetingId?: ID): Task {
   return {
     id: newId('t'),
     studentId,
@@ -145,6 +151,7 @@ function taskFromDraft(studentId: ID, draft: DraftTask, source: Task['source'], 
     createdOn: todayISO(),
     source,
     meetingId,
+    approval,
     attachments: [],
   }
 }
@@ -272,6 +279,9 @@ export const useStore = create<State & Actions>()(
         addDocument: (doc) =>
           change((data) => ({ ...data, documents: [{ ...doc, id: newId('doc'), addedOn: todayISO() }, ...data.documents] })),
 
+        updateDocument: (docId, patch) =>
+          change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, ...patch })) })),
+
         setEssayFeedback: (docId, feedback) =>
           change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, feedback })) })),
 
@@ -288,7 +298,10 @@ export const useStore = create<State & Actions>()(
             if (!doc?.feedback || !student) return data
             let next: AppData = {
               ...data,
-              documents: patchById(data.documents, docId, (d) => ({ ...d, feedback: { ...d.feedback!, review: decision } })),
+              documents: patchById(data.documents, docId, (d) => ({
+                ...d,
+                feedback: { ...d.feedback!, review: decision, approval: decision === 'approved' ? approvalBy(data) : undefined },
+              })),
             }
             if (decision === 'approved') {
               next = deliver(next, {
@@ -327,12 +340,13 @@ export const useStore = create<State & Actions>()(
             const meeting = data.meetings.find((m) => m.id === meetingId)
             const draft = meeting?.ai?.draftTasks.find((t) => t.id === draftId)
             if (!meeting || !draft || draft.review !== 'pending') return data
+            const approval = approvalBy(data)
             let next = patchMeeting(data, meetingId, (m) => ({
               ...m,
-              ai: { ...m.ai!, draftTasks: patchById(m.ai!.draftTasks, draftId, (t) => ({ ...t, review: decision })) },
+              ai: { ...m.ai!, draftTasks: patchById(m.ai!.draftTasks, draftId, (t) => ({ ...t, review: decision, approval: decision === 'approved' ? approval : undefined })) },
             }))
             if (decision === 'approved') {
-              next = { ...next, tasks: [...next.tasks, taskFromDraft(meeting.studentId, draft, 'ai_meeting', meetingId)] }
+              next = { ...next, tasks: [...next.tasks, taskFromDraft(meeting.studentId, draft, 'ai_meeting', approval, meetingId)] }
               next = logActivity(next, meeting.studentId, 'counselor', `${data.firm.counselorFirstName} approved a new task: ${draft.title}`)
             }
             return next
@@ -346,7 +360,7 @@ export const useStore = create<State & Actions>()(
             const meeting = data.meetings.find((m) => m.id === meetingId)
             const student = data.students.find((s) => s.id === meeting?.studentId)
             if (!meeting?.recap || !student || meeting.recap.review !== 'pending') return data
-            let next = patchMeeting(data, meetingId, (m) => ({ ...m, recap: { ...m.recap!, review: decision } }))
+            let next = patchMeeting(data, meetingId, (m) => ({ ...m, recap: { ...m.recap!, review: decision, approval: decision === 'approved' ? approvalBy(data) : undefined } }))
             if (decision === 'approved') {
               next = deliver(next, {
                 studentId: student.id,
@@ -377,9 +391,10 @@ export const useStore = create<State & Actions>()(
             const student = data.students.find((s) => s.id === meeting?.studentId)
             const parent = student?.parents.find((p) => p.id === update?.parentId)
             if (!meeting || !update || !student || !parent || update.review !== 'pending') return data
+            const approval = approvalBy(data)
             let next = patchMeeting(data, meetingId, (m) => ({
               ...m,
-              ai: { ...m.ai!, parentUpdates: patchById(m.ai!.parentUpdates, updateId, (u) => ({ ...u, review: decision })) },
+              ai: { ...m.ai!, parentUpdates: patchById(m.ai!.parentUpdates, updateId, (u) => ({ ...u, review: decision, approval: decision === 'approved' ? approval : undefined })) },
             }))
             if (decision === 'approved') {
               const today = todayISO()
@@ -396,6 +411,8 @@ export const useStore = create<State & Actions>()(
                 bodyLocal: update.bodyLocal,
                 sentOn: today,
                 meetingId,
+                source: meeting.ai?.source,
+                approval,
               }
               next = { ...next, reports: [report, ...next.reports] }
               next = deliver(next, {
@@ -422,7 +439,12 @@ export const useStore = create<State & Actions>()(
             if (!meeting || !item || item.review !== 'pending') return data
             let next = patchMeeting(data, meetingId, (m) => ({
               ...m,
-              ai: { ...m.ai!, profileChanges: patchById(m.ai!.profileChanges, changeId, (c) => ({ ...c, review: decision })) },
+              ai: { ...m.ai!, profileChanges: patchById(m.ai!.profileChanges, changeId, (c) => ({
+                  ...c,
+                  review: decision,
+                  approval: decision === 'approved' ? approvalBy(data) : undefined,
+                })),
+              },
             }))
             if (decision === 'approved') {
               next = { ...next, students: patchById(next.students, meeting.studentId, (s) => applyProfilePatch(s, item.patch)) }
@@ -444,7 +466,7 @@ export const useStore = create<State & Actions>()(
         addTasksFromNotes: (studentId, drafts) =>
           change((data) => {
             if (drafts.length === 0) return data
-            const next = { ...data, tasks: [...data.tasks, ...drafts.map((d) => taskFromDraft(studentId, d, 'ai_notes'))] }
+            const next = { ...data, tasks: [...data.tasks, ...drafts.map((d) => taskFromDraft(studentId, d, 'ai_notes', approvalBy(data)))] }
             return logActivity(
               next,
               studentId,
@@ -470,7 +492,7 @@ export const useStore = create<State & Actions>()(
             if (!report || !student || !parent || report.status !== 'draft') return data
             let next: AppData = {
               ...data,
-              reports: patchById(data.reports, id, (r) => ({ ...r, status: 'sent', sentOn: todayISO() })),
+              reports: patchById(data.reports, id, (r) => ({ ...r, status: 'sent', sentOn: todayISO(), approval: approvalBy(data) })),
             }
             next = deliver(next, {
               studentId: student.id,

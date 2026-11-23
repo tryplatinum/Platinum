@@ -1,13 +1,17 @@
-// Prepared "AI" content. Everything the simulated AI says is written here by
-// hand, as functions of today's date so deadlines in the text stay current.
-// services/ai.ts decides which fixture to return; the seed embeds a few of them
-// so the demo opens with drafts already waiting.
+// Placeholder drafts. These are written by hand and are used (clearly labelled)
+// when the real AI endpoint is unreachable or has no key. They are functions of
+// today's date so deadlines in the text stay current. services/ai.ts decides
+// when to use one; the seed embeds Kevin's so the demo opens with drafts
+// already waiting. This file also holds the sample notes the real AI reads.
 //
 // NOTE: The Chinese text was written by a non-native speaker. A native speaker
 // must review it before a Mandarin-speaking parent or counselor sees it.
 
 import { addDays, formatDate, formatDateZh, todayISO } from '../lib/dates'
-import type { EssayFeedback, MeetingAI, Recap } from '../types'
+import type { AiSource, EssayFeedback, MeetingAI, Recap } from '../types'
+
+/** Marks everything in this file as sample text, not model output. */
+export const SAMPLE_SOURCE: AiSource = { kind: 'placeholder', reason: 'Sample draft that ships with the demo.' }
 
 /** Dates as offsets from today, in the three forms the text needs. */
 export function dateCtx() {
@@ -44,6 +48,7 @@ export function kevinMeetingDrafts(): { ai: MeetingAI; recap: Recap } {
   const { d, en, zh } = dateCtx()
   return {
     ai: {
+      source: SAMPLE_SOURCE,
       notes: [
         'Kevin confirmed NYU (Tandon, Computer Science) as his ED2 choice after the campus visit. Mom agrees. Dad wants to see the cost estimate before committing.',
         'Personal statement is still on draft 2. The robot-failure opening works; the middle lists achievements instead of showing how he changed. He agreed to rebuild it around the regional qualifier.',
@@ -193,6 +198,7 @@ export function danielMeetingDrafts(): { ai: MeetingAI; recap: Recap } {
   const { d, en } = dateCtx()
   return {
     ai: {
+      source: SAMPLE_SOURCE,
       notes: [
         'Daniel was admitted to Indiana (Kelley direct admit) and Arizona State. He is relieved, and less motivated on the UC essays as a result.',
         `UC application is due ${en(6)}. PIQ 4 has no draft and the activities list is missing hours.`,
@@ -272,6 +278,7 @@ export function genericMeetingDrafts(firstName: string): { ai: MeetingAI; recap:
   const { d } = dateCtx()
   return {
     ai: {
+      source: SAMPLE_SOURCE,
       notes: [
         `Reviewed open tasks with ${firstName} and agreed priorities for the next two weeks.`,
         'No changes to the college list.',
@@ -295,6 +302,55 @@ export function genericMeetingDrafts(firstName: string): { ai: MeetingAI; recap:
       nextSteps: ['Work on your top-priority task and send me an update in three days.'],
     },
   }
+}
+
+// ── Sample meeting notes ────────────────────────────────────────────────────
+// What the AI notetaker "captured". There is no recording in v0, so these
+// invented notes stand in for a transcript. They are what draftFromMeeting
+// sends to the model.
+
+export function kevinMeetingTranscript(): string {
+  const { en } = dateCtx()
+  return `Weekly check-in with Kevin, 42 min, video. Notes from the call.
+
+ED2
+- Kevin has decided: NYU Tandon, Computer Science, for ED2. He visited over fall break and liked the robotics lab (he mentioned the Agile Robotics and Perception Lab by name) and sat in on an intro CS class.
+- Mom is on board. Dad wants to see the cost estimate before committing, since ED2 is binding. I said I would send the NYU net price estimate this week. Dad to review it and confirm by ${en(5)}.
+- Kevin: "Honestly data science was my dad's idea. I want to do robotics. Please don't tell him I said it like that."  He wants his intended majors to read Computer Science and Robotics.
+
+Essays
+- Personal statement is still on draft 2. The opening (robot stops eleven seconds into the match) works. The middle is a list of achievements. We agreed he rebuilds it around the regional qualifier and what he did the week after. He says he is stuck and has been avoiding it.
+- UC application: PIQ 1 and 2 are final. PIQ 3 and 4 are not started. UC deadline is ${en(6)}. I told him this is the most urgent thing on his list.
+- He works better with a fixed slot. He agreed to block 30 minutes of writing Monday to Thursday and share the calendar with me by tomorrow (${en(1)}).
+- Why NYU supplement: not started. He will outline it with three specifics from the visit by ${en(3)}. Outline only, bullets.
+
+Testing
+- October SAT came back: 1530, with 800 in math. Previous was 1490. He has not sent it anywhere yet. He will send it to NYU, CMU and Georgia Tech by ${en(4)}.
+
+Activities
+- New since September: he teaches a free Python class for middle schoolers at the public library on Saturdays. About 12 kids. He started it himself.
+
+Blockers
+- CSS Profile still waiting on Dad to upload the 2025 tax return. NYU needs CSS by the ED2 deadline (${en(12)}). Dad has not answered two WeChat messages.
+- Mr. Alvarez (AP Physics) has not confirmed the recommendation letter. I will follow up with him by ${en(2)}.
+
+Other
+- Kevin seemed tired. Said he has been up until 2 most nights with robotics build season and is worried about his calc grade. Asked me not to make a big deal of it with his parents.`
+}
+
+export function danielMeetingTranscript(): string {
+  const { en } = dateCtx()
+  return `Check-in with Daniel after the Kelley admit, 35 min, video. My notes.
+
+- Admitted to Indiana (Kelley, direct admit) and Arizona State (W. P. Carey). He is thrilled and relieved. Scholarship letters for both should arrive in the next week.
+- Since the admits he has let the UC application slide. UC deadline is ${en(6)}. PIQ 4 has no draft. Activities list is missing hours for every entry.
+- PIQ 4: he wants to write about his sneaker resale business. Good topic. He has done about $4,000 in sales since last summer and does the sourcing, authentication and shipping himself. He needs real numbers and one specific customer story. Draft by ${en(2)}.
+- Activities list: add hours per week and weeks per year to each entry by tomorrow (${en(1)}).
+- The resale business is not in his activities at all. It should be.
+- USC supplement: not started. We agreed it waits until the UC application is in.
+- ACT: took a practice test at home, got a 32 (official score is still 30). He is registered for the December test. Nothing to change until there is an official score.
+- Asked Grace (mom) to sit down with him and compare the Kelley and ASU scholarship letters once both arrive, say by ${en(7)}.
+- He mentioned his dad is pushing for ASU because it is cheaper and closer, and he would rather go to Indiana. He does not want me to raise that with his parents yet.`
 }
 
 // ── Reading a counselor's own notes ─────────────────────────────────────────
@@ -395,6 +451,7 @@ export function kevinEssayFeedback(): EssayFeedback {
   return {
     review: 'pending',
     generatedOn: todayISO(),
+    source: SAMPLE_SOURCE,
     overall:
       'The opening is specific and the essay picks the right moment. The draft does not yet answer the second half of the prompt: the reader sees what happened, but not how Kevin changed because of it.',
     strengths: [
@@ -430,6 +487,7 @@ export function sophiaEssayFeedback(): EssayFeedback {
   return {
     review: 'pending',
     generatedOn: todayISO(),
+    source: SAMPLE_SOURCE,
     overall:
       'The closing-shift story in the middle is the essay. The first and last paragraphs talk about creativity in general and could belong to anyone.',
     strengths: [
@@ -460,6 +518,7 @@ export function genericEssayFeedback(): EssayFeedback {
   return {
     review: 'pending',
     generatedOn: todayISO(),
+    source: SAMPLE_SOURCE,
     overall:
       'The draft has a clear topic. The strongest material is the specific moments; the general statements around them carry less.',
     strengths: ['The topic is personal and the voice sounds like a student, not a brochure.'],

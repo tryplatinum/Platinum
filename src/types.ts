@@ -14,6 +14,19 @@ export type Actor = 'student' | 'parent' | 'counselor' | 'ai'
 /** Review state of anything the AI drafted. Nothing leaves "pending" without a counselor. */
 export type Review = 'pending' | 'approved' | 'dismissed'
 
+/** Who approved an AI draft, and when. Set at the moment of approval and never without one. */
+export interface Approval {
+  by: string
+  at: string
+}
+
+/**
+ * Where a draft came from. 'claude' = written by the model through /api/ai.
+ * 'placeholder' = prepared sample text, used when the endpoint is unreachable
+ * or has no key. The interface labels placeholders clearly.
+ */
+export type AiSource = { kind: 'claude'; model: string } | { kind: 'placeholder'; reason: string }
+
 // ── People ──────────────────────────────────────────────────────────────────
 
 export interface Parent {
@@ -98,6 +111,8 @@ export interface Task {
   /** Where the task came from. AI-sourced tasks only exist once approved. */
   source: 'counselor' | 'ai_meeting' | 'ai_notes'
   meetingId?: ID
+  /** Set on tasks that began as an AI draft. */
+  approval?: Approval
   attachments: Attachment[]
 }
 
@@ -126,6 +141,8 @@ export type DocumentKind = 'essay' | 'transcript' | 'score_report' | 'recommenda
 
 export interface EssayFeedbackPoint {
   area: 'Structure' | 'Clarity' | 'Answers the prompt'
+  /** Where in the draft, e.g. "Paragraph 2". */
+  location?: string
   observation: string
   /** A question for the student to think about. Never replacement text. */
   question: string
@@ -137,6 +154,8 @@ export interface EssayFeedback {
   points: EssayFeedbackPoint[]
   review: Review
   generatedOn: ISODate
+  source: AiSource
+  approval?: Approval
 }
 
 export interface StudentDocument {
@@ -165,7 +184,10 @@ export interface DraftTask {
   owner: OwnerType
   ownerParentId?: ID
   dueDate: ISODate
+  /** 'inferred' when the AI chose the date because the notes gave none. */
+  dueDateBasis?: 'stated' | 'inferred'
   review: Review
+  approval?: Approval
 }
 
 /** A change to a student's profile that the AI suggests. Plain data so it can be persisted. */
@@ -184,6 +206,7 @@ export interface ProfileChange {
   evidence: string
   patch: ProfilePatch
   review: Review
+  approval?: Approval
 }
 
 export interface DraftParentUpdate {
@@ -193,6 +216,7 @@ export interface DraftParentUpdate {
   /** In the parent's language. Absent when the parent reads English. */
   bodyLocal?: string
   review: Review
+  approval?: Approval
 }
 
 export interface Recap {
@@ -200,6 +224,7 @@ export interface Recap {
   nextSteps: string[]
   /** The student sees the recap only once this is 'approved'. */
   review: Review
+  approval?: Approval
 }
 
 export interface MeetingAI {
@@ -208,6 +233,7 @@ export interface MeetingAI {
   draftTasks: DraftTask[]
   parentUpdates: DraftParentUpdate[]
   profileChanges: ProfileChange[]
+  source: AiSource
 }
 
 export interface Meeting {
@@ -222,6 +248,8 @@ export interface Meeting {
   /** True when the AI notetaker joined (or is set to join). */
   aiAttended: boolean
   counselorNotes?: string
+  /** The notes or transcript the AI drafts from. Sample text in v0: there is no recording. */
+  transcript?: string
   ai?: MeetingAI
   recap?: Recap
 }
@@ -241,6 +269,11 @@ export interface ParentReport {
   bodyLocal?: string
   sentOn?: ISODate
   meetingId?: ID
+  /** Fact lines computed by our code that the draft was written around. Shown beside the draft. */
+  facts?: string[]
+  /** Absent on reports the counselor wrote by hand. */
+  source?: AiSource
+  approval?: Approval
 }
 
 export type OutboxKind = 'parent_report' | 'reminder_upcoming' | 'reminder_late' | 'meeting_recap' | 'essay_feedback'
