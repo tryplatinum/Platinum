@@ -5,13 +5,30 @@
 
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Bilingual, ParentLine } from '../../components/Bilingual'
-import { AiBadge, ApprovalNotice, Button, Card, Empty, PageHeader, ReviewTag, Thinking, cx, inputClass, useBusy } from '../../components/ui'
-import { formatDateLong, formatTime } from '../../lib/dates'
-import { findParent, findStudent, pendingInMeeting } from '../../lib/derive'
+import {
+  AiErrorNote,
+  ApprovalNotice,
+  ApprovalStamp,
+  Button,
+  Card,
+  Empty,
+  OwnerBadge,
+  PageHeader,
+  Pill,
+  PlaceholderNote,
+  ReviewTag,
+  SourceBadge,
+  Thinking,
+  cx,
+  inputBase, inputClass,
+  useAi,
+} from '../../components/ui'
+import { formatDate, formatDateLong, formatTime } from '../../lib/dates'
+import { findParent, findStudent, ownerLabel, pendingInMeeting } from '../../lib/derive'
 import { CHANNEL_LABEL } from '../../lib/language'
 import { draftFromMeeting } from '../../services/ai'
 import { useData, useStore, type Decision } from '../../store/store'
-import type { DraftTask, Meeting, OwnerType, Review, Student } from '../../types'
+import type { Approval, DraftTask, Meeting, OwnerType, Review, Student } from '../../types'
 
 export default function MeetingReview() {
   const data = useData()
@@ -20,13 +37,19 @@ export default function MeetingReview() {
   const meeting = data.meetings.find((m) => m.id === meetingId && m.studentId === studentId)
   const setMeetingDrafts = useStore((s) => s.setMeetingDrafts)
   const approveAll = useStore((s) => s.approveAllInMeeting)
-  const [busy, run] = useBusy()
+  const { busy, error, run } = useAi()
+  const draft = () => run(async () => setMeetingDrafts(meeting!.id, await draftFromMeeting(data, meeting!, student!)))
 
   if (!student || !meeting) return <Navigate to="/app/students" replace />
   if (meeting.status === 'scheduled') return <Navigate to={`/app/students/${student.id}/meetings/${meeting.id}/brief`} replace />
 
   const pending = pendingInMeeting(meeting)
   const hasDrafts = Boolean(meeting.ai || meeting.recap)
+  // Redrafting replaces every draft, so it is offered only while none has been reviewed.
+  const untouched =
+    Boolean(meeting.ai) &&
+    meeting.recap?.review === 'pending' &&
+    [...meeting.ai!.draftTasks, ...meeting.ai!.parentUpdates, ...meeting.ai!.profileChanges].every((x) => x.review === 'pending')
 
   return (
     <div className="max-w-5xl">
@@ -37,13 +60,30 @@ export default function MeetingReview() {
           meeting.aiAttended ? 'AI notetaker attended' : 'No AI notetaker'
         }`}
         actions={
-          pending > 0 && (
-            <Button variant="approve" onClick={() => approveAll(meeting.id)}>
-              Approve all {pending} remaining
-            </Button>
-          )
+          <>
+            {untouched && meeting.transcript && (
+              <Button onClick={draft} disabled={busy}>
+                ✦ Redraft with AI
+              </Button>
+            )}
+            {pending > 0 && (
+              <Button variant="approve" onClick={() => approveAll(meeting.id)}>
+                Approve all {pending} remaining
+              </Button>
+            )}
+          </>
         }
       />
+
+      <div className="mb-4 space-y-3">
+        <AiErrorNote message={error} />
+        {meeting.transcript && (
+          <details className="rounded-xl border border-line bg-surface">
+            <summary className="px-4 py-3 text-sm font-medium text-ink">What the AI reads: notes from this meeting</summary>
+            <p className="whitespace-pre-wrap border-t border-line px-4 py-3 font-mono text-[13px] leading-relaxed text-muted">{meeting.transcript}</p>
+          </details>
+        )}
+      </div>
 
       {!hasDrafts && (
         <Card>
@@ -55,7 +95,7 @@ export default function MeetingReview() {
               <Button
                 variant="primary"
                 className="mt-3"
-                onClick={() => run(async () => setMeetingDrafts(meeting.id, await draftFromMeeting(meeting, student)))}
+                onClick={draft}
               >
                 ✦ Draft notes and follow-ups
               </Button>
@@ -74,8 +114,15 @@ export default function MeetingReview() {
         </Card>
       )}
 
+      {hasDrafts && busy && (
+        <Card tone="ai" className="mb-6">
+          <Thinking label="AI is reading the meeting and drafting follow-ups…" />
+        </Card>
+      )}
+
       {hasDrafts && (
         <div className="space-y-6">
+          <PlaceholderNote source={meeting.ai?.source} />
           {pending > 0 ? (
             <ApprovalNotice>
               <strong>{pending} drafts are waiting for you.</strong> Nothing on this page has reached {student.firstName} or{' '}
@@ -88,7 +135,12 @@ export default function MeetingReview() {
           )}
 
           {meeting.ai && (
-            <Card tone="ai" title="Meeting notes" action={<AiBadge>AI notes · private to you</AiBadge>}>
+            <Card tone="ai" title="Meeting notes" action={
+                <span className="flex items-center gap-2">
+                  <Pill>Private to you</Pill>
+                  <SourceBadge source={meeting.ai.source} />
+                </span>
+              }>
               <ul className="space-y-2 px-4 py-4">
                 {meeting.ai.notes.map((n) => (
                   <li key={n} className="flex gap-2 text-sm leading-relaxed text-ink">
@@ -101,7 +153,7 @@ export default function MeetingReview() {
           )}
 
           {meeting.ai && (
-            <Card tone="ai" title={`Drafted tasks (${meeting.ai.draftTasks.length})`} action={<AiBadge />}>
+            <Card tone="ai" title={`Drafted tasks (${meeting.ai.draftTasks.length})`} action={<SourceBadge source={meeting.ai.source} />}>
               {meeting.ai.draftTasks.length === 0 && <Empty>No tasks drafted.</Empty>}
               <ul>
                 {meeting.ai.draftTasks.map((t) => (
@@ -114,7 +166,7 @@ export default function MeetingReview() {
           {meeting.recap && <RecapCard meeting={meeting} student={student} />}
 
           {meeting.ai && meeting.ai.parentUpdates.length > 0 && (
-            <Card tone="ai" title="Drafted parent updates" action={<AiBadge />}>
+            <Card tone="ai" title="Drafted parent updates" action={<SourceBadge source={meeting.ai.source} />}>
               {meeting.ai.parentUpdates.map((u) => (
                 <ParentUpdateRow key={u.id} meeting={meeting} student={student} updateId={u.id} />
               ))}
@@ -122,7 +174,7 @@ export default function MeetingReview() {
           )}
 
           {meeting.ai && meeting.ai.profileChanges.length > 0 && (
-            <Card tone="ai" title="Suggested profile changes" action={<AiBadge />}>
+            <Card tone="ai" title="Suggested profile changes" action={<SourceBadge source={meeting.ai.source} />}>
               <ul>
                 {meeting.ai.profileChanges.map((c) => (
                   <ProfileChangeRow key={c.id} meetingId={meeting.id} change={c} />
@@ -142,13 +194,22 @@ function ReviewControls({
   onDecide,
   approveLabel = 'Approve',
   approvedLabel,
+  approval,
 }: {
   review: Review
+  approval?: Approval
   onDecide: (decision: Decision) => void
   approveLabel?: string
   approvedLabel?: string
 }) {
-  if (review !== 'pending') return <ReviewTag review={review} approvedLabel={approvedLabel} />
+  if (review !== 'pending') {
+    return (
+      <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <ApprovalStamp approval={approval} />
+        <ReviewTag review={review} approvedLabel={approvedLabel} />
+      </span>
+    )
+  }
   return (
     <span className="flex shrink-0 items-center gap-1.5">
       <Button size="sm" variant="approve" onClick={() => onDecide('approved')}>
@@ -168,18 +229,34 @@ function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: 
   const ownerKey = draft.owner === 'parent' ? `parent:${draft.ownerParentId}` : draft.owner
   const patch = (p: Partial<DraftTask>) => updateDraftTask(meeting.id, draft.id, p)
 
+  // Once reviewed, the draft is a record: show it as text, not as form fields.
+  if (locked) {
+    return (
+      <li className={cx('flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0', draft.review === 'dismissed' && 'opacity-50')}>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-ink">{draft.title}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <OwnerBadge owner={draft.owner} label={ownerLabel(draft, student)} />
+            Due {formatDate(draft.dueDate)}
+          </p>
+        </div>
+        <ReviewControls review={draft.review} approval={draft.approval} onDecide={() => {}} approvedLabel="Added to tasks" />
+      </li>
+    )
+  }
+
   return (
     <li className={cx('border-b border-line px-4 py-3 last:border-b-0', draft.review === 'dismissed' && 'opacity-50')}>
       <div className="flex flex-wrap items-center gap-2">
         <input
-          className={cx(inputClass, 'min-w-[16rem] flex-1 font-medium', locked && 'border-transparent bg-transparent px-0')}
+          className={cx(inputBase, 'min-w-[16rem] flex-1 font-medium', locked && 'border-transparent bg-transparent px-0')}
           value={draft.title}
           disabled={locked}
           onChange={(e) => patch({ title: e.target.value })}
           aria-label="Task title"
         />
         <select
-          className={cx(inputClass, 'w-auto', locked && 'border-transparent bg-transparent')}
+          className={cx(inputBase, 'w-auto', locked && 'border-transparent bg-transparent')}
           value={ownerKey}
           disabled={locked}
           aria-label="Owner"
@@ -198,15 +275,18 @@ function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: 
         </select>
         <input
           type="date"
-          className={cx(inputClass, 'w-auto', locked && 'border-transparent bg-transparent')}
+          className={cx(inputBase, 'w-auto', locked && 'border-transparent bg-transparent')}
           value={draft.dueDate}
           disabled={locked}
           aria-label="Due date"
           onChange={(e) => e.target.value && patch({ dueDate: e.target.value })}
         />
-        <ReviewControls review={draft.review} onDecide={(d) => reviewDraftTask(meeting.id, draft.id, d)} approvedLabel="Added to tasks" />
+        <ReviewControls review={draft.review} approval={draft.approval} onDecide={(d) => reviewDraftTask(meeting.id, draft.id, d)} approvedLabel="Added to tasks" />
       </div>
       {draft.detail && <p className="mt-1 text-xs text-muted">{draft.detail}</p>}
+      {draft.dueDateBasis === 'inferred' && !locked && (
+        <p className="mt-1 text-xs text-warn">The notes gave no date for this one, so the AI suggested it. Please check.</p>
+      )}
     </li>
   )
 }
@@ -223,9 +303,10 @@ function RecapCard({ meeting, student }: { meeting: Meeting; student: Student })
       title={`Recap for ${student.firstName}`}
       action={
         <span className="flex items-center gap-2">
-          {!locked && <AiBadge />}
+          {!locked && <SourceBadge source={meeting.ai?.source} />}
           <ReviewControls
             review={recap.review}
+            approval={recap.approval}
             onDecide={(d) => reviewRecap(meeting.id, d)}
             approveLabel={`Approve and share with ${student.firstName}`}
             approvedLabel={`Shared with ${student.firstName}`}
@@ -284,6 +365,7 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
         <ParentLine parent={parent} />
         <ReviewControls
           review={update.review}
+          approval={update.approval}
           onDecide={(d) => reviewParentUpdate(meeting.id, update.id, d)}
           approveLabel={`Approve and send via ${CHANNEL_LABEL[parent.channel]}`}
           approvedLabel={`Sent via ${CHANNEL_LABEL[parent.channel]}`}
@@ -314,7 +396,7 @@ function ProfileChangeRow({ meetingId, change }: { meetingId: string; change: No
         </p>
         <p className="mt-0.5 text-xs italic text-muted">Heard in the meeting: {change.evidence}</p>
       </div>
-      <ReviewControls review={change.review} onDecide={(d) => reviewProfileChange(meetingId, change.id, d)} approveLabel="Approve change" approvedLabel="Profile updated" />
+      <ReviewControls review={change.review} approval={change.approval} onDecide={(d) => reviewProfileChange(meetingId, change.id, d)} approveLabel="Approve change" approvedLabel="Profile updated" />
     </li>
   )
 }

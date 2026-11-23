@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, Empty, PageHeader, Pill, cx, inputClass } from '../../components/ui'
+import { Button, Card, Empty, PageHeader, Pill, cx, inputBase } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
 import { findStudent } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -56,7 +56,7 @@ export default function Notifications() {
                       type="number"
                       min={1}
                       max={14}
-                      className={cx(inputClass, 'w-14 px-2 py-1 text-center')}
+                      className={cx(inputBase, 'w-14 px-2 py-1 text-center')}
                       value={rule.days}
                       onChange={(e) => updateRule(rule.id, { days: Math.max(1, Number(e.target.value) || 1) })}
                       aria-label="Days"

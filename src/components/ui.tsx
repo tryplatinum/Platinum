@@ -4,7 +4,8 @@
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { StudentStatus } from '../lib/derive'
-import type { OwnerType, Review } from '../types'
+import { formatTimestamp } from '../lib/dates'
+import type { AiSource, Approval, OwnerType, Review } from '../types'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -103,8 +104,11 @@ export function Button({ variant = 'secondary', size = 'md', className, ...rest 
   )
 }
 
-export const inputClass =
-  'w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none'
+/** Input styling without a width, for inputs that size to their content or set their own width. */
+export const inputBase =
+  'rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none'
+/** Full-width input. */
+export const inputClass = `${inputBase} w-full`
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
@@ -208,18 +212,69 @@ export function Thinking({ label = 'AI is drafting…' }: { label?: string }) {
   )
 }
 
-/** Runs one of the async AI functions and tracks whether it is in flight. */
-export function useBusy(): [boolean, <T>(work: () => Promise<T>) => Promise<T>] {
+/**
+ * Runs one of the async AI functions. Tracks whether it is in flight and keeps
+ * the error message if it fails, for <AiErrorNote>.
+ */
+export function useAi(): { busy: boolean; error?: string; run: (work: () => Promise<void>) => Promise<void> } {
   const [busy, setBusy] = useState(false)
-  const run = async <T,>(work: () => Promise<T>) => {
+  const [error, setError] = useState<string>()
+  const run = async (work: () => Promise<void>) => {
     setBusy(true)
+    setError(undefined)
     try {
-      return await work()
+      await work()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
     } finally {
       setBusy(false)
     }
   }
-  return [busy, run]
+  return { busy, error, run }
+}
+
+/** Shown when the AI endpoint answered with an error (a refusal, a cut-off draft, a rate limit). */
+export function AiErrorNote({ message }: { message?: string }) {
+  if (!message) return null
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+      <span aria-hidden>⚠</span>
+      <span>
+        <strong>No draft was produced.</strong> {message}
+      </span>
+    </div>
+  )
+}
+
+/** Says where a draft came from: the model, or a placeholder. Placeholders are never passed off as AI output. */
+export function SourceBadge({ source }: { source?: AiSource }) {
+  if (!source) return null
+  if (source.kind === 'claude') return <Pill tone="ai">✦ AI draft · {source.model}</Pill>
+  return (
+    <span title={source.reason}>
+      <Pill tone="warn">Placeholder draft · not from the AI</Pill>
+    </span>
+  )
+}
+
+/** One line explaining a placeholder, for the top of a draft. */
+export function PlaceholderNote({ source }: { source?: AiSource }) {
+  if (source?.kind !== 'placeholder') return null
+  return (
+    <p className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
+      <strong>This is a placeholder, not AI output.</strong> {source.reason} Sample text is shown so the screen can be demonstrated.
+    </p>
+  )
+}
+
+/** "Approved by Sarah Lindqvist, Nov 22, 3:14 PM". */
+export function ApprovalStamp({ approval }: { approval?: Approval }) {
+  if (!approval) return null
+  return (
+    <span className="text-xs text-muted">
+      Approved by {approval.by}, {formatTimestamp(approval.at)}
+    </span>
+  )
 }
 
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {

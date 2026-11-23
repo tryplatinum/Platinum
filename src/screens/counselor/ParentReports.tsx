@@ -5,7 +5,22 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bilingual, ParentLine } from '../../components/Bilingual'
-import { AiBadge, ApprovalNotice, Button, Card, Empty, PageHeader, Pill, Thinking, cx, inputClass, useBusy } from '../../components/ui'
+import {
+  AiErrorNote,
+  ApprovalNotice,
+  ApprovalStamp,
+  Button,
+  Card,
+  Empty,
+  PageHeader,
+  Pill,
+  PlaceholderNote,
+  SourceBadge,
+  Thinking,
+  cx,
+  inputBase,
+  useAi,
+} from '../../components/ui'
 import { formatDate } from '../../lib/dates'
 import { findParent, findStudent, fullName } from '../../lib/derive'
 import { CHANNEL_LABEL } from '../../lib/language'
@@ -28,7 +43,7 @@ export default function ParentReports() {
 export function ReportsPanel({ studentId }: { studentId?: ID }) {
   const data = useData()
   const addReportDraft = useStore((s) => s.addReportDraft)
-  const [busy, run] = useBusy()
+  const { busy, error, run } = useAi()
   const [pickedStudent, setPickedStudent] = useState(studentId ?? data.students[0].id)
   const student = findStudent(data, studentId ?? pickedStudent)!
   const [pickedParent, setPickedParent] = useState<ID | undefined>(student.parents[0]?.id)
@@ -54,7 +69,7 @@ export function ReportsPanel({ studentId }: { studentId?: ID }) {
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted">Student</span>
               <select
-                className={cx(inputClass, 'w-auto')}
+                className={cx(inputBase, 'w-auto')}
                 value={student.id}
                 onChange={(e) => {
                   setPickedStudent(e.target.value)
@@ -71,7 +86,7 @@ export function ReportsPanel({ studentId }: { studentId?: ID }) {
           )}
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Parent</span>
-            <select className={cx(inputClass, 'w-auto')} value={parent?.id} onChange={(e) => setPickedParent(e.target.value)}>
+            <select className={cx(inputBase, 'w-auto')} value={parent?.id} onChange={(e) => setPickedParent(e.target.value)}>
               {student.parents.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({p.relationship})
@@ -89,6 +104,11 @@ export function ReportsPanel({ studentId }: { studentId?: ID }) {
           )}
         </div>
         {busy && <Thinking label={`AI is drafting a report for ${parent?.name}…`} />}
+        {error && (
+          <div className="px-4 pb-4">
+            <AiErrorNote message={error} />
+          </div>
+        )}
       </Card>
 
       {reports.length === 0 && (
@@ -136,7 +156,7 @@ export function ReportCard({ report, showStudent }: { report: ParentReport; show
         <div className="flex items-center gap-2">
           {isDraft ? (
             <>
-              <AiBadge />
+              <SourceBadge source={report.source} />
               <Pill tone="warn">Needs your approval</Pill>
             </>
           ) : (
@@ -148,7 +168,20 @@ export function ReportCard({ report, showStudent }: { report: ParentReport; show
         </div>
       </button>
       {open && (
-        <div className="border-t border-line px-4 py-4">
+        <div className="space-y-4 border-t border-line px-4 py-4">
+          {isDraft && <PlaceholderNote source={report.source} />}
+          {report.facts && report.facts.length > 0 && (
+            <details open={isDraft} className="rounded-lg border border-line">
+              <summary className="px-3 py-2 text-xs font-medium text-muted">
+                The facts behind this report ({report.facts.length}) · computed by Platinum from the task list, not by the AI
+              </summary>
+              <ul className="grid gap-x-6 gap-y-1 border-t border-line px-3 py-2 text-xs text-ink sm:grid-cols-2">
+                {report.facts.map((f) => (
+                  <li key={f}>• {f}</li>
+                ))}
+              </ul>
+            </details>
+          )}
           <Bilingual
             language={report.language}
             en={report.bodyEn}
@@ -158,7 +191,7 @@ export function ReportCard({ report, showStudent }: { report: ParentReport; show
             onChangeLocal={(bodyLocal) => updateReport(report.id, { bodyLocal })}
           />
           {isDraft ? (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="approve" onClick={() => approveReport(report.id)}>
                 Approve and send via {CHANNEL_LABEL[report.channel]}
               </Button>
@@ -168,8 +201,8 @@ export function ReportCard({ report, showStudent }: { report: ParentReport; show
               <span className="text-xs text-faint">Not sent yet. Demo: sending only writes to the log.</span>
             </div>
           ) : (
-            <p className="mt-3 text-xs text-faint">
-              Shown as sent. Nothing was really delivered: see the <Link to="/app/notifications" className="underline">log</Link>.
+            <p className="text-xs text-faint">
+              <ApprovalStamp approval={report.approval} /> Shown as sent. Nothing was really delivered: see the <Link to="/app/notifications" className="underline">log</Link>.
             </p>
           )}
         </div>

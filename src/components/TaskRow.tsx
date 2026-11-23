@@ -8,7 +8,7 @@ import { daysFromToday, formatDate } from '../lib/dates'
 import { fullName, isLate, ownerLabel } from '../lib/derive'
 import { useStore } from '../store/store'
 import type { Actor, Student, Task, TaskStatus } from '../types'
-import { Button, OwnerBadge, Pill, cx, inputClass } from './ui'
+import { Button, OwnerBadge, Pill, cx, inputBase, inputClass } from './ui'
 
 /** "Due Nov 28 · in 6 days", or a red late marker. */
 export function DueLabel({ task }: { task: Task }) {
@@ -207,7 +207,7 @@ function TaskUpdatePanel({ task, student, actor }: { task: Task; student: Studen
             Due
             <input
               type="date"
-              className={cx(inputClass, 'w-auto py-1')}
+              className={cx(inputBase, 'w-auto py-1')}
               value={task.dueDate}
               onChange={(e) => e.target.value && updateTask(task.id, { dueDate: e.target.value })}
             />

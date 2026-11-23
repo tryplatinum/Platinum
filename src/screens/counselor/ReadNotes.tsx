@@ -1,11 +1,11 @@
 // Reading the counselor's own notes. Paste or upload notes; the AI proposes
 // assignments with owners and due dates; the counselor corrects and approves.
-// In v0 the sample note gives a prepared result (see services/ai.ts readNotes).
+// Nothing becomes a task until the counselor approves it.
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { sampleCounselorNote } from '../../data/fixtures'
-import { AiBadge, ApprovalNotice, Button, Card, PageHeader, Thinking, cx, inputClass, useBusy } from '../../components/ui'
+import { AiErrorNote, ApprovalNotice, Button, Card, PageHeader, PlaceholderNote, SourceBadge, Thinking, cx, inputBase, inputClass, useAi } from '../../components/ui'
 import { findStudent, fullName } from '../../lib/derive'
 import { readNotes, type NotesResult } from '../../services/ai'
 import { useData, useStore } from '../../store/store'
@@ -20,7 +20,7 @@ export default function ReadNotes() {
   const [text, setText] = useState('')
   const [result, setResult] = useState<NotesResult>()
   const [added, setAdded] = useState(0)
-  const [busy, run] = useBusy()
+  const { busy, error, run } = useAi()
   const student = findStudent(data, studentId)!
 
   const patch = (id: string, p: Partial<DraftTask>) =>
@@ -30,7 +30,8 @@ export default function ReadNotes() {
   const read = () =>
     run(async () => {
       setAdded(0)
-      setResult(await readNotes(text, student))
+      setResult(undefined)
+      setResult(await readNotes(data, text, student))
     })
 
   return (
@@ -43,7 +44,7 @@ export default function ReadNotes() {
             <div className="flex flex-wrap items-end gap-3">
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-muted">Student</span>
-                <select className={cx(inputClass, 'w-auto')} value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+                <select className={cx(inputBase, 'w-auto')} value={studentId} onChange={(e) => setStudentId(e.target.value)}>
                   {data.students.map((s) => (
                     <option key={s.id} value={s.id}>
                       {fullName(s)}
@@ -87,10 +88,12 @@ export default function ReadNotes() {
               <Button variant="primary" onClick={read} disabled={busy || !text.trim()}>
                 ✦ Read notes
               </Button>
-              <span className="text-xs text-faint">Demo: only the sample note is read properly. Do not paste real student information.</span>
+              <span className="text-xs text-faint">Use invented notes only. Do not paste real student information.</span>
             </div>
           </div>
         </Card>
+
+        <AiErrorNote message={error} />
 
         {busy && (
           <Card tone="ai">
@@ -108,8 +111,9 @@ export default function ReadNotes() {
         )}
 
         {result && !busy && (
-          <Card tone="ai" title={`Proposed assignments for ${student.firstName}`} action={<AiBadge />}>
+          <Card tone="ai" title={`Proposed assignments for ${student.firstName}`} action={<SourceBadge source={result.source} />}>
             <div className="space-y-3 border-b border-line px-4 py-3">
+              <PlaceholderNote source={result.source} />
               <p className="text-sm text-ink">{result.summary}</p>
               <ApprovalNotice>These are proposals. They become real tasks only when you approve them.</ApprovalNotice>
             </div>
@@ -119,9 +123,9 @@ export default function ReadNotes() {
                 const off = t.review === 'dismissed'
                 return (
                   <li key={t.id} className={cx('flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 last:border-b-0', off && 'opacity-40')}>
-                    <input className={cx(inputClass, 'min-w-[16rem] flex-1')} value={t.title} disabled={off} onChange={(e) => patch(t.id, { title: e.target.value })} aria-label="Task title" />
+                    <input className={cx(inputBase, 'min-w-[16rem] flex-1')} value={t.title} disabled={off} onChange={(e) => patch(t.id, { title: e.target.value })} aria-label="Task title" />
                     <select
-                      className={cx(inputClass, 'w-auto')}
+                      className={cx(inputBase, 'w-auto')}
                       value={ownerKey}
                       disabled={off}
                       aria-label="Owner"
@@ -138,7 +142,12 @@ export default function ReadNotes() {
                       ))}
                       <option value="counselor">Counselor</option>
                     </select>
-                    <input type="date" className={cx(inputClass, 'w-auto')} value={t.dueDate} disabled={off} onChange={(e) => e.target.value && patch(t.id, { dueDate: e.target.value })} aria-label="Due date" />
+                    <input type="date" className={cx(inputBase, 'w-auto')} value={t.dueDate} disabled={off} onChange={(e) => e.target.value && patch(t.id, { dueDate: e.target.value })} aria-label="Due date" />
+                    {t.dueDateBasis === 'inferred' && !off && (
+                      <span className="text-xs text-warn" title="The notes gave no date. The AI suggested this one.">
+                        date suggested
+                      </span>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => patch(t.id, { review: off ? 'pending' : 'dismissed' })}>
                       {off ? 'Restore' : 'Remove'}
                     </Button>

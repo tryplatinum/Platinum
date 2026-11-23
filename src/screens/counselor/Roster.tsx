@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Avatar, Card, PageHeader, Pill, ProgressBar, StatusPill, cx, inputClass } from '../../components/ui'
+import { Avatar, Card, PageHeader, Pill, ProgressBar, StatusPill, cx, inputBase } from '../../components/ui'
 import { formatDate, formatRelative } from '../../lib/dates'
 import { classLabel, fullName, summarizeAll, type StudentStatus } from '../../lib/derive'
 import { useData } from '../../store/store'
@@ -42,7 +42,7 @@ export default function Roster() {
             </button>
           ))}
         </div>
-        <input className={cx(inputClass, 'max-w-xs')} placeholder="Search by name" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className={cx(inputBase, 'max-w-xs')} placeholder="Search by name" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
 
       <Card className="overflow-x-auto">

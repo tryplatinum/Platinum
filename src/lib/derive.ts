@@ -73,6 +73,9 @@ export interface Deadline {
 
 const collegeIsPending = (c: CollegeApp) => c.status === 'considering' || c.status === 'in_progress'
 
+/** "NYU (Tandon) ED2", but plain "UC Berkeley" when the plan is just the UC application. */
+export const collegeLabel = (c: CollegeApp) => (c.plan === 'UC' ? c.name : `${c.name} ${c.plan}`)
+
 /** Open tasks and unsubmitted applications, soonest first. Includes late tasks. */
 export function deadlinesFor(data: AppData, studentId: ID): Deadline[] {
   const today = todayISO()
@@ -85,7 +88,7 @@ export function deadlinesFor(data: AppData, studentId: ID): Deadline[] {
       id: c.id,
       studentId,
       date: c.deadline,
-      label: `${c.name} ${c.plan} application`,
+      label: `${collegeLabel(c)} application`,
       kind: 'college',
       late: c.deadline < today,
     }))
@@ -245,7 +248,7 @@ export function summarize(data: AppData, student: Student): StudentSummary {
     .sort((a, b) => a.deadline.localeCompare(b.deadline))[0]
   if (soonCollege) {
     const n = daysFromToday(soonCollege.deadline)
-    reasons.push(`${soonCollege.name} ${soonCollege.plan} due ${n === 0 ? 'today' : `in ${n} ${n === 1 ? 'day' : 'days'}`}`)
+    reasons.push(`${collegeLabel(soonCollege)} application due ${n === 0 ? 'today' : `in ${n} ${n === 1 ? 'day' : 'days'}`}`)
   }
   if (sinceMeeting !== undefined && sinceMeeting > MEETING_GAP_DAYS) {
     reasons.push(`No meeting in ${Math.round(sinceMeeting / 7)} weeks`)

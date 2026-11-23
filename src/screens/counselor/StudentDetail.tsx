@@ -5,7 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { ParentLine } from '../../components/Bilingual'
 import { TaskRow } from '../../components/TaskRow'
-import { Avatar, Button, Card, Empty, PageHeader, Pill, ProgressBar, StatusPill, cx, inputClass } from '../../components/ui'
+import { Avatar, Button, Card, Empty, PageHeader, Pill, ProgressBar, StatusPill, cx, inputBase, inputClass } from '../../components/ui'
 import { addDays, formatDate, formatDateLong, formatRelative, formatTime, todayISO } from '../../lib/dates'
 import {
   classLabel,
@@ -315,7 +315,7 @@ function Tasks({ student }: { student: Student }) {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Owner</span>
-            <select className={cx(inputClass, 'w-auto')} value={ownerKey} onChange={(e) => setOwnerKey(e.target.value)}>
+            <select className={cx(inputBase, 'w-auto')} value={ownerKey} onChange={(e) => setOwnerKey(e.target.value)}>
               <option value="student">{student.firstName} (student)</option>
               {student.parents.map((p) => (
                 <option key={p.id} value={`parent:${p.id}`}>
@@ -327,7 +327,7 @@ function Tasks({ student }: { student: Student }) {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Due</span>
-            <input type="date" className={cx(inputClass, 'w-auto')} value={due} onChange={(e) => setDue(e.target.value)} />
+            <input type="date" className={cx(inputBase, 'w-auto')} value={due} onChange={(e) => setDue(e.target.value)} />
           </label>
           <Button type="submit" variant="primary" disabled={!title.trim()}>
             Add task
@@ -460,7 +460,7 @@ function Colleges({ student }: { student: Student }) {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Plan</span>
-            <select className={cx(inputClass, 'w-auto')} value={plan} onChange={(e) => setPlan(e.target.value as ApplicationPlan)}>
+            <select className={cx(inputBase, 'w-auto')} value={plan} onChange={(e) => setPlan(e.target.value as ApplicationPlan)}>
               {PLANS.map((p) => (
                 <option key={p}>{p}</option>
               ))}
@@ -468,7 +468,7 @@ function Colleges({ student }: { student: Student }) {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Deadline</span>
-            <input type="date" className={cx(inputClass, 'w-auto')} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            <input type="date" className={cx(inputBase, 'w-auto')} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
           </label>
           <Button type="submit" variant="primary" disabled={!name.trim()}>
             Add
@@ -563,7 +563,7 @@ function Documents({ student }: { student: Student }) {
         >
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-muted">Type</span>
-            <select className={cx(inputClass, 'w-auto')} value={kind} onChange={(e) => setKind(e.target.value as DocumentKind)}>
+            <select className={cx(inputBase, 'w-auto')} value={kind} onChange={(e) => setKind(e.target.value as DocumentKind)}>
               {KIND_ORDER.map((k) => (
                 <option key={k} value={k}>
                   {KIND_LABEL[k]}

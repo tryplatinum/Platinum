@@ -23,8 +23,16 @@ export default function CommandCenter() {
     .flatMap((s) => deadlinesFor(data, s.id))
     .filter((d) => d.date >= today && d.date <= weekEnd)
     .sort((a, b) => a.date.localeCompare(b.date))
+  // A student's applications due on the same day (four UC campuses, say) show as one line.
   const byDay = new Map<string, Deadline[]>()
-  for (const d of thisWeek) byDay.set(d.date, [...(byDay.get(d.date) ?? []), d])
+  for (const d of thisWeek) {
+    const day = byDay.get(d.date) ?? []
+    const same = d.kind === 'college' ? day.find((x) => x.kind === 'college' && x.studentId === d.studentId) : undefined
+    if (same) same.label = `${same.label.replace(/ application$/, '')}, ${d.label}`
+    else day.push({ ...d })
+    byDay.set(d.date, day)
+  }
+  const dueCount = [...byDay.values()].reduce((n, day) => n + day.length, 0)
 
   const meetings = data.meetings
     .filter((m) => m.status === 'scheduled' && m.date >= today && m.date <= weekEnd)
@@ -47,7 +55,7 @@ export default function CommandCenter() {
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Need attention" value={attention.length} tone={attention.length ? 'bad' : 'good'} hint="students behind or slipping" />
         <Stat label="Late tasks" value={lateCount} tone={lateCount ? 'bad' : 'good'} hint="across all students" />
-        <Stat label="Due this week" value={thisWeek.length} tone="neutral" hint="tasks and applications" />
+        <Stat label="Due this week" value={dueCount} tone="neutral" hint="tasks and applications" />
         <Stat label="Waiting for your approval" value={approvalCount} tone={approvalCount ? 'ai' : 'neutral'} hint="AI drafts" />
       </div>
 
@@ -130,7 +138,7 @@ export default function CommandCenter() {
                           <Link to={`/app/students/${student.id}`} className="shrink-0 font-medium text-ink hover:underline">
                             {student.firstName}
                           </Link>
-                          <span className="truncate text-muted">{d.label}</span>
+                          <span className="min-w-0 text-muted">{d.label}</span>
                           {d.kind === 'college' && <Pill tone="accent">Application</Pill>}
                         </li>
                       )

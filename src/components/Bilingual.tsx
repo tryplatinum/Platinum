@@ -35,7 +35,7 @@ export function Bilingual({
   onChangeLocal?: (value: string) => void
 }) {
   const hasLocal = language !== 'en' && local !== undefined
-  const rows = Math.max(6, Math.ceil(en.length / 55) + en.split('\n').length)
+  const rows = Math.max(5, Math.ceil(en.length / 80) + en.split('\n').length)
 
   const pane = (label: string, sub: string, value: string, onChange?: (v: string) => void, lang?: string) => (
     <div className="min-w-0">
