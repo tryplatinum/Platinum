@@ -2,18 +2,22 @@
 // per feature with realistic sample input built from the seed data, and prints
 // each draft. Run with:  npm run test:ai
 //
-// Needs ANTHROPIC_API_KEY and PLATINUM_PASSCODE in .env.local. Each run makes
-// six real model calls. Pass a feature name to run just one:
+// Needs ANTHROPIC_API_KEY and the three Supabase settings in .env.local. The
+// endpoint only answers signed-in members of a firm, so the run creates a
+// throwaway account and firm and deletes them at the end. Each run makes six
+// real model calls. Pass a feature name to run just one:
 //   npm run test:ai -- parentReport
 
 import { POST } from '../api/ai.js'
-import { PASSCODE_HEADER } from '../shared/constants.js'
 import type { Feature } from '../shared/contract.js'
 import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '../src/data/fixtures.js'
 import { buildSeed } from '../src/data/seed.js'
 import { formatDate, formatDateZh } from '../src/lib/dates.js'
 import { daysLate } from '../src/lib/derive.js'
 import { briefFacts, buildFacts, reportFacts } from '../src/lib/facts.js'
+import { createAccount, removeAccount, requireSettings } from './testAccounts.js'
+
+requireSettings()
 
 const data = buildSeed()
 const student = (id: string) => data.students.find((s) => s.id === id)!
@@ -57,6 +61,7 @@ const inputs: Record<Feature, unknown> = {
 
 const only = process.argv[2] as Feature | undefined
 let failed = 0
+const account = await createAccount('AI')
 
 for (const feature of Object.keys(inputs) as Feature[]) {
   if (only && feature !== only) continue
@@ -64,7 +69,7 @@ for (const feature of Object.keys(inputs) as Feature[]) {
   const response = await POST(
     new Request('http://localhost/api/ai', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', [PASSCODE_HEADER]: process.env.PLATINUM_PASSCODE ?? '' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${account.token}` },
       body: JSON.stringify({ feature, input: inputs[feature] }),
     }),
   )
@@ -74,6 +79,8 @@ for (const feature of Object.keys(inputs) as Feature[]) {
   console.log(JSON.stringify(body, null, 2))
   if (!body.ok) failed += 1
 }
+
+await removeAccount(account)
 
 if (failed > 0) {
   console.error(`\n${failed} feature(s) failed.`)

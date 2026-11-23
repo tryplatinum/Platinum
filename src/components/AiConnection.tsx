@@ -1,36 +1,31 @@
-// Sidebar control showing whether AI drafts are real or placeholders, and
-// where the counselor enters the shared passcode. The passcode is a stopgap
-// until real accounts exist; it is kept in this browser only.
+// Sidebar line showing whether AI drafts are real or placeholders. Access to
+// the AI endpoint comes from being signed in; there is nothing to enter here.
 
 import { useEffect, useState } from 'react'
 import type { AiStatus } from '../../shared/contract'
-import { fetchStatus, getPasscode, setPasscode } from '../services/aiClient'
+import { fetchStatus } from '../services/aiClient'
 import { cx } from './ui'
 
 export function AiConnection() {
   const [status, setStatus] = useState<AiStatus | null>()
-  const [passcode, setLocal] = useState(getPasscode)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
 
   useEffect(() => {
-    void fetchStatus().then((s) => setStatus(s ?? null))
+    let live = true
+    void fetchStatus().then((s) => live && setStatus(s ?? null))
+    return () => {
+      live = false
+    }
   }, [])
 
-  const serverReady = Boolean(status?.hasKey && status.hasPasscode)
-  const live = serverReady && Boolean(passcode)
-  const detail =
-    status === undefined
-      ? 'Checking…'
-      : status === null
-        ? 'No AI endpoint here. Drafts are placeholders.'
-        : !status.hasKey
-          ? 'The server has no API key. Drafts are placeholders.'
-          : !status.hasPasscode
-            ? 'The server has no passcode set. Drafts are placeholders.'
-            : passcode
-              ? status.model
-              : 'Enter the passcode to get real drafts.'
+  if (status === undefined) return null
+  const live = Boolean(status?.hasKey && status.hasAuth)
+  const detail = !status
+    ? 'This deployment has no AI endpoint. Drafts are placeholders.'
+    : !status.hasKey
+      ? 'The server has no API key. Drafts are placeholders.'
+      : !status.hasAuth
+        ? 'The server cannot check sign-ins. Drafts are placeholders.'
+        : status.model
 
   return (
     <div className="rounded-lg border border-white/15 px-3 py-2.5">
@@ -38,37 +33,7 @@ export function AiConnection() {
         <span className={cx('h-2 w-2 rounded-full', live ? 'bg-[#4ade80]' : 'bg-[#fbbf24]')} aria-hidden />
         AI: {live ? 'connected' : 'placeholders'}
       </p>
-      <p className="mt-0.5 text-xs leading-relaxed text-sidebar-muted">{detail}</p>
-      {serverReady &&
-        (editing ? (
-          <form
-            className="mt-2 flex gap-1"
-            onSubmit={(e) => {
-              e.preventDefault()
-              setPasscode(draft.trim())
-              setLocal(draft.trim())
-              setEditing(false)
-              setDraft('')
-            }}
-          >
-            <input
-              type="password"
-              autoFocus
-              className="min-h-11 w-full rounded-lg border border-white/25 bg-sidebar px-2 text-sm text-white placeholder:text-sidebar-muted"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Passcode"
-              aria-label="AI passcode"
-            />
-            <button type="submit" className="min-h-11 rounded-lg bg-white px-3 text-sm font-semibold text-sidebar">
-              Save
-            </button>
-          </form>
-        ) : (
-          <button type="button" onClick={() => setEditing(true)} className="mt-1 flex min-h-11 items-center text-sm font-medium text-white underline">
-            {passcode ? 'Change passcode' : 'Enter passcode'}
-          </button>
-        ))}
+      <p className="mt-0.5 text-[13px] leading-relaxed text-sidebar-muted">{detail}</p>
     </div>
   )
 }
