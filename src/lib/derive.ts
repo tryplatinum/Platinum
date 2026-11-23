@@ -11,6 +11,7 @@ import type {
   Meeting,
   OwnerType,
   Parent,
+  PersonalNote,
   Student,
   StudentDocument,
   Task,
@@ -240,7 +241,7 @@ const countPending = <T extends { review: string }>(xs: T[]) => xs.filter((x) =>
 
 /** The reviewable sections of a meeting's drafts, in screen order. */
 export interface ReviewSection {
-  key: 'notes' | 'tasks' | 'parents' | 'recap' | 'profile'
+  key: 'notes' | 'tasks' | 'parents' | 'recap' | 'profile' | 'remember'
   label: string
   /** Items still waiting for the counselor. 0 means the section is settled. */
   pending: number
@@ -257,6 +258,7 @@ export function reviewSections(m: Meeting): ReviewSection[] {
   }
   if (m.recap) sections.push({ key: 'recap', label: 'Recap for the student', pending: m.recap.review === 'pending' ? 1 : 0, total: 1 })
   if (ai?.profileChanges.length) sections.push({ key: 'profile', label: 'Profile changes', pending: countPending(ai.profileChanges), total: ai.profileChanges.length })
+  if (ai?.personalNotes?.length) sections.push({ key: 'remember', label: 'Things to remember', pending: countPending(ai.personalNotes), total: ai.personalNotes.length })
   return sections
 }
 
@@ -546,3 +548,96 @@ export function weeklyTextsDone(data: AppData, today: ISODate = todayISO()): Wee
   const weekStart = weeklyTextWeek(data.firm.weeklyTextDay, today)
   return data.weeklyTexts.filter((w) => w.weekStart === weekStart && w.status !== 'draft').reverse()
 }
+
+// ── Things to remember ──────────────────────────────────────────────────────
+// Small personal details a student mentioned, saved once a counselor approves
+// them. Which ones a draft may draw on is decided here; who may receive them
+// is decided in lib/facts.ts (texts to the student only, never a parent).
+
+/** A dated note is worth mentioning from this many days before the event… */
+export const NOTE_DAYS_AHEAD = 14
+/** …until this many days after it. */
+export const NOTE_DAYS_AFTER = 7
+/** A note with no date goes stale after this many days. */
+export const NOTE_STALE_DAYS = 30
+/** How many notes one draft is offered. It may use at most one. */
+export const NOTES_PER_DRAFT = 3
+
+/** A student's saved notes, newest first. */
+export function personalNotesFor(data: AppData, studentId: ID): PersonalNote[] {
+  // Stored oldest first; reversing keeps the latest of several saved at the same moment on top.
+  return data.personalNotes.filter((n) => n.studentId === studentId).reverse().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+/**
+ * The notes a draft to this student may draw on, best first, at most three:
+ *   1. notes whose event is in the next 14 days or the last 7, nearest first;
+ *   2. notes with no date, saved in the last 30 days, newest first;
+ *   3. notes whose event is more than 14 days ahead, saved in the last 30 days.
+ * An event more than 7 days past is left out, as is an undated note older than 30 days.
+ */
+export function notesWorthMentioning(data: AppData, studentId: ID, today: ISODate = todayISO()): PersonalNote[] {
+  const notes = personalNotesFor(data, studentId)
+  const until = (n: PersonalNote) => daysBetween(today, n.eventDate!)
+  const fresh = (n: PersonalNote) => daysBetween(n.createdAt.slice(0, 10), today) <= NOTE_STALE_DAYS
+  const near = notes.filter((n) => n.eventDate && until(n) >= -NOTE_DAYS_AFTER && until(n) <= NOTE_DAYS_AHEAD).sort((a, b) => Math.abs(until(a)) - Math.abs(until(b)))
+  const undated = notes.filter((n) => !n.eventDate && fresh(n))
+  const later = notes.filter((n) => n.eventDate && until(n) > NOTE_DAYS_AHEAD && fresh(n)).sort((a, b) => until(a) - until(b))
+  return [...near, ...undated, ...later].slice(0, NOTES_PER_DRAFT)
+}
+
+/** "in 5 days", "tomorrow", "3 days ago": where an event sits relative to today. */
+export function eventWhen(date: ISODate, today: ISODate = todayISO()): string {
+  const n = daysBetween(today, date)
+  if (n === 0) return 'today'
+  if (n === 1) return 'tomorrow'
+  if (n === -1) return 'yesterday'
+  return n > 0 ? `in ${n} days` : `${-n} days ago`
+}
+
+// ── Parent copy ─────────────────────────────────────────────────────────────
+
+/** A student who has not reacted for this long to the last message sent to them counts as not responding. */
+export const NOT_RESPONDING_DAYS = 5
+
+const hasLateTask = (data: AppData, studentId: ID, today: ISODate) => tasksFor(data, studentId).some((t) => t.owner === 'student' && isLate(t, today))
+
+/**
+ * True when the student has a late task of their own and has done nothing in
+ * the app for 5 or more days since the last message to them. A student nobody
+ * has messaged is not "not responding".
+ *
+ * Student activity is anything recorded with actor 'student': a task marked
+ * started or done, a progress note, a link attached.
+ */
+export function isNotResponding(data: AppData, student: Student, today: ISODate = todayISO()): boolean {
+  if (!hasLateTask(data, student.id, today)) return false
+  // The log is newest first.
+  const last = data.outbox.find((m) => m.studentId === student.id && m.toKind === 'student')
+  if (!last || daysBetween(last.sentAt.slice(0, 10), today) < NOT_RESPONDING_DAYS) return false
+  return !data.activity.some((e) => e.studentId === student.id && e.actor === 'student' && e.at > last.sentAt)
+}
+
+/** "Slipping", for the parent copy setting: a late task of the student's own, or not responding. */
+export function isSlipping(data: AppData, student: Student, today: ISODate = todayISO()): boolean {
+  return hasLateTask(data, student.id, today) || isNotResponding(data, student, today)
+}
+
+export interface ParentCopyChoice {
+  /** Whether "Also tell parent" is offered at all: not when the setting is 'never' or there is no parent. */
+  offered: boolean
+  /** Whether it starts ticked. */
+  ticked: boolean
+  parent?: Parent
+}
+
+/** How "Also tell parent" starts for a message to this student, from their setting and how they are doing. */
+export function parentCopyChoice(data: AppData, student: Student, today: ISODate = todayISO()): ParentCopyChoice {
+  const setting = student.parentCopy ?? 'when_slipping'
+  const parent = primaryParent(student)
+  if (setting === 'never' || !parent) return { offered: false, ticked: false }
+  return { offered: true, ticked: setting === 'always' || isSlipping(data, student, today), parent }
+}
+
+/** The task a parent copy of a weekly text is about: the most overdue, or failing that the next due. */
+export const parentCopyTask = (items: WeeklyTextItems): Task | undefined => items.late[0] ?? items.due[0]

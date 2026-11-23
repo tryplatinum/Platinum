@@ -198,6 +198,16 @@ export function weeklyTextTemplate(f: WeeklyTextFacts): string {
   return parts.join(' ')
 }
 
+/** Roughly what one personal line ("Good luck at the scrimmage Saturday.") adds to a text. */
+const WEEKLY_NOTE_ROOM = 70
+
+/**
+ * Whether a text with these facts has room left for a personal line. When the
+ * meeting, tasks and link already fill the text, no "thing to remember" is
+ * offered, so the facts are never crowded out.
+ */
+export const weeklyTextHasRoomForNote = (f: WeeklyTextFacts): boolean => weeklyTextTemplate(f).length + WEEKLY_NOTE_ROOM <= WEEKLY_TEXT_MAX
+
 /** Every string that must appear in the text exactly as computed. */
 export function weeklyTextRequired(f: WeeklyTextFacts): string[] {
   return [

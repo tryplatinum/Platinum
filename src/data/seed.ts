@@ -29,6 +29,7 @@ import type {
   OwnerType,
   Parent,
   ParentReport,
+  PersonalNote,
   ReminderRule,
   Student,
   StudentDocument,
@@ -105,6 +106,7 @@ export function buildSeed(): AppData {
   const reports: ParentReport[] = []
   const outbox: OutboxMessage[] = []
   const activity: ActivityEvent[] = []
+  const personalNotes: PersonalNote[] = []
 
   let counter = 0
   const nid = (prefix: string) => `${prefix}-${++counter}`
@@ -1012,6 +1014,43 @@ export function buildSeed(): AppData {
     `黃媽媽您好，我是郁庭的升學顧問 Sarah。先跟您分享好消息：郁庭已經收到匹茲堡大學的錄取通知，還拿到了獎學金！喬治城大學和密西根大學的 EA 申請都已送出，喬治城也安排了校友面試，我們正在幫她準備。加州大學（UC）的申請會在${zh(6)}截止前提交。郁庭的進度很穩定，請您放心。`,
   )
 
+  // ── Things to remember ──
+  // Small personal details each student mentioned, already approved. All
+  // invented. `on` is the event's offset from today, when there is one.
+  const remember = (studentId: ID, text: string, on?: number, source: PersonalNote['source'] = 'meeting') =>
+    personalNotes.push({
+      id: nid('pn'),
+      studentId,
+      text,
+      eventDate: on === undefined ? undefined : d(on),
+      source,
+      createdAt: timestampAt(-3, '17:10'),
+      approval: { by: 'Sarah Lindqvist', at: timestampAt(-3, '17:10') },
+    })
+  remember(kevin.id, 'Robotics team is hosting an off-season scrimmage', 5)
+  remember(kevin.id, 'Reading a book about the Mars rovers and loving it', undefined, 'counselor')
+  remember(emily.id, 'Youth Symphony winter concert; she has a short solo', 9)
+  remember(emily.id, 'Science Olympiad invitational', 12)
+  remember(emily.id, 'Learning to bake sourdough with her grandmother', undefined, 'counselor')
+  remember(sophia.id, 'Soccer playoff game', 3)
+  remember(sophia.id, 'Wants to coach a youth team next summer')
+  remember(jason.id, 'Tennis ladder match for a varsity spot', 6)
+  remember(jason.id, 'DECA district conference', 13)
+  remember(aarav.id, 'Solar car team test day at the track', 4)
+  remember(aarav.id, 'Cricket club played its first match against another school', -3)
+  remember(aarav.id, 'Rebuilding an old e-bike in the garage', undefined, 'counselor')
+  remember(mia.id, 'Yearbook pages are due to the printer', 8)
+  remember(mia.id, 'Habitat for Humanity build weekend', 11)
+  remember(daniel.id, 'Basketball season opener at home', 2)
+  remember(daniel.id, 'Saving up for a pair of sneakers he has wanted for a year', undefined, 'counselor')
+  remember(chloe.id, 'Piano recital', 10)
+  remember(chloe.id, 'Has a short story in the next issue of the literary magazine')
+  remember(ethan.id, 'Cross country league finals', 4)
+  remember(ethan.id, 'Ran his first half marathon', -5)
+  remember(grace.id, 'Model UN conference; she is chairing a committee', 7)
+  remember(grace.id, 'Her opinion piece on school start times is in this week’s paper')
+  remember(grace.id, 'Trying to get through a novel in Traditional Chinese over winter break', undefined, 'counselor')
+
   /** Turns a seed student into a full one: contact fields, a main contact, report settings. All invented. */
   let phoneSeq = 100
   const phone = (area: string) => `(${area}) 555-0${++phoneSeq}`
@@ -1043,5 +1082,6 @@ export function buildSeed(): AppData {
     reminderRules: DEFAULT_REMINDER_RULES.map((r) => ({ ...r })),
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     weeklyTexts: [],
+    personalNotes,
   }
 }

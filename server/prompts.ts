@@ -4,7 +4,7 @@
 // the reasons for them) and a function that lays out that request's facts.
 // When you change a prompt, re-run `npm run test:ai` and read the outputs.
 
-import type { Feature, FeatureInput, StudentFacts } from '../shared/contract.js'
+import type { Feature, FeatureInput, NoteFact, StudentFacts } from '../shared/contract.js'
 
 type Effort = 'low' | 'medium' | 'high'
 
@@ -49,11 +49,22 @@ const TASK_RULES = `Proposed tasks.
 - owner is whoever is to do it: "student", "parent" or "counselor". For a parent, set parentId to that parent's id from the facts. If the notes do not make clear which parent, choose the one the notes mention most nearly and say so in detail.
 - dueDate is YYYY-MM-DD. When the notes give a date or a day, use it and set dueDateBasis to "stated". A loose phrase such as "this weekend" or "soon" is not a stated date. When the notes give no exact date, choose a sensible date that is not before today and leaves room before the deadline it serves or the next meeting, and set dueDateBasis to "inferred" so the counselor knows to check it.`
 
+const wrap = (tag: string, body: string) => `<${tag}>\n${body.trim()}\n</${tag}>`
+
+const PERSONAL_NOTE = `Something personal, if it fits.
+You may be given "things_to_remember": up to three small personal details this student mentioned to the counselor, such as a tournament or a school play. Each has an id, and a "when" if the student gave a date. A counselor who remembers these sounds like someone who was listening, which is the only reason to use one.
+- Use at most one, and only where it fits naturally: a few words such as wishing them luck for something coming up, or asking how something went. If none fits this message, use none. A message with no personal line is better than a forced one.
+- Add nothing beyond the note. Do not supply details it does not give, guess how the event went, or build on it. Follow "when": something ahead is still ahead, something past has happened. If there is no "when", do not imply a time.
+- It is a passing remark, never the point of the message, and it does not replace or soften any fixed fact.
+- Set usedNoteId to the id of the note you used, exactly as given, or to null when you used none. The counselor is shown which note was used, so this has to be accurate.
+When no things_to_remember are given, write no personal line and set usedNoteId to null.`
+
+/** Laid out for the model. Only the two features that write to the student ever call this. */
+const notesBlock = (notes: NoteFact[] | undefined) => (notes?.length ? wrap('things_to_remember', JSON.stringify(notes, null, 1)) : '')
+
 const factsBlock = (facts: StudentFacts) => `<facts>
 ${JSON.stringify(facts, null, 1)}
 </facts>`
-
-const wrap = (tag: string, body: string) => `<${tag}>\n${body.trim()}\n</${tag}>`
 
 // ── The features ────────────────────────────────────────────────────────────
 
@@ -81,6 +92,15 @@ recap: a short message to the student, in the counselor's voice, speaking to the
 parentUpdates: one message for each parent in the facts, telling them where their child stands after this meeting and what, if anything, is needed from them. Be honest when the student is behind, without alarm: say what is late, what happens next, and what would help. bodyEn is always filled in. bodyLocal is the version in the parent's language, or null when their language is "en".
 
 profileChanges: suggest a change only when the notes state a fact about scores, activities, intended majors or interests that differs from the record. "label" names the field ("SAT score", "New activity", "Intended majors"), "from" is the current value in the record, "to" is the new one, and "evidence" is the wording from the notes that supports it. Fill the one value field that matches the kind and set the others to null.
+
+personalNotes: up to three personal details the student mentioned about their own life, which the counselor would want to remember when they next text this student: an event coming up (a tournament, a recital, a trip), something they are looking forward to, a new interest. The counselor reviews each one, and an approved one may later be used for a single friendly line in a text to the student, such as wishing them luck.
+- "text" is one short, plain sentence that states only what was said, for example "Regional robotics tournament this Saturday". Do not infer or embellish: if the notes say "a tournament", do not say which one, how it might go or how the student feels about it.
+- "evidence" is the sentence from the notes that prompted it, quoted as written.
+- "eventDate" is YYYY-MM-DD only when the notes give a date or a day for it (work a day such as "Saturday" out from the meeting date). Otherwise null. Never guess a date.
+- Leave out, without exception: anything about health, sleep, stress or mood; conflict or tension in the family, and money at home; discipline or trouble at school; friendships and relationships; and anything the student asked to keep private or not to pass on. If you are unsure whether something belongs in one of those, leave it out.
+- Leave out application work (essays, tests, deadlines, college choices): that is what tasks and the profile are for. Leave out anything already in the record as an activity or interest unless there is a specific event to remember.
+- Most meetings have none or one. Return an empty list when nothing qualifies; do not reach.
+These are for the counselor and for texts to the student only. Do not carry them into parentUpdates.
 
 ${TASK_RULES}
 
@@ -190,12 +210,16 @@ ${PRIVACY}
 
 Who is reading and what they need:
 - A student (purpose "late" or "upcoming"): two or three sentences in the counselor's voice. Friendly and direct, no scolding. Say what is due and when, ask for one concrete thing (what they have so far, or a time they will finish), and make it easy to say they are stuck.
-- A parent about their own task (purpose "late" or "upcoming"): courteous and brief. Say what is needed and by when, and offer help if something is in the way.
+- A parent about their own task (purpose "late" or "upcoming", and the task's owner is that parent): courteous and brief. Say what is needed and by when, and offer help if something is in the way.
+- A parent about their student's task that is not late yet (purpose "upcoming", and the task's owner is the student): a short heads-up so they know what is coming. Say what is due and when. Nothing is needed from them.
 - A parent about their student's late task (purpose "escalation"): a heads-up, not an alarm. Say what is late, that the counselor is following up with the student directly, and that a word at home would help. Nothing the student would expect to stay between them and the counselor.
 
 Match the channel: a text, WeChat or LINE message is a few short sentences with no subject line or sign-off block; an email can have a greeting line and the counselor's first name at the end.
 
 bodyEn is always filled in. bodyLocal is the message in the recipient's language, or null when their language is "en".
+
+${PERSONAL_NOTE}
+Things to remember are only ever given for a message to the student. A message to a parent never has a personal line, and its usedNoteId is null.
 
 ${CHINESE}`,
     user: (input) => {
@@ -207,8 +231,12 @@ ${CHINESE}`,
         `Today is ${input.facts.today}. Write to ${who}. Channel: ${input.channel}. Language: ${input.language}. Purpose: ${input.purpose}.`,
         wrap('task', JSON.stringify(input.task, null, 1)),
         factsBlock(input.facts),
+        // GUARDRAIL: a parent's message is never shown the student's personal notes, whatever the request carried.
+        input.recipient.kind === 'student' ? notesBlock(input.personalNotes) : '',
         'Draft the reminder.',
-      ].join('\n\n')
+      ]
+        .filter(Boolean)
+        .join('\n\n')
     },
   },
 
@@ -265,7 +293,10 @@ The facts are fixed strings computed by our system, and the counselor's screen c
 - the meeting string as written (for example "Tue, Nov 26 at 4:00 PM", not "Tuesday at 4");
 - the phrase "and N more";
 - the link.
-If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so there is nothing else to draw on.
+If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so apart from one thing to remember (below) there is nothing else to draw on.
+
+${PERSONAL_NOTE}
+In this text a personal line is one short sentence, either straight after the greeting or just before the link. It counts toward maxChars: if the fixed strings leave no room, leave it out.
 
 The "text" field is sent to the student exactly as you return it. Compose the message in your head first and return only the finished version: one clean pass, with no corrections, second attempts, notes to the counselor or comments about the draft.
 
@@ -276,7 +307,10 @@ Language: write in the language given. The fixed strings stay exactly as they ar
       [
         `Today is ${input.today}. The student's first name is ${input.studentFirstName}. The counselor's first name is ${input.counselorFirstName}. Language: ${input.language}. maxChars: ${input.maxChars}.`,
         wrap('facts', JSON.stringify({ meeting: input.meeting ?? null, late: input.late, due: input.due, more: input.more, link: input.link ?? null }, null, 1)),
+        notesBlock(input.personalNotes),
         'Write the text.',
-      ].join('\n\n'),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
   },
 }

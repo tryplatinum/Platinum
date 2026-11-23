@@ -150,7 +150,7 @@ function ApprovalCard({ item }: { item: ApprovalItem }) {
           <div className="grid grid-cols-3 gap-2">
             <Tile n={ai.draftTasks.filter((t) => t.review === 'pending').length} label="new tasks" />
             <Tile n={ai.parentUpdates.filter((u) => u.review === 'pending').length} label="parent updates" />
-            <Tile n={ai.profileChanges.filter((c) => c.review === 'pending').length} label="profile changes" />
+            <Tile n={ai.profileChanges.filter((c) => c.review === 'pending').length + (ai.personalNotes ?? []).filter((p) => p.review === 'pending').length} label="profile and notes" />
           </div>
         )}
         {bullets.length > 0 && (

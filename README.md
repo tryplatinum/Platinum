@@ -29,7 +29,8 @@ npm run dev                    # http://localhost:5173
 | `npm run db:push` | Apply the SQL in `supabase/migrations/` to the linked Supabase project |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` from the linked project |
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
-| `npm run test:ai` | Call all seven AI features for real and print the drafts |
+| `npm run test:notes` | Check, with no keys or network, that a student's "things to remember" cannot reach a parent report, a parent reminder or the student link's code |
+| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls) |
 
 ### Environment variables
 
@@ -78,6 +79,8 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | Approvals | **Real.** Drafts become tasks, profile changes, recaps and reports only on approval, with the approver's name, account id and time |
 | Sending (email, text, WeChat, LINE) | **Faked.** Every send writes to Messages sent and the confirmation says "Delivery is not connected in v0" |
 | Weekly text to each student | **Real** drafts and a real record of what was sent or skipped each week. **You** send each text from your own phone ("Copy" or "Open in Messages"); Platinum texts nobody |
+| Things to remember about each student | **Real.** Personal details a student mentioned, suggested by the AI from meeting notes or typed in, saved only on approval, and used for one line in a text to the student |
+| "Also tell parent" | **Real** setting per student and a real, separate draft to the main contact. Like every message, **you** deliver it |
 | Reminder rules and queue | Real rules, real queue, fixed wording. No scheduler: a button stands in for the daily send |
 | Report schedule | A recorded intention. Nothing is drafted on a timer |
 | Meeting recording | None. You paste or type notes or a transcript |
@@ -114,6 +117,29 @@ Messages → **Weekly texts** lists every included student who has a late task, 
 - **The link is the student's own no-login link.** One is created when a text is drafted if the student has none. Links are now kept so they can be reused each week (see below). When the app is open at an address only your computer can reach (localhost), the link is left out and the screen says so.
 - **You send it.** "Copy" puts the text on the clipboard. "Open in Messages" is an `sms:` link that opens your own messaging app with the number and text filled in; on a computer without one, nothing happens, so Copy is always beside it. Pressing either is your approval: it records who and when, writes the text to Messages sent with the note "Sent from your own phone", and marks that week's text sent. Platinum cannot know whether you then pressed send on your phone.
 - **Students have no language setting yet**, so the text is in English.
+- **One personal line, at most.** See "What the AI knows about each student" below. Your private notes on the Profile tab are still never sent to this feature.
+
+### What the AI knows about each student
+
+A counselor who remembers that a student has a tournament on Saturday sounds like someone who listens. "Things to remember" holds those details.
+
+- **Where they come from.** When the AI drafts the follow-through from a meeting, it also returns up to three personal details the student mentioned, each with the sentence that prompted it and a date if one was said. They appear in the meeting review as "Things to remember", and you approve, edit or dismiss each one, exactly like profile changes. Only approved ones are saved. You can also type one in on the student's Overview, where saved notes are listed newest first and can be deleted.
+- **What is left out.** The model is told not to infer or embellish, and to leave out health, sleep, stress and mood, family conflict and money, discipline, relationships, and anything the student asked to keep private. That is an instruction to a model, not a guarantee: read each one before approving it.
+- **Where they are used.** A weekly text or a reminder **to the student** is offered up to three notes, chosen in `src/lib/derive.ts` (`notesWorthMentioning`): first those with an event in the next 14 days or the last 7, then undated notes saved in the last 30 days. An undated note older than 30 days, or an event more than 7 days past, is not offered. The model may use at most one, only where it fits, and may add nothing to it. It returns the id of the note it used, and the draft shows **"Used: …"** with **"Redraft without it"**. A weekly text is offered notes only when its facts leave room for one more line.
+- **Where they are never used.** Nothing a parent reads, and not the student link:
+  - `notesForDraft` in `src/lib/facts.ts` is the only function that turns a note into request data, and it returns nothing unless the message is to the student. `buildFacts` and `reportFacts`, which feed parent reports and parent updates, do not contain notes.
+  - On the server, only `weeklyText` and `reminderDraft` have a field for notes (`shared/contract.ts`). Any other request has them dropped when it is parsed, and a reminder to a parent that carries notes is refused with a 400.
+  - `server/studentLink.ts` reads no `personal_notes` rows and returns an empty list.
+  - `npm run test:notes` builds every parent report and parent reminder request for the sample caseload and fails if any note text is in one; `npm run test:isolation` does the same for the real student link response.
+- These are not your private notes on the Profile tab. Those still go only to your pre-meeting brief.
+
+### The parent copy
+
+Each student has a setting on the Family card, **Also tell a parent**: always, only when slipping (the default), or never.
+
+- **Slipping** means the student has a late task of their own, or is not responding. **Not responding** (`isNotResponding` in `src/lib/derive.ts`) means they have a late task and have done nothing in the app for 5 or more days since the last message to them.
+- In the reminder composer and on each weekly text row, **"Also tell parent"** starts ticked when the setting is "always", or when it is "only when slipping" and the student is slipping. With "never" it is not shown. You can tick or untick it for that one message.
+- The parent copy is **its own short draft** to the main contact, in their language and for their preferred channel, written by the existing reminder feature about one task (for a weekly text, the most overdue task, or else the next one due). It is approved and logged on its own, apart from the student's message, and it never includes a thing to remember.
 
 ### Who can call the AI endpoint
 
@@ -139,7 +165,7 @@ screen ─▶ store action ─▶ memory changes at once ─▶ data/repo.ts ─
 
 Row level security is on for every table. Each has the same four policies: the row's `firm_id` must be a firm the signed-in person belongs to. A row that belongs to a student is tied to a student of the same firm by a composite foreign key, so one firm cannot attach anything to another's student. The anon key alone has no privileges on any table or function. Firms are created only through `create_firm`, which makes the caller the owner.
 
-`npm run test:isolation` proves this on the real project with two throwaway accounts (171 checks), then deletes them.
+`npm run test:isolation` proves this on the real project with two throwaway accounts, then deletes them.
 
 ### The student link
 
@@ -177,8 +203,10 @@ src/store/store.ts        The one store. Every change to data is an action here
 src/store/session.ts      Sign-in, sign-out, the session, opening a student link
 src/store/migrate.ts      Reads data saved by versions before accounts, for the one-time import
 src/lib/derive.ts         Derived facts: late, progress, deadlines, waiting on, status,
-                          essay groups, document categories, meeting buckets, approvals
-src/lib/facts.ts          Facts sent to the AI and shown beside drafts
+                          essay groups, document categories, meeting buckets, approvals,
+                          which notes a draft may use, slipping and not responding
+src/lib/facts.ts          Facts sent to the AI and shown beside drafts; the gate that keeps
+                          things to remember out of anything a parent reads
 src/lib/reminders.ts      Reminder queue and fixed wording (three languages); weekly text facts and template
 src/services/ai.ts        The AI module. Real endpoint, labelled placeholder fallback
 src/services/studentLink.ts  The browser side of the student link
@@ -229,6 +257,11 @@ Rules of thumb:
 - **A student link does not expire on its own**, and anyone in the firm can read it. Revoke it if it leaks.
 - **Weekly texts are English only** and one caseload draft is up to one AI request per student: more than 30 students in five minutes will hit the rate limit, and the rows that failed say so and can be drafted again.
 - **A sent weekly text means "handed to you"**, not "delivered".
+- **"Used: …" is what the model says it used.** The code checks the id is one of the notes it was given, not that the wording matches the note. Read the line.
+- **A thing to remember is dated when it is saved**, so a note cannot be backdated, and the sample caseload's notes all count as new.
+- **"Not responding" only sees activity in the app** (a task started or done, a progress note, a link). A student who replied to you by text still counts as not responding. It looks at the latest 300 activity entries.
+- **A parent copy is one more AI request**, so "Draft all" reaches the limit of 30 requests in five minutes sooner when many students are slipping.
+- **A parent copy in the reminder composer is not saved** until you send it; closing the composer drops the draft. The one on a weekly text row is saved with the row.
 - **Leaving the page in the instant a change is being saved** makes the browser ask first; if you leave anyway, that change is lost.
 - **The activity list shows the latest 300 entries.** Older ones stay in the database.
 - **Placeholder drafts recognise sample students by name**, since their ids are new each time the sample is loaded.
@@ -240,5 +273,5 @@ Rules of thumb:
 - **Essay text is pasted in.** The linked Google Doc is not read. Students cannot paste drafts from their view; they attach links.
 - **"Requested and not received"** clears when anything is attached to the task; it does not check what was attached.
 - **The sample caseload's dates are fixed on the day it is loaded.** After a few days it drifts out of date; Reset demo refreshes it. Its texts name an invented counselor, not you.
-- **Few automated tests.** `npm run test:isolation` covers access rules. The screens were checked with a browser script that is not committed.
+- **Few automated tests.** `npm run test:isolation` covers access rules and `npm run test:notes` covers where things to remember may go. The screens were checked with a browser script that is not committed.
 - Drafts vary between runs. The code drops a proposed task only when its title exactly matches an open one.
