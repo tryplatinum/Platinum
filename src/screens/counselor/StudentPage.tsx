@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { LogMeetingModal } from '../../components/forms'
 import { ReminderComposer } from '../../components/ReminderComposer'
+import { StudentLinkModal } from '../../components/StudentLinkModal'
 import { Button, Modal, PageHeader, StatusPill, Tabs, useTab, type TabItem } from '../../components/ui'
 import { essaysFor, findStudent, fullName, pendingApprovals, sortByUrgency, summarize, tasksFor, isOpen } from '../../lib/derive'
 import { useData } from '../../store/store'
@@ -21,7 +22,7 @@ export default function StudentPage() {
   const data = useData()
   const { studentId } = useParams()
   const student = findStudent(data, studentId)
-  const [modal, setModal] = useState<'remind' | 'log'>()
+  const [modal, setModal] = useState<'remind' | 'log' | 'link'>()
 
   const approvals = student ? pendingApprovals(data, student.id) : []
   const tabs: TabItem<TabKey>[] = [
@@ -68,6 +69,7 @@ export default function StudentPage() {
         sub={facts.join(' · ')}
         actions={
           <>
+            <Button onClick={() => setModal('link')}>Student link</Button>
             <Button variant="remind" onClick={() => setModal('remind')} disabled={!remindTask}>
               Remind
             </Button>
@@ -86,6 +88,7 @@ export default function StudentPage() {
       {tab === 'reports' && <ReportsTab student={student} />}
       {tab === 'profile' && <ProfileTab student={student} />}
 
+      {modal === 'link' && <StudentLinkModal student={student} onClose={() => setModal(undefined)} />}
       {modal === 'log' && <LogMeetingModal studentId={student.id} onClose={() => setModal(undefined)} />}
       {modal === 'remind' && remindTask && (
         <Modal title={`Remind about “${remindTask.title}”`} onClose={() => setModal(undefined)} wide>

@@ -1,5 +1,6 @@
-// Carries saved data forward when the data shapes change, so a counselor's own
-// students survive an update. Add one step per schema bump; never discard.
+// Reads data saved in the browser by versions before accounts, and carries it
+// forward to the current shapes, so the one-time import (store.importLegacyData)
+// can copy it into a firm. Nothing new is saved in this format.
 
 import type { AppData, Channel, DocCategory, DocumentKind, EssayStatus, Meeting, Parent, Student, StudentDocument } from '../types'
 

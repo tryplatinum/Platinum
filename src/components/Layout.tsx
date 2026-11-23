@@ -7,18 +7,17 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
 import { reminderQueue } from '../lib/reminders'
+import { signOut } from '../store/session'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
-import { Button, Field, Modal, cx, inputClass, useToast } from './ui'
+import { Button, Card, Field, Modal, cx, inputClass, useToast } from './ui'
 
 export function CounselorLayout() {
   const data = useData()
-  const session = useStore((s) => s.session)
+  const email = useStore((s) => (s.account.status === 'ready' ? s.account.email : ''))
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [location.pathname, location.search])
-
-  if (!session.signedIn) return <Navigate to="/signin" replace state={{ from: location.pathname + location.search }} />
 
   const nav = [
     { to: '/app', label: 'Command center', end: true, badge: pendingApprovalCount(data), badgeLabel: 'waiting for approval' },
@@ -71,6 +70,8 @@ export function CounselorLayout() {
               {data.firm.name}
               <br />
               Signed in as {data.firm.counselorName}
+              <br />
+              <span className="break-all">{email}</span>
             </p>
           </div>
         </div>
@@ -78,6 +79,7 @@ export function CounselorLayout() {
 
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
         <div className="mx-auto flex max-w-[1240px] flex-col gap-6">
+          <LegacyImport />
           <Outlet />
         </div>
       </main>
@@ -90,7 +92,7 @@ function SidebarMenu() {
   const data = useData()
   const navigate = useNavigate()
   const toast = useToast()
-  const { resetDemo, startEmpty, signOut } = useStore.getState()
+  const { resetDemo, startEmpty } = useStore.getState()
   const [settings, setSettings] = useState(false)
   const students = activeStudents(data)
   const item = 'flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium hover:bg-sidebar-active'
@@ -123,10 +125,13 @@ function SidebarMenu() {
           type="button"
           className={item}
           onClick={() => {
-            if (window.confirm('Reset to the sample caseload? Everything you have entered will be replaced with the invented demo students.')) {
-              resetDemo()
-              toast('Sample caseload restored.')
-            }
+            // Deleting a firm's data cannot be undone, so it takes a typed word, not a click.
+            const typed = window.prompt('Reset to the sample caseload? This permanently deletes every student, task, meeting and message in your firm and loads the invented demo students.\n\nType RESET to confirm.')
+            if (typed === null) return
+            if (typed.trim() !== 'RESET') return toast('Nothing was changed. Type RESET exactly to confirm.')
+            resetDemo()
+            navigate('/app')
+            toast('Sample caseload loaded.')
           }}
         >
           Reset demo
@@ -135,16 +140,17 @@ function SidebarMenu() {
           type="button"
           className={item}
           onClick={() => {
-            if (window.confirm('Start with an empty firm? All students, tasks, meetings and messages will be removed so you can enter your own.')) {
-              startEmpty()
-              navigate('/app/students')
-              toast('Empty firm ready. Add your first student.')
-            }
+            const typed = window.prompt('Start with an empty firm? This permanently deletes every student, task, meeting and message in your firm.\n\nType DELETE to confirm.')
+            if (typed === null) return
+            if (typed.trim() !== 'DELETE') return toast('Nothing was changed. Type DELETE exactly to confirm.')
+            startEmpty()
+            navigate('/app/students')
+            toast('Empty firm ready. Add your first student.')
           }}
         >
           Start empty
         </button>
-        <button type="button" className={item} onClick={signOut}>
+        <button type="button" className={item} onClick={() => void signOut()}>
           Sign out
         </button>
       </div>
@@ -185,7 +191,45 @@ function FirmSettings({ onClose }: { onClose: () => void }) {
   )
 }
 
-/** The student's own view: a slim bar for getting back, and a phone-width column. */
+/**
+ * Offered once, to a counselor whose browser still holds data from the version
+ * before accounts: copy it into the firm, or leave it behind.
+ */
+function LegacyImport() {
+  const { hasLegacyData, importLegacyData, dismissLegacyData } = useStore.getState()
+  const toast = useToast()
+  const [show, setShow] = useState(hasLegacyData)
+  if (!show) return null
+  return (
+    <Card tone="accent" className="flex flex-wrap items-center justify-between gap-3 p-4">
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="font-semibold">This browser has students saved from before accounts existed.</span> Import them into your firm, or leave them behind. Either way they are removed from this browser.
+      </p>
+      <div className="flex gap-2">
+        <Button
+          variant="primary"
+          onClick={() => {
+            toast(importLegacyData() ? 'Imported the data saved in this browser.' : 'There was nothing to import.')
+            setShow(false)
+          }}
+        >
+          Import the data saved in this browser
+        </Button>
+        <Button
+          onClick={() => {
+            if (!window.confirm('Leave that data behind? It will be removed from this browser and cannot be imported later.')) return
+            dismissLegacyData()
+            setShow(false)
+          }}
+        >
+          Not needed
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+/** The counselor's preview of a student's own view: a slim bar for getting back, and a phone-width column. */
 export function StudentLayout() {
   const data = useData()
   const navigate = useNavigate()

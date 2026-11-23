@@ -1,79 +1,57 @@
-// The only server code in Platinum v0: POST /api/ai with { feature, input }
-// returns that feature's draft from Claude. Deploys as a Vercel function next
-// to the static site; in local dev the Vite server mounts it (vite.config.ts).
+// POST /api/ai with { feature, input } returns that feature's draft from
+// Claude. Deploys as a Vercel function next to the static site; in local dev
+// the Vite server mounts it (vite.config.ts).
 //
-// There are no accounts yet, so this endpoint protects itself as a STOPGAP:
-//   1. a shared passcode (PLATINUM_PASSCODE) sent in a header,
-//   2. a cap on request size,
-//   3. a simple per-address rate limit.
-// Replace all three with real sign-in when accounts exist.
+// Who may call it: a signed-in member of a firm. The request must carry
+//   Authorization: Bearer <Supabase access token>
+// which is verified with Supabase on every call. On top of that there is a cap
+// on request size and a rate limit per person (in memory: see server/rateLimit.ts).
 //
 // Nothing is stored here. The request carries the facts, the response carries
-// the draft, and neither is logged.
+// the draft, and neither is logged. This function never writes to the database.
 
-import { timingSafeEqual } from 'node:crypto'
-import { FEATURES, INPUTS, MAX_REQUEST_BYTES, PASSCODE_HEADER, type AiErrorCode, type AiStatus, type Feature } from '../shared/contract.js'
+import { FEATURES, INPUTS, MAX_REQUEST_BYTES, type AiErrorCode, type AiStatus, type Feature } from '../shared/contract.js'
 import { AiError, modelName, runFeature } from '../server/claude.js'
+import { addressOf, rateLimited } from '../server/rateLimit.js'
+import { authConfigured, identify } from '../server/supabase.js'
 
 /** Vercel: allow time for a long draft. */
 export const config = { maxDuration: 120 }
+
+/** AI requests per person per five minutes. */
+const MAX_PER_USER = 30
+/** Requests per address per five minutes, counted before sign-in is checked. */
+const MAX_PER_ADDRESS = 120
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 const fail = (code: AiErrorCode, message: string, status: number) => json({ ok: false, code, message }, status)
 
-// ── Rate limit ──────────────────────────────────────────────────────────────
-// In memory, per server instance. Serverless instances do not share memory, so
-// this slows abuse down; it does not stop a determined caller.
-const WINDOW_MS = 5 * 60_000
-const MAX_PER_WINDOW = 30
-const hits = new Map<string, number[]>()
-
-function rateLimited(key: string): boolean {
-  const now = Date.now()
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS)
-  if (recent.length >= MAX_PER_WINDOW) {
-    hits.set(key, recent)
-    return true
-  }
-  recent.push(now)
-  hits.set(key, recent)
-  if (hits.size > 5_000) hits.clear()
-  return false
-}
-
-function passcodeMatches(given: string | null, expected: string): boolean {
-  if (!given) return false
-  const a = Buffer.from(given)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
-
-// ── Handlers ────────────────────────────────────────────────────────────────
-
 /** Tells the browser whether real drafts are available. Reveals no secrets. */
 export function GET(): Response {
   const status: AiStatus = {
     ok: true,
     hasKey: Boolean(process.env.ANTHROPIC_API_KEY),
-    hasPasscode: Boolean(process.env.PLATINUM_PASSCODE),
+    hasAuth: authConfigured(),
     model: modelName(),
   }
   return json(status)
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const passcode = process.env.PLATINUM_PASSCODE
-  // Fail closed: without a passcode configured, the endpoint does nothing.
-  if (!passcode) return fail('no_passcode_configured', 'PLATINUM_PASSCODE is not set on the server.', 503)
+  // Fail closed: if sign-ins cannot be checked, the endpoint does nothing.
+  if (!authConfigured()) return fail('not_configured', 'The server has no Supabase settings, so it cannot check who is asking.', 503)
+  if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return fail('rate_limited', 'Too many requests. Wait a few minutes and try again.', 429)
 
-  const address = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
-  if (rateLimited(address)) return fail('rate_limited', 'Too many AI requests. Wait a few minutes and try again.', 429)
-
-  if (!passcodeMatches(request.headers.get(PASSCODE_HEADER), passcode)) {
-    return fail('bad_passcode', 'The AI passcode is missing or wrong.', 401)
+  const caller = await identify(request)
+  if (!caller.ok) {
+    return caller.reason === 'no_firm'
+      ? fail('no_firm', 'Your account does not belong to a firm yet.', 403)
+      : fail('unauthorized', 'Sign in again to use AI drafts.', 401)
   }
+  if (rateLimited(`user:${caller.userId}`, MAX_PER_USER)) return fail('rate_limited', 'Too many AI requests. Wait a few minutes and try again.', 429)
+
   if (!process.env.ANTHROPIC_API_KEY) return fail('no_key', 'ANTHROPIC_API_KEY is not set on the server.', 503)
 
   const raw = await request.text()

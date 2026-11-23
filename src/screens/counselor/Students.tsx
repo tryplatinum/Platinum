@@ -10,7 +10,7 @@ import { useData, useStore } from '../../store/store'
 
 export default function Students() {
   const data = useData()
-  const { archiveStudent, resetDemo } = useStore.getState()
+  const { archiveStudent, loadSample } = useStore.getState()
   const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
   const all = summarizeAll(data)
@@ -39,7 +39,7 @@ export default function Students() {
               <Button variant="primary" onClick={() => setAdding(true)}>
                 Add student
               </Button>
-              <Button onClick={resetDemo}>Load the sample caseload</Button>
+              <Button onClick={loadSample}>Load the sample caseload</Button>
             </div>
           </Empty>
         ) : rows.length === 0 ? (

@@ -94,13 +94,16 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
 
 function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student: Student; viewer: Viewer; onDeleted: () => void }) {
   const { updateTaskProgress, updateTask, attachToTask, deleteTask } = useStore.getState()
+  // A student on their secret link can attach a link, not a file.
+  const onLink = useStore((s) => s.mode === 'student_link')
   const [note, setNote] = useState(task.progressNote ?? '')
   const [url, setUrl] = useState('')
 
   const addLink = () => {
     const link = url.trim()
     if (!link) return
-    attachToTask(task.id, { kind: 'link', name: link.includes('docs.google.com') ? `${task.title} (Google Doc)` : link.replace(/^https?:\/\//, '').slice(0, 60), url: link }, viewer)
+    const href = /^https?:\/\//i.test(link) ? link : `https://${link}`
+    attachToTask(task.id, { kind: 'link', name: link.includes('docs.google.com') ? `${task.title} (Google Doc)` : link.replace(/^https?:\/\//, '').slice(0, 60), url: href }, viewer)
     setUrl('')
   }
 
@@ -140,7 +143,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
         <Button type="submit" disabled={!url.trim()}>
           Add link
         </Button>
-        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-canvas">
+        {!onLink && <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-canvas">
           <input
             type="file"
             className="sr-only"
@@ -152,7 +155,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
             }}
           />
           Add a file
-        </label>
+        </label>}
       </form>
       <p className="-mt-1 text-xs text-muted">v0 records the file’s name only. The file itself is not stored.</p>
 

@@ -5,8 +5,8 @@
 //   2. asks the server function /api/ai, which calls Claude,
 //   3. turns the answer into a draft with review: 'pending'.
 //
-// If the endpoint is not there, has no API key, or no passcode has been
-// entered, the function returns a PLACEHOLDER draft instead and marks it
+// If the endpoint is not there, or the server has no API key, the function
+// returns a PLACEHOLDER draft instead and marks it
 // `source: { kind: 'placeholder' }` so the interface can label it. If the
 // endpoint is there but fails (refusal, cut-off, rate limit), the function
 // throws an AiFailure with a message the screen shows.
@@ -53,6 +53,8 @@ import type {
   Task,
 } from '../types'
 import { AiFailure, AiUnavailable, callAi } from './aiClient'
+import { swapIds } from '../data/ids'
+import { buildSeed } from '../data/seed'
 
 export { AiFailure } from './aiClient'
 
@@ -75,6 +77,23 @@ const claude = (model: string): AiSource => ({ kind: 'claude', model })
 
 let sequence = 0
 const draftId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++sequence}`
+
+/**
+ * Placeholder drafts for the sample caseload were written against its original
+ * ids ("s-kevin"). Loading the sample gives every row a fresh id, so a sample
+ * student is recognised by name, and a prepared draft is rewritten to the ids
+ * that student and their parents really have.
+ */
+function sampleStudent(student: Student): { id: string; withRealIds: <T>(draft: T) => T } | undefined {
+  const original = buildSeed().students.find((s) => s.firstName === student.firstName && s.lastName === student.lastName)
+  if (!original) return undefined
+  const ids = new Map([[original.id, student.id]])
+  for (const parent of original.parents) {
+    const real = student.parents.find((p) => p.name === parent.name)
+    if (real) ids.set(parent.id, real.id)
+  }
+  return { id: original.id, withRealIds: (draft) => swapIds(draft, ids) }
+}
 
 function checkLength(text: string, what: string): void {
   if (text.length > MAX_TEXT_CHARS) {
@@ -146,12 +165,9 @@ export function draftFromMeeting(data: AppData, meeting: Meeting, student: Stude
       return meetingDraftsFrom(draft, student, data, claude(model))
     },
     (source) => {
+      const known = sampleStudent(student)
       const sample =
-        meeting.id === IDS.kevinMeeting
-          ? kevinMeetingDrafts()
-          : meeting.id === IDS.danielMeeting
-            ? danielMeetingDrafts()
-            : genericMeetingDrafts(student.firstName)
+        known?.id === IDS.kevin ? known.withRealIds(kevinMeetingDrafts()) : known?.id === IDS.daniel ? known.withRealIds(danielMeetingDrafts()) : genericMeetingDrafts(student.firstName)
       return { ai: { ...sample.ai, source }, recap: sample.recap }
     },
   )
@@ -195,7 +211,7 @@ export function readNotes(data: AppData, text: string, student: Student): Promis
       return { summary: draft.summary, tasks: toDraftTasks(draft.tasks, student, data), source: claude(model) }
     },
     (source) => {
-      if (student.id === IDS.sophia && text.includes('closing-shift')) return { ...sampleNoteResult(), source }
+      if (sampleStudent(student)?.id === IDS.sophia && text.includes('closing-shift')) return { ...sampleNoteResult(), source }
       // Placeholder for any other text: one task per bullet line, for the student, due in a week.
       const lines = text
         .split('\n')
@@ -408,7 +424,8 @@ export function essayFeedback(doc: StudentDocument, student: Student): Promise<E
       }
     },
     (source) => {
-      const sample = doc.id === IDS.kevinEssay ? kevinEssayFeedback() : doc.id === IDS.sophiaEssay ? sophiaEssayFeedback() : genericEssayFeedback()
+      const known = sampleStudent(student)?.id
+      const sample = known === IDS.kevin ? kevinEssayFeedback() : known === IDS.sophia ? sophiaEssayFeedback() : genericEssayFeedback()
       return { ...sample, draftN: draft?.n, source }
     },
   )

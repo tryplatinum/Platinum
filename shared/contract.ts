@@ -14,7 +14,7 @@ import { z } from 'zod'
 
 import { MAX_TEXT_CHARS } from './constants.js'
 
-export { MAX_REQUEST_BYTES, MAX_TEXT_CHARS, PASSCODE_HEADER } from './constants.js'
+export { MAX_REQUEST_BYTES, MAX_TEXT_CHARS } from './constants.js'
 
 const text = (max = 400) => z.string().max(max)
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -242,8 +242,9 @@ export type FeatureOutput<F extends Feature> = z.infer<(typeof OUTPUTS)[F]>
 
 export type AiErrorCode =
   | 'no_key' // ANTHROPIC_API_KEY is not set on the server
-  | 'no_passcode_configured' // PLATINUM_PASSCODE is not set on the server
-  | 'bad_passcode'
+  | 'not_configured' // the server has no Supabase settings, so it cannot check who is asking
+  | 'unauthorized' // no valid session
+  | 'no_firm' // signed in, but not a member of any firm
   | 'rate_limited'
   | 'too_large'
   | 'bad_request'
@@ -260,6 +261,7 @@ export type AiResponse<F extends Feature> =
 export interface AiStatus {
   ok: true
   hasKey: boolean
-  hasPasscode: boolean
+  /** The server can verify sign-ins. */
+  hasAuth: boolean
   model: string
 }

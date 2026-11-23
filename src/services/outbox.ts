@@ -14,7 +14,7 @@ export type OutgoingMessage = Omit<OutboxMessage, 'id' | 'sentAt'>
 export function simulateSend(message: OutgoingMessage): OutboxMessage {
   return {
     ...message,
-    id: `o-${crypto.randomUUID().slice(0, 12)}`,
+    id: crypto.randomUUID(),
     sentAt: nowTimestamp(),
   }
 }
