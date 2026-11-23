@@ -40,6 +40,7 @@ import type {
   StudentLink,
   Task,
   TaskStatus,
+  WeeklyText,
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
 
@@ -103,7 +104,7 @@ interface Actions {
   /** Makes a secret link for a student and returns its token. The token cannot be read again later. */
   createStudentLink: (studentId: ID) => Promise<string>
   revokeStudentLink: (linkId: ID) => Promise<void>
-  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName'>>) => void
+  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay'>>) => void
 
   // Students and families
   addStudent: (student: NewStudent) => ID
@@ -167,6 +168,19 @@ interface Actions {
 
   // Messages
   updateRule: (id: ReminderRule['id'], patch: Partial<Pick<ReminderRule, 'mode' | 'days'>>) => void
+  // Weekly texts
+  /** Stores this week's draft for a student, replacing an earlier draft. Nothing is sent. */
+  setWeeklyDraft: (studentId: ID, weekStart: string, draft: Pick<WeeklyText, 'body' | 'facts' | 'source'>) => void
+  updateWeeklyText: (id: ID, body: string) => void
+  /**
+   * The counselor pressed Copy or Open in Messages, which is their approval:
+   * records who and when, logs the text, and marks this week's text sent.
+   */
+  sendWeeklyText: (id: ID, via: 'copy' | 'sms') => void
+  skipWeeklyText: (studentId: ID, weekStart: string) => void
+  /** Puts a skipped student back on this week's list. */
+  unskipWeeklyText: (id: ID) => void
+
   /** Writes one message to the "Messages sent" log. Nothing is delivered in v0. */
   sendMessage: (message: OutgoingMessage) => void
 }
@@ -262,6 +276,7 @@ function emptyData(firm: Firm): AppData {
     outbox: [],
     reminderRules: DEFAULT_REMINDER_RULES.map((r) => ({ ...r })),
     activity: [],
+    weeklyTexts: [],
   }
 }
 
@@ -277,10 +292,11 @@ function merged(base: AppData, add: AppData): AppData {
     reports: [...add.reports, ...base.reports],
     outbox: [...add.outbox, ...base.outbox],
     activity: [...add.activity, ...base.activity].slice(0, ACTIVITY_LIMIT),
+    weeklyTexts: [...base.weeklyTexts, ...add.weeklyTexts],
   }
 }
 
-const NO_FIRM: Firm = { name: '', counselorName: '', counselorFirstName: '' }
+const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, counselorName: '', counselorFirstName: '' }
 
 // ── Writing changes to the database ─────────────────────────────────────────
 // Writes run one at a time, in the order the changes were made.
@@ -319,6 +335,14 @@ function save(before: AppData, after: AppData, given?: Changes) {
     .finally(() => {
       pendingWrites--
     })
+}
+
+// Leaving or reloading the page cancels a save that is still on its way, so the
+// browser asks first. Saves take well under a second; this only shows in that window.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (event) => {
+    if (pendingWrites > 0) event.preventDefault()
+  })
 }
 
 /** Inside a batch, several actions are saved as one transaction. */
@@ -384,7 +408,8 @@ export const useStore = create<State & Actions>()((set, get) => {
     try {
       const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as { state?: { schema?: unknown; data?: unknown } } | null
       const data = migrate(saved?.state?.schema, saved?.state?.data)
-      return data && data.students.length > 0 ? data : undefined
+      // Saved before weekly texts existed.
+      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [] } : undefined
     } catch {
       return undefined
     }
@@ -850,6 +875,53 @@ export const useStore = create<State & Actions>()((set, get) => {
 
     // ── Messages ──
     updateRule: (id, patch) => change((data) => ({ ...data, reminderRules: data.reminderRules.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
+
+    // ── Weekly texts ──
+    setWeeklyDraft: (studentId, weekStart, draft) =>
+      change((data) => {
+        const existing = data.weeklyTexts.find((w) => w.studentId === studentId && w.weekStart === weekStart)
+        // A text already sent or skipped this week is not redrafted.
+        if (existing && existing.status !== 'draft') return data
+        return existing
+          ? { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, ...draft })) }
+          : { ...data, weeklyTexts: [...data.weeklyTexts, { id: newId(), studentId, weekStart, status: 'draft', ...draft }] }
+      }),
+
+    updateWeeklyText: (id, body) =>
+      change((data) => {
+        const text = data.weeklyTexts.find((w) => w.id === id)
+        if (!text || text.status !== 'draft' || text.body === body) return data
+        return { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, body })) }
+      }),
+
+    sendWeeklyText: (id, via) =>
+      change((data) => {
+        const text = data.weeklyTexts.find((w) => w.id === id)
+        const student = data.students.find((s) => s.id === text?.studentId)
+        if (!text || !student || text.status !== 'draft' || !text.body.trim()) return data
+        let next: AppData = { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, status: 'sent', approval: approvalBy(data), sentVia: via })) }
+        next = deliver(next, { ...toStudent(student), channel: 'text', kind: 'weekly_text', body: text.body, trigger: 'approved', note: 'Sent from your own phone' })
+        return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} sent ${student.firstName} the weekly text`)
+      }),
+
+    skipWeeklyText: (studentId, weekStart) =>
+      change((data) => {
+        const existing = data.weeklyTexts.find((w) => w.studentId === studentId && w.weekStart === weekStart)
+        if (existing?.status === 'sent') return data
+        return existing
+          ? { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, status: 'skipped' })) }
+          : { ...data, weeklyTexts: [...data.weeklyTexts, { id: newId(), studentId, weekStart, status: 'skipped', body: '' }] }
+      }),
+
+    unskipWeeklyText: (id) =>
+      change((data) => {
+        const text = data.weeklyTexts.find((w) => w.id === id)
+        if (text?.status !== 'skipped') return data
+        // Back to a draft if there was one; otherwise the row is simply removed.
+        return text.body
+          ? { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, status: 'draft' })) }
+          : { ...data, weeklyTexts: data.weeklyTexts.filter((w) => w.id !== id) }
+      }),
 
     sendMessage: (message) => change((data) => deliver(data, message)),
   }

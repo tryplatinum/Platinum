@@ -23,7 +23,7 @@ function check(name: string, pass: boolean, detail = ''): void {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`)
 }
 
-const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'student_links'] as const
+const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'weekly_texts', 'student_links'] as const
 const ALL_TABLES = ['firms', 'firm_members', ...TABLES] as const
 
 interface Seeded {
@@ -69,6 +69,7 @@ async function seed(account: TestAccount): Promise<Seeded> {
       outbox: [{ id: randomUUID(), student_id: studentId, sent_at: new Date().toISOString(), to_kind: 'student', to_name: 'N', channel: 'text', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved' }],
       reminder_rules: [{ rule: 'student_late', days: 2, mode: 'off' }],
       activity: [{ id: randomUUID(), student_id: studentId, at: new Date().toISOString(), actor: 'counselor', text: 'seeded' }],
+      weekly_texts: [{ id: randomUUID(), student_id: studentId, week_start: '2026-11-22', status: 'draft', body: 'PRIVATE WEEKLY DRAFT' }],
     },
   }
   const applied = await account.client.rpc('apply_changes', { firm: account.firmId, changes: changes as unknown as Json })

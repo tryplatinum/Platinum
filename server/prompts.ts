@@ -242,4 +242,41 @@ notes: three to five margin notes. For each: the area, the location (such as "Pa
         'Write the margin notes.',
       ].join('\n\n'),
   },
+
+  weeklyText: {
+    effort: 'medium',
+    system: `${SITUATION}
+
+The task: write this week's check-in text from the counselor to one student. Organized counselors send every student one short text a week so that nothing sneaks up on them: when they next meet, what is late, what is due, and a link to the student's task list. The counselor will read your draft, may edit it, and then sends it from their own phone.
+
+Who reads it: a high-school student, on their phone, between other things. It should sound like a text from an adult they know and like: casual, warm and plain. Open with their first name or go straight in ("Hey Kevin," is fine). Leave out everything that belongs to an email: no "Dear", no "I hope you are well", no sign-off and no signature, because it arrives from the counselor's own number. Do not scold about late work; name it and move on. Plain text only: no markdown, no bullet characters, no emoji.
+
+What it contains, in this order:
+1. The next meeting, if one is given.
+2. Late tasks, each with its due date and how late it is.
+3. Tasks due soon, each with its due date.
+4. If "more" is above 0, one short sentence of its own after the lists that contains the words "and N more" with that number (for example "And 2 more on your list."), so the student knows the lists are not complete. When "more" is 0, say nothing about more.
+5. The link, if one is given, at the very end, after a short lead-in such as "Your list:".
+
+The facts are fixed strings computed by our system, and the counselor's screen checks the text for each of them. Copy every one into the text character for character:
+- each task title, inside “ ” quotation marks, not reworded, shortened or re-capitalised;
+- each due date as written;
+- each "N days late" phrase as written;
+- the meeting string as written (for example "Tue, Nov 26 at 4:00 PM", not "Tuesday at 4");
+- the phrase "and N more";
+- the link.
+If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so there is nothing else to draw on.
+
+The "text" field is sent to the student exactly as you return it. Compose the message in your head first and return only the finished version: one clean pass, with no corrections, second attempts, notes to the counselor or comments about the draft.
+
+Length: the whole text, link included, must be at most maxChars characters. The fixed strings take up most of that, so keep the words around them few.
+
+Language: write in the language given. The fixed strings stay exactly as they are in every language.`,
+    user: (input) =>
+      [
+        `Today is ${input.today}. The student's first name is ${input.studentFirstName}. The counselor's first name is ${input.counselorFirstName}. Language: ${input.language}. maxChars: ${input.maxChars}.`,
+        wrap('facts', JSON.stringify({ meeting: input.meeting ?? null, late: input.late, due: input.due, more: input.more, link: input.link ?? null }, null, 1)),
+        'Write the text.',
+      ].join('\n\n'),
+  },
 }

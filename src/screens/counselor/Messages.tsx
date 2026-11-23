@@ -1,16 +1,18 @@
-// Messages sent. Sent: the log of everything that "went out". Queue: reminders
-// that are due under the rules. Rules: what is automatic and what waits.
+// Messages sent. Sent: the log of everything that "went out". Weekly texts: the
+// week's short text to each student. Queue: reminders that are due under the
+// rules. Rules: what is automatic and what waits.
 // v0 logs messages and does not deliver them; the page says so at the top.
 
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, SENT_NOTE, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
-import { activeStudents, findStudent, fullName } from '../../lib/derive'
+import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
 import type { OutboxKind, OutboxMessage, ReminderMode } from '../../types'
+import WeeklyTexts from './WeeklyTexts'
 
 const KIND_LABEL: Record<OutboxKind, string> = {
   parent_report: 'Parent report',
@@ -18,6 +20,7 @@ const KIND_LABEL: Record<OutboxKind, string> = {
   reminder_late: 'Reminder: late',
   meeting_recap: 'Meeting recap',
   essay_feedback: 'Essay feedback',
+  weekly_text: 'Weekly text',
 }
 
 const MODES: { value: ReminderMode; label: string }[] = [
@@ -26,13 +29,14 @@ const MODES: { value: ReminderMode; label: string }[] = [
   { value: 'off', label: 'Off' },
 ]
 
-type TabKey = 'sent' | 'queue' | 'rules'
+type TabKey = 'sent' | 'weekly' | 'queue' | 'rules'
 
 export default function Messages() {
   const data = useData()
   const queue = reminderQueue(data)
   const tabs: TabItem<TabKey>[] = [
     { key: 'sent', label: 'Sent' },
+    { key: 'weekly', label: 'Weekly texts', count: weeklyTextRows(data).length },
     { key: 'queue', label: 'Queue', count: queue.length },
     { key: 'rules', label: 'Rules' },
   ]
@@ -47,6 +51,7 @@ export default function Messages() {
       </p>
       <Tabs tabs={tabs} label="Messages" />
       {tab === 'sent' && <Sent />}
+      {tab === 'weekly' && <WeeklyTexts />}
       {tab === 'queue' && <Queue queue={queue} />}
       {tab === 'rules' && <Rules />}
     </>
@@ -166,6 +171,7 @@ function LogRow({ message: m }: { message: OutboxMessage }) {
         <span className="flex flex-wrap items-center gap-2">
           <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'neutral'}>{KIND_LABEL[m.kind]}</Pill>
           <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Automatic rule'}</Pill>
+          {m.note && <Pill>{m.note}</Pill>}
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
           <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? 'Hide' : 'View'}

@@ -4,7 +4,7 @@
 //
 // Needs ANTHROPIC_API_KEY and the three Supabase settings in .env.local. The
 // endpoint only answers signed-in members of a firm, so the run creates a
-// throwaway account and firm and deletes them at the end. Each run makes six
+// throwaway account and firm and deletes them at the end. Each run makes seven
 // real model calls. Pass a feature name to run just one:
 //   npm run test:ai -- parentReport
 
@@ -13,7 +13,8 @@ import type { Feature } from '../shared/contract.js'
 import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '../src/data/fixtures.js'
 import { buildSeed } from '../src/data/seed.js'
 import { formatDate, formatDateZh } from '../src/lib/dates.js'
-import { daysLate } from '../src/lib/derive.js'
+import { daysLate, weeklyTextItems } from '../src/lib/derive.js'
+import { WEEKLY_TEXT_MAX, weeklyTextFacts, weeklyTextMissing } from '../src/lib/reminders.js'
 import { briefFacts, buildFacts, reportFacts } from '../src/lib/facts.js'
 import { createAccount, removeAccount, requireSettings } from './testAccounts.js'
 
@@ -28,7 +29,7 @@ const kevinNext = data.meetings.find((m) => m.studentId === kevin.id && m.status
 const brief = briefFacts(data, kevinNext, kevin)
 const lateParentTask = data.tasks.find((t) => t.studentId === kevin.id && t.owner === 'parent' && t.status !== 'done')!
 
-const inputs: Record<Feature, unknown> = {
+const inputs: Partial<Record<Feature, unknown>> = {
   draftFromMeeting: {
     facts: buildFacts(data, kevin),
     meeting: { title: kevinMeeting.title, date: kevinMeeting.date },
@@ -59,6 +60,21 @@ const inputs: Record<Feature, unknown> = {
   },
 }
 
+// A realistic weekly text: Kevin's own late and upcoming tasks, his next meeting, an invented link.
+const kevinWeekly = weeklyTextFacts(kevin, data.firm.counselorFirstName, weeklyTextItems(data, kevin.id) ?? { late: [], due: [] }, 'https://platinum.example/s/Lka1hSX5xoW6d5u4VfaKiSq-hkmUPMrnHfK0bG63aRY')
+inputs.weeklyText = {
+  today: data.students.length ? new Date().toISOString().slice(0, 10) : '',
+  studentFirstName: kevinWeekly.firstName,
+  counselorFirstName: kevinWeekly.counselorFirstName,
+  language: 'en',
+  meeting: kevinWeekly.meeting,
+  late: kevinWeekly.late,
+  due: kevinWeekly.due,
+  more: kevinWeekly.more,
+  link: kevinWeekly.link,
+  maxChars: WEEKLY_TEXT_MAX,
+}
+
 const only = process.argv[2] as Feature | undefined
 let failed = 0
 const account = await createAccount('AI')
@@ -78,6 +94,11 @@ for (const feature of Object.keys(inputs) as Feature[]) {
   console.log(`\n━━ ${feature} · HTTP ${response.status} · ${seconds}s ${'━'.repeat(40)}`)
   console.log(JSON.stringify(body, null, 2))
   if (!body.ok) failed += 1
+  if (feature === 'weeklyText' && body.ok) {
+    const missing = weeklyTextMissing(body.draft.text, kevinWeekly)
+    console.log(`weeklyText: ${body.draft.text.length} characters (limit ${WEEKLY_TEXT_MAX}); facts changed or missing: ${missing.length ? missing.join(' | ') : 'none'}`)
+    if (missing.length || body.draft.text.length > WEEKLY_TEXT_MAX) failed += 1
+  }
 }
 
 await removeAccount(account)

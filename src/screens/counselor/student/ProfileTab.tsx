@@ -30,6 +30,7 @@ export default function ProfileTab({ student }: { student: Student }) {
     email: student.email ?? '',
     phone: student.phone ?? '',
     preferredChannel: student.preferredChannel ?? ('text' as Channel),
+    weeklyText: student.weeklyText !== false,
     gpa: student.gpa?.toString() ?? '',
     gpaWeighted: student.gpaWeighted?.toString() ?? '',
     sat: student.tests.sat?.toString() ?? '',
@@ -56,6 +57,7 @@ export default function ProfileTab({ student }: { student: Student }) {
       email: f.email.trim() || undefined,
       phone: f.phone.trim() || undefined,
       preferredChannel: f.preferredChannel,
+      weeklyText: f.weeklyText ? undefined : false,
       gpa: toNumber(f.gpa),
       gpaWeighted: toNumber(f.gpaWeighted),
       tests: {
@@ -119,6 +121,11 @@ export default function ProfileTab({ student }: { student: Student }) {
                 ))}
               </select>
             </Field>
+            <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
+              <input type="checkbox" className="h-4 w-4" checked={f.weeklyText} onChange={(e) => set({ weeklyText: e.target.checked })} />
+              Include in the weekly texts
+              <span className="text-[13px] text-muted">(needs a phone number)</span>
+            </label>
           </div>
         </Card>
 

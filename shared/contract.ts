@@ -137,6 +137,23 @@ export const INPUTS = {
       daysLate: z.number().int().min(0),
     }),
   }),
+  weeklyText: z.object({
+    today: isoDate,
+    studentFirstName: text(60),
+    counselorFirstName: text(40),
+    language: z.enum(['en', 'zh-Hans', 'zh-Hant']),
+    // Everything below is computed by our code (src/lib/reminders.ts) and must
+    // appear in the text unchanged. The counselor's private notes are never sent.
+    /** "Tue, Nov 26 at 4:00 PM". Absent when no meeting is coming up. */
+    meeting: text(60).optional(),
+    late: z.array(z.object({ title: text(), due: text(40), late: text(40) })).max(4),
+    due: z.array(z.object({ title: text(), due: text(40) })).max(4),
+    /** Tasks not listed. Written as "and N more". */
+    more: z.number().int().min(0),
+    /** The student's own link to their tasks. */
+    link: text(300).optional(),
+    maxChars: z.number().int().min(100).max(1000),
+  }),
 } as const
 
 export type Feature = keyof typeof INPUTS
@@ -233,6 +250,10 @@ export const OUTPUTS = {
     bodyEn: z.string(),
     /** In the recipient's language. Null when they read English. */
     bodyLocal: z.string().nullable(),
+  }),
+  weeklyText: z.object({
+    /** The whole text message, ready to send. */
+    text: z.string(),
   }),
 } as const
 
