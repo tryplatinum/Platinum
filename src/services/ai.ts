@@ -28,21 +28,21 @@ import {
   sophiaEssayFeedback,
 } from '../data/fixtures'
 import { addDays, daysBetween, formatDate, formatDateZh, todayISO } from '../lib/dates'
-import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, ownerLabel, tasksFor } from '../lib/derive'
-import { briefFacts, buildFacts, reportFacts, type BriefFacts } from '../lib/facts'
+import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, tasksFor } from '../lib/derive'
+import { briefFacts, buildFacts, parentReportInput, reminderRequest, type BriefFacts, type NoteForDraft, type ReminderRecipient } from '../lib/facts'
 import { zhGiven, zhGreeting } from '../lib/language'
-import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextMissing, weeklyTextTemplate, type ReminderKind, type WeeklyTextFacts } from '../lib/reminders'
+import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks, weeklyTextTemplate, type WeeklyTextFacts } from '../lib/reminders'
 import type {
   AiSource,
   AppData,
   Channel,
+  DraftPersonalNote,
   DraftTask,
   EssayFeedback,
   ID,
   Language,
   Meeting,
   MeetingAI,
-  Parent,
   ParentReport,
   ProfileChange,
   ProfilePatch,
@@ -51,12 +51,15 @@ import type {
   Student,
   StudentDocument,
   Task,
+  UsedNote,
+  WeeklyLead,
 } from '../types'
 import { AiFailure, AiUnavailable, callAi } from './aiClient'
 import { swapIds } from '../data/ids'
 import { buildSeed } from '../data/seed'
 
 export { AiFailure } from './aiClient'
+export type { ReminderRecipient } from '../lib/facts'
 
 // ── Shared plumbing ─────────────────────────────────────────────────────────
 
@@ -143,6 +146,27 @@ function toProfileChange(s: ProfileSuggestion): ProfileChange | undefined {
   return patch && { id: draftId('pc'), label: s.label, from: s.from, to: s.to, evidence: s.evidence, patch, review: 'pending' }
 }
 
+const MAX_DRAFT_NOTES = 3
+const MAX_NOTE_CHARS = 300
+
+/** Model output → "things to remember" for review. A date is kept only if it is a real date within a year of today. */
+function toDraftNotes(proposed: FeatureOutput<'draftFromMeeting'>['personalNotes']): DraftPersonalNote[] {
+  const today = todayISO()
+  return proposed
+    .filter((p) => p.text.trim())
+    .slice(0, MAX_DRAFT_NOTES)
+    .map((p) => {
+      const date = p.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(p.eventDate) && !Number.isNaN(Date.parse(p.eventDate)) && Math.abs(daysBetween(today, p.eventDate)) <= 366 ? p.eventDate : undefined
+      return { id: draftId('pn'), text: p.text.trim().slice(0, MAX_NOTE_CHARS), evidence: p.evidence.trim(), eventDate: date, eventDateApprox: date && p.eventDateIsEstimate ? true : undefined, review: 'pending' }
+    })
+}
+
+/** The note the model says it used, if it is one of the notes it was given. */
+function usedNoteFrom(id: string | null, notes: NoteForDraft[]): UsedNote | undefined {
+  const used = notes.find((n) => n.fact.id === id)
+  return used && { id: used.note.id, text: used.note.text, stage: used.stage }
+}
+
 // ── 1. Meeting follow-through ───────────────────────────────────────────────
 
 export interface MeetingDrafts {
@@ -189,6 +213,7 @@ function meetingDraftsFrom(draft: FeatureOutput<'draftFromMeeting'>, student: St
         return [{ id: draftId('pu'), parentId: parent.id, bodyEn: u.bodyEn, bodyLocal: parent.language === 'en' ? undefined : (u.bodyLocal ?? undefined), review: 'pending' as const }]
       }),
       profileChanges: draft.profileChanges.flatMap((s) => toProfileChange(s) ?? []),
+      personalNotes: toDraftNotes(draft.personalNotes),
     },
     recap: { summary: draft.recap.summary, nextSteps: draft.recap.nextSteps, review: 'pending' },
   }
@@ -247,7 +272,7 @@ export function readNotes(data: AppData, text: string, student: Student): Promis
 export async function draftTasksOnly(data: AppData, meeting: Meeting, student: Student): Promise<MeetingDrafts> {
   const result = await readNotes(data, meeting.transcript ?? '', student)
   return {
-    ai: { source: result.source, decided: [], progress: [], watch: [], notes: [result.summary], notesReview: 'pending', draftTasks: result.tasks, parentUpdates: [], profileChanges: [] },
+    ai: { source: result.source, decided: [], progress: [], watch: [], notes: [result.summary], notesReview: 'pending', draftTasks: result.tasks, parentUpdates: [], profileChanges: [], personalNotes: [] },
   }
 }
 
@@ -321,11 +346,13 @@ export async function parentReport(data: AppData, studentId: ID, parentId: ID): 
   const student = data.students.find((s) => s.id === studentId)
   const parent = student?.parents.find((p) => p.id === parentId)
   if (!student || !parent) return undefined
-  const facts = reportFacts(data, student, parentId)
+  // Built in lib/facts.ts, which never includes a student's personal notes.
+  const input = parentReportInput(data, student, parentId)
+  const facts = input.reportFacts
 
   return withPlaceholder<ReportDraft>(
     async () => {
-      const { draft, model } = await callAi('parentReport', { facts: buildFacts(data, student), parentId, reportFacts: facts })
+      const { draft, model } = await callAi('parentReport', input)
       return {
         subject: draft.subject,
         bodyEn: draft.bodyEn,
@@ -433,8 +460,6 @@ export function essayFeedback(doc: StudentDocument, student: Student): Promise<E
 
 // ── 6. Reminder about one task ──────────────────────────────────────────────
 
-export type ReminderRecipient = { kind: 'student' } | { kind: 'parent'; parent: Parent }
-
 export interface ReminderMessage {
   toKind: 'student' | 'parent'
   toName: string
@@ -449,21 +474,23 @@ export interface ReminderMessage {
   source: AiSource
   /** Set when a fixed fact (title, due date, days late) is not in the draft as given. Shown to the counselor. */
   warnings: string[]
+  /** The "thing to remember" the draft drew on. Only ever set on a message to the student. */
+  usedNote?: UsedNote
 }
 
 /**
  * A reminder about one task, drafted for one person in their language and for
  * their preferred channel. The title, due date and days late are passed in as
  * facts and checked on the way back.
+ *
+ * A reminder to the student may draw on one "thing to remember" (pass
+ * `useNotes: false` to redraft without). One to a parent is never given any:
+ * see reminderRequest in lib/facts.ts.
  */
-export function reminderDraft(data: AppData, student: Student, task: Task, to: ReminderRecipient): Promise<ReminderMessage> {
+export function reminderDraft(data: AppData, student: Student, task: Task, to: ReminderRecipient, { useNotes = true }: { useNotes?: boolean } = {}): Promise<ReminderMessage> {
   const late = daysLate(task)
-  const escalation = to.kind === 'parent' && task.owner !== 'parent'
-  const purpose: ReminderKind = escalation ? 'escalation' : late > 0 ? 'late' : 'upcoming'
-  const channel: Channel = to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text')
-  const language: Language = to.kind === 'parent' ? to.parent.language : 'en'
-  const dueDate = formatDate(task.dueDate)
-  const dueDateZh = formatDateZh(task.dueDate)
+  const { input, purpose, channel, language, notes } = reminderRequest(data, student, task, to, useNotes)
+  const { dueDate, dueDateZh } = input.task
   const base = {
     toKind: to.kind,
     toName: to.kind === 'parent' ? to.parent.name : fullName(student),
@@ -475,14 +502,7 @@ export function reminderDraft(data: AppData, student: Student, task: Task, to: R
 
   return withPlaceholder<ReminderMessage>(
     async () => {
-      const { draft, model } = await callAi('reminderDraft', {
-        facts: buildFacts(data, student),
-        recipient: { kind: to.kind, parentId: to.kind === 'parent' ? to.parent.id : undefined },
-        channel,
-        language,
-        purpose,
-        task: { title: task.title, owner: ownerLabel(task, student) === 'You' ? 'Counselor' : ownerLabel(task, student), dueDate, dueDateZh, daysLate: late },
-      })
+      const { draft, model } = await callAi('reminderDraft', input)
       const local = language === 'en' ? undefined : (draft.bodyLocal ?? undefined)
       // The fixed facts must survive the model. Tell the counselor if one did not.
       const warnings: string[] = []
@@ -491,7 +511,7 @@ export function reminderDraft(data: AppData, student: Student, task: Task, to: R
         if (!text.replace(/\s/g, '').includes(date.replace(/\s/g, ''))) warnings.push(`The ${label} text does not give the due date as ${date}.`)
         if (late > 0 && !new RegExp(`(^|\\D)${late}(\\D|$)`).test(text)) warnings.push(`The ${label} text does not say it is ${late} days late.`)
       }
-      return { ...base, body: local ?? draft.bodyEn, bodyEn: local ? draft.bodyEn : undefined, source: claude(model), warnings }
+      return { ...base, body: local ?? draft.bodyEn, bodyEn: local ? draft.bodyEn : undefined, source: claude(model), warnings, usedNote: usedNoteFrom(draft.usedNoteId, notes) }
     },
     (source) => {
       // The fixed wording from lib/reminders.ts.
@@ -511,6 +531,23 @@ export interface WeeklyTextDraft {
   /** The fact lines the text was built from, for the counselor to read beside it. */
   facts: string[]
   source: AiSource
+  /** The "thing to remember" the text drew on, if any. Never set on the fixed template. */
+  usedNote?: UsedNote
+  /** The task the AI put first as most urgent. Never set on the fixed template, which keeps the code's order. */
+  lead?: WeeklyLead
+}
+
+/**
+ * The AI's choice of which task comes first, kept only if it is true of the
+ * text: the task it names must be one it was given, and its title must be the
+ * first task title in the text.
+ */
+function leadFrom(text: string, facts: WeeklyTextFacts, leadTaskId: string | null, reason: string | null): WeeklyLead | undefined {
+  const tasks = weeklyTextTasks(facts)
+  if (tasks.length < 2) return undefined
+  const first = weeklyTextFirstTask(text, facts)
+  if (!first || first.id !== leadTaskId) return undefined
+  return { title: first.title, reason: reason?.trim().slice(0, 240) || undefined, changedOrder: first.id !== tasks[0].id }
 }
 
 /**
@@ -519,29 +556,43 @@ export interface WeeklyTextDraft {
  * in; the counselor's private notes are not. The model only chooses the words
  * around the facts. If its text changes or drops any fact, or runs long, the
  * fixed template is used instead and labelled.
+ *
+ * `notes` are things to remember about the student (from notesForDraft in
+ * lib/facts.ts). The text may draw on at most one, and says which. They are
+ * offered only when the facts leave room, and if a personal line still pushes
+ * the text over the limit it is drafted once more without them.
  */
-export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en'): Promise<WeeklyTextDraft> {
+export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en', notes: NoteForDraft[] = []): Promise<WeeklyTextDraft> {
   const lines = weeklyTextFactLines(facts)
   const template = (reason: string): WeeklyTextDraft => ({ body: weeklyTextTemplate(facts), facts: lines, source: { kind: 'placeholder', reason } })
+  const ask = (offered: NoteForDraft[]) =>
+    callAi('weeklyText', {
+      today: todayISO(),
+      studentFirstName: facts.firstName,
+      counselorFirstName: facts.counselorFirstName,
+      language,
+      meeting: facts.meeting,
+      late: facts.late,
+      due: facts.due,
+      more: facts.more,
+      deadlines: facts.deadlines.length ? facts.deadlines : undefined,
+      link: facts.link,
+      personalNotes: offered.length ? offered.map((n) => n.fact) : undefined,
+      maxChars: WEEKLY_TEXT_MAX,
+    })
   return withPlaceholder<WeeklyTextDraft>(
     async () => {
-      const { draft, model } = await callAi('weeklyText', {
-        today: todayISO(),
-        studentFirstName: facts.firstName,
-        counselorFirstName: facts.counselorFirstName,
-        language,
-        meeting: facts.meeting,
-        late: facts.late,
-        due: facts.due,
-        more: facts.more,
-        link: facts.link,
-        maxChars: WEEKLY_TEXT_MAX,
-      })
+      let offered = weeklyTextHasRoomForNote(facts) ? notes : []
+      let { draft, model } = await ask(offered)
+      if (draft.text.trim().length > WEEKLY_TEXT_MAX && offered.length) {
+        offered = []
+        ;({ draft, model } = await ask(offered))
+      }
       const text = draft.text.trim()
       const missing = weeklyTextMissing(text, facts)
       if (missing.length) return template(`The AI draft changed or left out “${missing[0]}”, so the fixed template is used instead.`)
       if (text.length > WEEKLY_TEXT_MAX) return template(`The AI draft was ${text.length} characters, over the limit of ${WEEKLY_TEXT_MAX}, so the fixed template is used instead.`)
-      return { body: text, facts: lines, source: claude(model) }
+      return { body: text, facts: lines, source: claude(model), usedNote: usedNoteFrom(draft.usedNoteId, offered), lead: leadFrom(text, facts, draft.leadTaskId, draft.leadReason) }
     },
     (source) => template(source.kind === 'placeholder' ? source.reason : ''),
   )

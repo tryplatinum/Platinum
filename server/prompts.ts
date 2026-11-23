@@ -4,7 +4,7 @@
 // the reasons for them) and a function that lays out that request's facts.
 // When you change a prompt, re-run `npm run test:ai` and read the outputs.
 
-import type { Feature, FeatureInput, StudentFacts } from '../shared/contract.js'
+import type { Feature, FeatureInput, NoteFact, StudentFacts } from '../shared/contract.js'
 
 type Effort = 'low' | 'medium' | 'high'
 
@@ -49,11 +49,27 @@ const TASK_RULES = `Proposed tasks.
 - owner is whoever is to do it: "student", "parent" or "counselor". For a parent, set parentId to that parent's id from the facts. If the notes do not make clear which parent, choose the one the notes mention most nearly and say so in detail.
 - dueDate is YYYY-MM-DD. When the notes give a date or a day, use it and set dueDateBasis to "stated". A loose phrase such as "this weekend" or "soon" is not a stated date. When the notes give no exact date, choose a sensible date that is not before today and leaves room before the deadline it serves or the next meeting, and set dueDateBasis to "inferred" so the counselor knows to check it.`
 
+const wrap = (tag: string, body: string) => `<${tag}>\n${body.trim()}\n</${tag}>`
+
+const PERSONAL_NOTE = `Make it personal.
+You may be given "things_to_remember": up to three small things this student mentioned to the counselor in passing, outside the application work, such as a golf tournament or a school play. A good counselor keeps track of these and brings them up, and that is what makes a student feel known instead of managed. When you are given any, the message should use one: it is the difference between a reminder and a message from someone who was listening.
+- Use exactly one when any fits, and at most one. Pick the one that is most alive right now: something that just happened before something still to come, something soon before something with no date.
+- Follow "timing", which our system worked out from today's date:
+  - "happened": it has taken place. Ask how it went, as a real question ("How was the golf tournament?"). You do not know how it went, so do not congratulate, commiserate or assume a result.
+  - "coming_up": it has not happened yet. Wish them well or say you hope it goes well. "when" tells you how soon; you may say the day ("Saturday") when "when" gives one. When "when" says the exact day is not known, do not name a day.
+  - "no_date": no time is attached. Mention it lightly and do not imply when.
+- Say it the way this counselor would say it out loud to a student they like: short, specific, warm. Name the thing itself ("the golf tournament"), not "your event".
+- Add nothing the note does not say. No extra details, no guesses, no follow-up plans.
+- It sits beside the practical part of the message and never replaces or softens a fixed fact.
+- Set usedNoteId to the id of the note you used, exactly as given, or to null if you used none. The counselor is shown which note was used and it will not be offered again, so this has to be accurate.
+You are only ever given things that are current and have not been said to this student before, so you do not need to worry about repeating yourself. When no things_to_remember are given, write no personal line and set usedNoteId to null.`
+
+/** Laid out for the model. Only the two features that write to the student ever call this. */
+const notesBlock = (notes: NoteFact[] | undefined) => (notes?.length ? wrap('things_to_remember', JSON.stringify(notes, null, 1)) : '')
+
 const factsBlock = (facts: StudentFacts) => `<facts>
 ${JSON.stringify(facts, null, 1)}
 </facts>`
-
-const wrap = (tag: string, body: string) => `<${tag}>\n${body.trim()}\n</${tag}>`
 
 // ── The features ────────────────────────────────────────────────────────────
 
@@ -81,6 +97,18 @@ recap: a short message to the student, in the counselor's voice, speaking to the
 parentUpdates: one message for each parent in the facts, telling them where their child stands after this meeting and what, if anything, is needed from them. Be honest when the student is behind, without alarm: say what is late, what happens next, and what would help. bodyEn is always filled in. bodyLocal is the version in the parent's language, or null when their language is "en".
 
 profileChanges: suggest a change only when the notes state a fact about scores, activities, intended majors or interests that differs from the record. "label" names the field ("SAT score", "New activity", "Intended majors"), "from" is the current value in the record, "to" is the new one, and "evidence" is the wording from the notes that supports it. Fill the one value field that matches the kind and set the others to null.
+
+personalNotes: the small things about this student's own life that came up in passing, outside the application work. Not the main business of the meeting: the asides. A golf tournament this weekend, a school play, a trip, a driving test, a concert they are going to, a new hobby, a pet, something they are excited about. A counselor who keeps track of these and asks about them later ("How was the golf tournament?") is the one a student opens up to, so listen for them the way a person would. Return up to three.
+- "text" is one short, plain sentence that states only what was said, for example "Golf tournament this Saturday". Do not infer or embellish: if the notes say "a tournament", do not say which one, how it might go or how the student feels about it.
+- "evidence" is the sentence from the notes that prompted it, quoted as written.
+- "eventDate" (YYYY-MM-DD) says when it happens, because our system uses it to wish the student luck beforehand, ask how it went afterwards, and then let it go.
+  - When the notes give a date or a day ("this Saturday", "on the 12th"), work it out from the meeting date and set eventDateIsEstimate to false.
+  - When the notes give only a rough time ("next month or so", "over winter break", "in a few weeks"), give your best estimate of the middle of that period and set eventDateIsEstimate to true. This matters: a dated note is kept until it happens, while an undated one is dropped at the next meeting.
+  - When the notes give no time at all (a hobby, an interest), set eventDate to null and eventDateIsEstimate to false. Never invent a time.
+- Leave out, without exception: anything about health, sleep, stress or mood; conflict or tension in the family, and money at home; discipline or trouble at school; friendships and relationships; and anything the student asked to keep private or not to pass on. If you are unsure whether something belongs in one of those, leave it out.
+- Leave out application work (essays, tests, deadlines, college choices): that is what tasks and the profile are for. Leave out anything already in the record as an activity or interest unless there is a specific event or something new about it.
+- Return an empty list when the notes have nothing of this kind. Do not turn a passing word into a detail the student did not really share.
+These are for the counselor and for texts to the student only. Do not carry them into parentUpdates.
 
 ${TASK_RULES}
 
@@ -190,12 +218,16 @@ ${PRIVACY}
 
 Who is reading and what they need:
 - A student (purpose "late" or "upcoming"): two or three sentences in the counselor's voice. Friendly and direct, no scolding. Say what is due and when, ask for one concrete thing (what they have so far, or a time they will finish), and make it easy to say they are stuck.
-- A parent about their own task (purpose "late" or "upcoming"): courteous and brief. Say what is needed and by when, and offer help if something is in the way.
+- A parent about their own task (purpose "late" or "upcoming", and the task's owner is that parent): courteous and brief. Say what is needed and by when, and offer help if something is in the way.
+- A parent about their student's task that is not late yet (purpose "upcoming", and the task's owner is the student): a short heads-up so they know what is coming. Say what is due and when. Nothing is needed from them.
 - A parent about their student's late task (purpose "escalation"): a heads-up, not an alarm. Say what is late, that the counselor is following up with the student directly, and that a word at home would help. Nothing the student would expect to stay between them and the counselor.
 
 Match the channel: a text, WeChat or LINE message is a few short sentences with no subject line or sign-off block; an email can have a greeting line and the counselor's first name at the end.
 
 bodyEn is always filled in. bodyLocal is the message in the recipient's language, or null when their language is "en".
+
+${PERSONAL_NOTE}
+Things to remember are only ever given for a message to the student. A message to a parent never has a personal line, and its usedNoteId is null.
 
 ${CHINESE}`,
     user: (input) => {
@@ -207,8 +239,12 @@ ${CHINESE}`,
         `Today is ${input.facts.today}. Write to ${who}. Channel: ${input.channel}. Language: ${input.language}. Purpose: ${input.purpose}.`,
         wrap('task', JSON.stringify(input.task, null, 1)),
         factsBlock(input.facts),
+        // GUARDRAIL: a parent's message is never shown the student's personal notes, whatever the request carried.
+        input.recipient.kind === 'student' ? notesBlock(input.personalNotes) : '',
         'Draft the reminder.',
-      ].join('\n\n')
+      ]
+        .filter(Boolean)
+        .join('\n\n')
     },
   },
 
@@ -253,10 +289,20 @@ Who reads it: a high-school student, on their phone, between other things. It sh
 
 What it contains, in this order:
 1. The next meeting, if one is given.
-2. Late tasks, each with its due date and how late it is.
-3. Tasks due soon, each with its due date.
-4. If "more" is above 0, one short sentence of its own after the lists that contains the words "and N more" with that number (for example "And 2 more on your list."), so the student knows the lists are not complete. When "more" is 0, say nothing about more.
-5. The link, if one is given, at the very end, after a short lead-in such as "Your list:".
+2. When two or more tasks are listed: the one task to do first, on its own, introduced plainly as the first thing to do ("Start with …", "First: …"), with its due date and, if it is late, how late.
+3. The other late tasks, each with its due date and how late it is.
+4. The other tasks due soon, each with its due date.
+5. If "more" is above 0, one short sentence of its own after the lists that contains the words "and N more" with that number (for example "And 2 more on your list."), so the student knows the lists are not complete. When "more" is 0, say nothing about more.
+6. The link, if one is given, at the very end, after a short lead-in such as "Your list:".
+
+Choosing what comes first.
+A student who is behind reads a list of four things and starts with the easiest. The most useful thing this text can do is tell them which one to do first, and that is your judgment to make. Pick the single most urgent task from the ones listed, in this order of weight:
+1. The nearest application deadline. "deadlines" gives the student's next ones and how many days away each is. Unfinished work that an application due soon cannot go in without comes first, and the closer the deadline the more it outweighs everything else. Link a task to a deadline only when the task's own title names that application or college (a task titled "UC PIQ 3 and 4" belongs to a UC application). Do not assume a link the title does not state: you do not know which colleges need a given recommendation, score or form.
+2. Then how late it is, and whether it is not started ("todo") or under way ("in_progress").
+3. Then whether someone else has to act after the student does, such as a teacher who must be asked for a recommendation. That raises a task among others of similar urgency; it does not put it ahead of work a nearer deadline depends on.
+The tasks arrive ordered most overdue first. When nothing above separates them, keep that order.
+Put that task first among the tasks, and set leadTaskId to its id exactly as given. Set leadReason to one short sentence for the counselor saying why it comes first, using only what you were given (for example "It is the one piece the UC application, due in 6 days, still needs."). leadReason is shown to the counselor and is never sent to the student. When fewer than two tasks are listed there is nothing to choose: set both to null.
+The "deadlines", "category" and "status" values are there for this choice only. Do not write an application deadline, a category or a status into the text: the counselor's screen cannot check them there, and you may tell the student which task to start with but not add a reason that contains a date or a fact of your own.
 
 The facts are fixed strings computed by our system, and the counselor's screen checks the text for each of them. Copy every one into the text character for character:
 - each task title, inside “ ” quotation marks, not reworded, shortened or re-capitalised;
@@ -265,7 +311,10 @@ The facts are fixed strings computed by our system, and the counselor's screen c
 - the meeting string as written (for example "Tue, Nov 26 at 4:00 PM", not "Tuesday at 4");
 - the phrase "and N more";
 - the link.
-If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so there is nothing else to draw on.
+If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so apart from one thing to remember (below) there is nothing else to draw on.
+
+${PERSONAL_NOTE}
+In this text the personal line comes first, straight after the greeting, before the meeting and the tasks, so the text opens like a person and then gets to the list. One short sentence. It counts toward maxChars, and room has been left for it; if the text still would not fit, shorten the words around the fixed strings before you give it up.
 
 The "text" field is sent to the student exactly as you return it. Compose the message in your head first and return only the finished version: one clean pass, with no corrections, second attempts, notes to the counselor or comments about the draft.
 
@@ -276,7 +325,11 @@ Language: write in the language given. The fixed strings stay exactly as they ar
       [
         `Today is ${input.today}. The student's first name is ${input.studentFirstName}. The counselor's first name is ${input.counselorFirstName}. Language: ${input.language}. maxChars: ${input.maxChars}.`,
         wrap('facts', JSON.stringify({ meeting: input.meeting ?? null, late: input.late, due: input.due, more: input.more, link: input.link ?? null }, null, 1)),
+        input.deadlines?.length ? wrap('deadlines', JSON.stringify(input.deadlines, null, 1)) : '',
+        notesBlock(input.personalNotes),
         'Write the text.',
-      ].join('\n\n'),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
   },
 }

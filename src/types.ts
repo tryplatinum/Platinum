@@ -74,6 +74,71 @@ export interface ReportSettings {
   recipientIds: ID[]
 }
 
+/**
+ * Whether a reminder or weekly text to the student comes with a separate short
+ * message to the primary parent. 'when_slipping' = only while the student has a
+ * late task or has gone quiet (see isSlipping in lib/derive.ts).
+ */
+export type ParentCopySetting = 'always' | 'when_slipping' | 'never'
+
+/**
+ * A small personal detail the student mentioned: "Regional robotics tournament
+ * on Saturday". Saved only once a counselor approves it (or types it in), and
+ * used to make texts TO THE STUDENT sound like someone who listens.
+ *
+ * GUARDRAIL: these never go to anything a parent reads and never to the
+ * student link. See notesForDraft in lib/facts.ts and server/studentLink.ts.
+ */
+export interface PersonalNote {
+  id: ID
+  studentId: ID
+  text: string
+  /** The day of the event, when the student gave one. */
+  eventDate?: ISODate
+  /** True when the student only said roughly when ("sometime next month") and the date is an estimate. */
+  eventDateApprox?: boolean
+  /**
+   * Each time a message that mentioned this note was sent. A note is mentioned
+   * once per stage (see noteStage in lib/derive.ts), so nothing is repeated.
+   */
+  uses: NoteUse[]
+  /** 'meeting' = suggested by the AI from a meeting's notes. 'counselor' = typed in by hand. */
+  source: 'meeting' | 'counselor'
+  meetingId?: ID
+  createdAt: string
+  /** Who approved (or wrote) it, and when. A note never exists without one. */
+  approval: Approval
+}
+
+/**
+ * Which task a weekly text leads with. Choosing it is the AI's one judgment in
+ * that feature; the code checks the text does lead with this task, and the
+ * counselor sees the choice and the reason beside the draft.
+ */
+export interface WeeklyLead {
+  title: string
+  /** The AI's one-sentence reason, for the counselor only. */
+  reason?: string
+  /** False when the AI kept the code's own order (most overdue first). */
+  changedOrder: boolean
+}
+
+/** One mention of a note in a message the counselor sent. */
+export interface NoteUse {
+  at: string
+  /** 'ahead' = before the event ("good luck"), 'after' = once it happened ("how did it go?"), 'undated' = a note with no date. */
+  stage: 'ahead' | 'after' | 'undated'
+  in: 'weekly_text' | 'reminder'
+}
+
+/** The note a draft drew on, as it read at the time. Shown beside the draft as "Used: …". */
+export interface UsedNote {
+  id: ID
+  text: string
+  /** The stage the note was at when the draft was written. Recorded on the note when the message is sent. */
+  stage?: NoteUse['stage']
+}
+
 export interface Student {
   id: ID
   firstName: string
@@ -98,6 +163,8 @@ export interface Student {
   reportSettings: ReportSettings
   /** False leaves this student out of the weekly texts. Absent means included. */
   weeklyText?: boolean
+  /** When a message to the student also goes to the primary parent. Absent means 'when_slipping'. */
+  parentCopy?: ParentCopySetting
   /** Archived students keep their history but leave every list. */
   archived?: boolean
 }
@@ -263,6 +330,19 @@ export interface ProfileChange {
   approval?: Approval
 }
 
+/** A personal detail the AI picked out of a meeting's notes. It becomes a PersonalNote only when approved. */
+export interface DraftPersonalNote {
+  id: ID
+  text: string
+  /** The sentence in the meeting that prompted this. */
+  evidence: string
+  eventDate?: ISODate
+  /** True when the date is the AI's estimate of a loose phrase such as "next month". */
+  eventDateApprox?: boolean
+  review: Review
+  approval?: Approval
+}
+
 export interface DraftParentUpdate {
   id: ID
   parentId: ID
@@ -294,6 +374,8 @@ export interface MeetingAI {
   draftTasks: DraftTask[]
   parentUpdates: DraftParentUpdate[]
   profileChanges: ProfileChange[]
+  /** "Things to remember". Absent on drafts made before the feature existed. */
+  personalNotes?: DraftPersonalNote[]
   source: AiSource
 }
 
@@ -369,6 +451,8 @@ export interface OutboxMessage {
   taskId?: ID
   /** How it went out, when that is worth saying: "Sent from your own phone". */
   note?: string
+  /** Who approved it, and when. Set on every message with trigger 'approved'. */
+  approval?: Approval
   /** Lets the reminder queue know this reminder has already gone out. */
   dedupeKey?: string
 }
@@ -409,6 +493,36 @@ export interface WeeklyText {
   /** Set when the counselor pressed Copy or Open in Messages. */
   approval?: Approval
   sentVia?: 'copy' | 'sms'
+  /** The "thing to remember" the draft drew on, if any. */
+  usedNote?: UsedNote
+  /** The task the AI chose to put first as most urgent, and why. Set only when the text really leads with it. */
+  lead?: WeeklyLead
+  /** The separate short message to the primary parent, when "Also tell parent" is ticked. */
+  parentCopy?: ParentCopy
+}
+
+/**
+ * A short message to the primary parent that goes alongside a text to the
+ * student: its own draft, in the parent's language and for their channel, with
+ * its own approval and its own log entry. Written by the reminder feature about
+ * one task. It never contains a "thing to remember".
+ */
+export interface ParentCopy {
+  parentId: ID
+  /** The task it is about: the student's most overdue task, or the next one due. */
+  taskId: ID
+  channel: Channel
+  language: Language
+  kind: 'reminder_upcoming' | 'reminder_late'
+  /** What the parent reads, in their language. */
+  body: string
+  /** English, when body is in another language. */
+  bodyEn?: string
+  source: AiSource
+  /** Fixed facts the draft did not carry as given. Shown to the counselor. */
+  warnings?: string[]
+  status: 'draft' | 'sent'
+  approval?: Approval
 }
 
 /** A secret link that opens one student's page without a login. */
@@ -444,4 +558,6 @@ export interface AppData {
   reminderRules: ReminderRule[]
   activity: ActivityEvent[]
   weeklyTexts: WeeklyText[]
+  /** Oldest first. */
+  personalNotes: PersonalNote[]
 }

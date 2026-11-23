@@ -54,6 +54,27 @@ const CollegeFact = z.object({
   daysUntilDeadline: z.number().int(),
 })
 
+/**
+ * A "thing to remember": a small personal detail the student mentioned, which
+ * a counselor approved. Built by notesForDraft in src/lib/facts.ts.
+ *
+ * GUARDRAIL: only the two inputs that write TO THE STUDENT accept these
+ * (weeklyText, and reminderDraft when the recipient is the student). No
+ * parent-facing input has a field for them, unknown fields are dropped when a
+ * request is parsed, and reminderDraft refuses them for a parent recipient.
+ * Do not add this to StudentFacts, parentReport or draftFromMeeting.
+ */
+const NoteFact = z.object({
+  /** A short handle for this request only ("n1"), which the model returns as usedNoteId. */
+  id: text(8),
+  text: text(300),
+  /** When the event is, computed by our code: "Sat, Nov 28 (in 5 days)". Absent when the note has no date. */
+  when: text(80).optional(),
+  /** Computed by our code. 'coming_up' = wish them well; 'happened' = ask how it went; 'no_date' = no time attached. */
+  timing: z.enum(['coming_up', 'happened', 'no_date']).optional(),
+})
+export type NoteFact = z.infer<typeof NoteFact>
+
 /** Everything about one student that a feature may need. Built by src/lib/facts.ts. */
 export const StudentFacts = z.object({
   today: isoDate,
@@ -118,25 +139,30 @@ export const INPUTS = {
     prompt: text(2000),
     essay: z.string().min(50).max(MAX_TEXT_CHARS),
   }),
-  reminderDraft: z.object({
-    facts: StudentFacts,
-    /** Who the message goes to. For a parent, the id of that parent in the facts. */
-    recipient: z.object({ kind: z.enum(['student', 'parent']), parentId: text(60).optional() }),
-    channel: z.enum(['email', 'wechat', 'line', 'text']),
-    language: z.enum(['en', 'zh-Hans', 'zh-Hant']),
-    /** 'escalation' = telling a parent that their student's own task is late. */
-    purpose: z.enum(['upcoming', 'late', 'escalation']),
-    /** Computed by our code. These must appear in the message unchanged. */
-    task: z.object({
-      title: text(),
-      owner: text(80),
-      /** As it should be written in English, e.g. "Nov 14". */
-      dueDate: text(40),
-      /** As it should be written in Chinese, e.g. "11月14日". */
-      dueDateZh: text(40),
-      daysLate: z.number().int().min(0),
-    }),
-  }),
+  reminderDraft: z
+    .object({
+      facts: StudentFacts,
+      /** Who the message goes to. For a parent, the id of that parent in the facts. */
+      recipient: z.object({ kind: z.enum(['student', 'parent']), parentId: text(60).optional() }),
+      channel: z.enum(['email', 'wechat', 'line', 'text']),
+      language: z.enum(['en', 'zh-Hans', 'zh-Hant']),
+      /** 'escalation' = telling a parent that their student's own task is late. */
+      purpose: z.enum(['upcoming', 'late', 'escalation']),
+      /** Computed by our code. These must appear in the message unchanged. */
+      task: z.object({
+        title: text(),
+        owner: text(80),
+        /** As it should be written in English, e.g. "Nov 14". */
+        dueDate: text(40),
+        /** As it should be written in Chinese, e.g. "11月14日". */
+        dueDateZh: text(40),
+        daysLate: z.number().int().min(0),
+      }),
+      /** Things to remember. Only for a reminder to the student. */
+      personalNotes: z.array(NoteFact).max(3).optional(),
+    })
+    // GUARDRAIL: a message to a parent is never given a student's personal notes.
+    .refine((input) => input.recipient.kind === 'student' || !input.personalNotes?.length, { path: ['personalNotes'], message: 'Personal notes are only for messages to the student.' }),
   weeklyText: z.object({
     today: isoDate,
     studentFirstName: text(60),
@@ -146,12 +172,18 @@ export const INPUTS = {
     // appear in the text unchanged. The counselor's private notes are never sent.
     /** "Tue, Nov 26 at 4:00 PM". Absent when no meeting is coming up. */
     meeting: text(60).optional(),
-    late: z.array(z.object({ title: text(), due: text(40), late: text(40) })).max(4),
-    due: z.array(z.object({ title: text(), due: text(40) })).max(4),
+    // `id` is a handle for this request ("t1") that the model returns as leadTaskId. category and
+    // status help it judge which task is most urgent; they are not written into the text.
+    late: z.array(z.object({ id: text(8).optional(), title: text(), due: text(40), late: text(40), category: text(20).optional(), status: text(20).optional() })).max(4),
+    due: z.array(z.object({ id: text(8).optional(), title: text(), due: text(40), category: text(20).optional(), status: text(20).optional() })).max(4),
+    /** The student's next application deadlines, computed by our code. For judging urgency only: never written into the text. */
+    deadlines: z.array(z.object({ label: text(160), due: text(40), inDays: z.number().int() })).max(3).optional(),
     /** Tasks not listed. Written as "and N more". */
     more: z.number().int().min(0),
     /** The student's own link to their tasks. */
     link: text(300).optional(),
+    /** Things to remember. The text may draw on at most one. */
+    personalNotes: z.array(NoteFact).max(3).optional(),
     maxChars: z.number().int().min(100).max(1000),
   }),
 } as const
@@ -212,6 +244,19 @@ export const OUTPUTS = {
     recap: z.object({ summary: z.string(), nextSteps: z.array(z.string()) }),
     parentUpdates: z.array(ParentMessage),
     profileChanges: z.array(ProfileSuggestion),
+    /** Up to three personal details the student mentioned. Reviewed by the counselor as "Things to remember". */
+    personalNotes: z.array(
+      z.object({
+        /** One short sentence stating only what was said. */
+        text: z.string(),
+        /** The sentence from the notes that prompted it. */
+        evidence: z.string(),
+        /** YYYY-MM-DD when the notes give a date, a day, or a rough time for it, otherwise null. */
+        eventDate: z.string().nullable(),
+        /** True when eventDate is an estimate of a loose phrase ("next month or so"). */
+        eventDateIsEstimate: z.boolean(),
+      }),
+    ),
   }),
   readNotes: z.object({
     summary: z.string(),
@@ -250,10 +295,22 @@ export const OUTPUTS = {
     bodyEn: z.string(),
     /** In the recipient's language. Null when they read English. */
     bodyLocal: z.string().nullable(),
+    /** The id of the personal note the message drew on, or null. Always null for a parent. */
+    usedNoteId: z.string().nullable(),
   }),
   weeklyText: z.object({
     /** The whole text message, ready to send. */
     text: z.string(),
+    /** The id of the personal note the text drew on, or null. */
+    usedNoteId: z.string().nullable(),
+    /**
+     * The id of the task the text puts first as the most urgent, or null when fewer than two
+     * tasks are listed. This is the model's judgment, and the only one in this feature: every
+     * date and "days late" is still ours. The counselor is shown the choice and the reason.
+     */
+    leadTaskId: z.string().nullable(),
+    /** One short sentence for the counselor on why that task comes first, or null. Not sent to the student. */
+    leadReason: z.string().nullable(),
   }),
 } as const
 

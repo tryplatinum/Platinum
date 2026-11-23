@@ -361,6 +361,7 @@ export type Database = {
       }
       outbox: {
         Row: {
+          approval: Json | null
           body: string
           body_en: string | null
           channel: string
@@ -382,6 +383,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approval?: Json | null
           body: string
           body_en?: string | null
           channel: string
@@ -403,6 +405,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approval?: Json | null
           body?: string
           body_en?: string | null
           channel?: string
@@ -512,6 +515,76 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "students"
             referencedColumns: ["firm_id", "id"]
+          },
+        ]
+      }
+      personal_notes: {
+        Row: {
+          approval: Json
+          created_at: string
+          event_date: string | null
+          event_date_approx: boolean
+          uses: Json
+          firm_id: string
+          id: string
+          meeting_id: string | null
+          seq: number
+          source: string
+          student_id: string
+          text: string
+          updated_at: string
+        }
+        Insert: {
+          approval: Json
+          created_at?: string
+          event_date?: string | null
+          event_date_approx?: boolean
+          uses?: Json
+          firm_id: string
+          id?: string
+          meeting_id?: string | null
+          seq?: number
+          source: string
+          student_id: string
+          text: string
+          updated_at?: string
+        }
+        Update: {
+          approval?: Json
+          created_at?: string
+          event_date?: string | null
+          event_date_approx?: boolean
+          uses?: Json
+          firm_id?: string
+          id?: string
+          meeting_id?: string | null
+          seq?: number
+          source?: string
+          student_id?: string
+          text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "personal_notes_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "personal_notes_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+          {
+            foreignKeyName: "personal_notes_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -711,6 +784,7 @@ export type Database = {
           local_name: string | null
           majors: Json
           onboarded_on: string
+          parent_copy: string
           phone: string | null
           preferred_channel: string | null
           report_settings: Json
@@ -738,6 +812,7 @@ export type Database = {
           local_name?: string | null
           majors?: Json
           onboarded_on?: string
+          parent_copy?: string
           phone?: string | null
           preferred_channel?: string | null
           report_settings?: Json
@@ -765,6 +840,7 @@ export type Database = {
           local_name?: string | null
           majors?: Json
           onboarded_on?: string
+          parent_copy?: string
           phone?: string | null
           preferred_channel?: string | null
           report_settings?: Json
@@ -896,12 +972,15 @@ export type Database = {
           facts: Json | null
           firm_id: string
           id: string
+          lead: Json | null
+          parent_copy: Json | null
           sent_via: string | null
           seq: number
           source: Json | null
           status: string
           student_id: string
           updated_at: string
+          used_note: Json | null
           week_start: string
         }
         Insert: {
@@ -911,12 +990,15 @@ export type Database = {
           facts?: Json | null
           firm_id: string
           id?: string
+          lead?: Json | null
+          parent_copy?: Json | null
           sent_via?: string | null
           seq?: number
           source?: Json | null
           status: string
           student_id: string
           updated_at?: string
+          used_note?: Json | null
           week_start: string
         }
         Update: {
@@ -926,12 +1008,15 @@ export type Database = {
           facts?: Json | null
           firm_id?: string
           id?: string
+          lead?: Json | null
+          parent_copy?: Json | null
           sent_via?: string | null
           seq?: number
           source?: Json | null
           status?: string
           student_id?: string
           updated_at?: string
+          used_note?: Json | null
           week_start?: string
         }
         Relationships: [

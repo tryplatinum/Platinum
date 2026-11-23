@@ -4,24 +4,32 @@
 //
 // Deliberately left out of every request: last names, email addresses, phone
 // numbers and messaging handles. The model does not need them.
+//
+// GUARDRAIL: "things to remember" (personal notes) are not part of buildFacts,
+// briefFacts or reportFacts, and must not be added to them: those feed drafts a
+// parent reads. The only way a note reaches a request is notesForDraft below,
+// which returns nothing unless the message is to the student.
 
-import type { StudentFacts } from '../../shared/contract'
-import type { AppData, ID, Meeting, Student } from '../types'
-import { addDays, daysBetween, formatDate, todayISO } from './dates'
+import type { FeatureInput, NoteFact, StudentFacts } from '../../shared/contract'
+import type { AppData, Channel, ID, Language, Meeting, Parent, PersonalNote, Student, Task } from '../types'
+import { addDays, daysBetween, formatDate, formatDateLong, formatDateZh, todayISO } from './dates'
 import {
   classLabel,
   daysLate,
   deadlinesFor,
+  eventWhen,
   isLate,
   isOpen,
   lastMeeting,
   nextMeeting,
+  notesWorthMentioning,
   ownerLabel,
   pendingApprovals,
   tasksFor,
   type Deadline,
 } from './derive'
 import { zhGiven, zhGreeting } from './language'
+import type { ReminderKind } from './reminders'
 
 const RECENT_DAYS = 21
 const BRIEF_DEADLINE_WINDOW_DAYS = 14
@@ -79,6 +87,44 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
     nextMeeting: next && { title: next.title, date: next.date },
     lastMeeting: last && { title: last.title, date: last.date },
   }
+}
+
+// ── Things to remember ──────────────────────────────────────────────────────
+
+/** Who a draft is written to. */
+export type Audience = 'student' | 'parent'
+
+export interface NoteForDraft {
+  /** What the model is given. Its id is a short handle ("n1") for this request only. */
+  fact: NoteFact
+  /** The saved note behind it, so the screen can show "Used: …". */
+  note: PersonalNote
+  /** Where the note stands today: before its event, just after, or undated. Each is mentioned once. */
+  stage: 'ahead' | 'after' | 'undated'
+}
+
+/**
+ * The personal notes one draft may draw on: up to three, chosen by
+ * notesWorthMentioning in lib/derive.ts, which leaves out anything out of
+ * date and anything already mentioned at its current stage.
+ *
+ * GUARDRAIL: for any audience but the student this returns nothing. It is the
+ * only function that turns a note into request data, so a message to a parent
+ * cannot carry one. The server checks again (shared/contract.ts).
+ */
+export function notesForDraft(data: AppData, student: Student, audience: Audience, today = todayISO()): NoteForDraft[] {
+  if (audience !== 'student') return []
+  return notesWorthMentioning(data, student.id, today).map(({ note, stage }, i) => ({
+    note,
+    stage,
+    fact: {
+      id: `n${i + 1}`,
+      text: note.text,
+      timing: stage === 'after' ? ('happened' as const) : stage === 'ahead' ? ('coming_up' as const) : ('no_date' as const),
+      // An estimated date is described loosely, so the message does not state a day nobody gave.
+      when: !note.eventDate ? undefined : note.eventDateApprox ? `around ${formatDate(note.eventDate)}, the exact day is not known` : `${formatDateLong(note.eventDate)} (${eventWhen(note.eventDate, today)})`,
+    },
+  }))
 }
 
 // ── Pre-meeting brief ───────────────────────────────────────────────────────
@@ -189,4 +235,52 @@ export function reportFacts(data: AppData, student: Student, parentId: ID): stri
   const next = nextMeeting(data, student.id)
   facts.push(next ? `Next meeting: ${formatDate(next.date)}` : 'No next meeting is scheduled yet')
   return facts
+}
+
+/** The whole request for a parent report. It has no personal notes and no field for them. */
+export function parentReportInput(data: AppData, student: Student, parentId: ID): FeatureInput<'parentReport'> {
+  return { facts: buildFacts(data, student), parentId, reportFacts: reportFacts(data, student, parentId) }
+}
+
+// ── Reminder about one task ─────────────────────────────────────────────────
+
+export type ReminderRecipient = { kind: 'student' } | { kind: 'parent'; parent: Parent }
+
+export interface ReminderRequest {
+  input: FeatureInput<'reminderDraft'>
+  purpose: ReminderKind
+  channel: Channel
+  language: Language
+  /** The notes offered to the model, so its usedNoteId can be turned back into a note. Empty for a parent. */
+  notes: NoteForDraft[]
+}
+
+/**
+ * The whole request for a reminder about one task. A reminder to the student
+ * may be offered things to remember; one to a parent never is.
+ */
+export function reminderRequest(data: AppData, student: Student, task: Task, to: ReminderRecipient, useNotes = true): ReminderRequest {
+  const late = daysLate(task)
+  // To a parent about their student's task: an escalation once it is late, a heads-up before.
+  const aboutStudentsTask = to.kind === 'parent' && task.owner !== 'parent'
+  const purpose: ReminderKind = aboutStudentsTask && late > 0 ? 'escalation' : late > 0 ? 'late' : 'upcoming'
+  const channel: Channel = to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text')
+  const language: Language = to.kind === 'parent' ? to.parent.language : 'en'
+  const notes = useNotes ? notesForDraft(data, student, to.kind) : []
+  const owner = ownerLabel(task, student)
+  return {
+    purpose,
+    channel,
+    language,
+    notes,
+    input: {
+      facts: buildFacts(data, student),
+      recipient: { kind: to.kind, parentId: to.kind === 'parent' ? to.parent.id : undefined },
+      channel,
+      language,
+      purpose,
+      task: { title: task.title, owner: owner === 'You' ? 'Counselor' : owner, dueDate: formatDate(task.dueDate), dueDateZh: formatDateZh(task.dueDate), daysLate: late },
+      personalNotes: notes.length ? notes.map((n) => n.fact) : undefined,
+    },
+  }
 }

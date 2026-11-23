@@ -23,8 +23,11 @@ function check(name: string, pass: boolean, detail = ''): void {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`)
 }
 
-const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'weekly_texts', 'student_links'] as const
+const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'weekly_texts', 'personal_notes', 'student_links'] as const
 const ALL_TABLES = ['firms', 'firm_members', ...TABLES] as const
+
+/** A thing to remember, worded so it would stand out anywhere it leaked. */
+const NOTE_TEXT = 'School play on Friday REMEMBERED'
 
 interface Seeded {
   studentId: string
@@ -40,6 +43,7 @@ async function seed(account: TestAccount): Promise<Seeded> {
   const taskId = randomUUID()
   const parentTaskId = randomUUID()
   const meetingId = randomUUID()
+  const noteId = randomUUID()
   const task = { student_id: studentId, category: 'essay', due_date: '2030-01-15', status: 'todo', created_on: '2026-11-01', source: 'counselor', attachments: [] }
   const changes = {
     upsert: {
@@ -55,7 +59,7 @@ async function seed(account: TestAccount): Promise<Seeded> {
         { id: meetingId, student_id: studentId, title: 'Check-in', date: '2030-01-10', time: '16:00', duration_min: 45, status: 'scheduled' },
         {
           id: randomUUID(), student_id: studentId, title: 'Past meeting', date: '2026-11-01', time: '16:00', duration_min: 45, status: 'completed', transcript: 'PRIVATE TRANSCRIPT',
-          ai: { notes: ['PRIVATE AI NOTE'], draftTasks: [], parentUpdates: [], profileChanges: [] },
+          ai: { notes: ['PRIVATE AI NOTE'], draftTasks: [], parentUpdates: [], profileChanges: [], personalNotes: [{ id: 'pn-1', text: 'PRIVATE DRAFT THING TO REMEMBER', evidence: 'PRIVATE EVIDENCE', review: 'pending' }] },
           recap: { summary: 'Approved recap', nextSteps: ['One'], review: 'approved', approval: { by: 'Counselor', byId: account.userId, at: new Date().toISOString() } },
         },
       ],
@@ -69,7 +73,16 @@ async function seed(account: TestAccount): Promise<Seeded> {
       outbox: [{ id: randomUUID(), student_id: studentId, sent_at: new Date().toISOString(), to_kind: 'student', to_name: 'N', channel: 'text', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved' }],
       reminder_rules: [{ rule: 'student_late', days: 2, mode: 'off' }],
       activity: [{ id: randomUUID(), student_id: studentId, at: new Date().toISOString(), actor: 'counselor', text: 'seeded' }],
-      weekly_texts: [{ id: randomUUID(), student_id: studentId, week_start: '2026-11-22', status: 'draft', body: 'PRIVATE WEEKLY DRAFT' }],
+      personal_notes: [
+        { id: noteId, student_id: studentId, text: NOTE_TEXT, event_date: '2030-01-12', source: 'meeting', meeting_id: meetingId, approval: { by: 'Counselor', byId: account.userId, at: new Date().toISOString() } },
+        { id: randomUUID(), student_id: studentId, text: 'Robotics scrimmage REMEMBERED', source: 'counselor', approval: { by: 'Counselor', byId: account.userId, at: new Date().toISOString() } },
+      ],
+      weekly_texts: [
+        {
+          id: randomUUID(), student_id: studentId, week_start: '2026-11-22', status: 'draft', body: 'PRIVATE WEEKLY DRAFT', used_note: { id: noteId, text: NOTE_TEXT },
+          parent_copy: { parentId, taskId, channel: 'email', language: 'en', kind: 'reminder_late', body: 'PRIVATE PARENT COPY', source: { kind: 'placeholder', reason: 'test' }, status: 'draft' },
+        },
+      ],
     },
   }
   const applied = await account.client.rpc('apply_changes', { firm: account.firmId, changes: changes as unknown as Json })
@@ -140,6 +153,18 @@ try {
   const second = await a.client.rpc('create_firm', { name: 'Second', display_name: 'A' })
   check('an account cannot create a second firm', Boolean(second.error))
 
+  // ── Rules the database enforces on the new columns ──
+  const noApproval = await a.client.from('personal_notes').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, text: 'No approval', source: 'counselor', approval: {} })
+  check('a thing to remember cannot be saved without an approval', Boolean(noApproval.error))
+  const crossNote = await a.client.from('personal_notes').insert({ firm_id: a.firmId, student_id: seeded.B.studentId, text: 'X', source: 'counselor', approval: { by: 'A', at: new Date().toISOString() } })
+  check("A cannot attach a thing to remember to B's student", Boolean(crossNote.error))
+  const unapprovedCopy = await a.client.from('weekly_texts').update({ parent_copy: { status: 'sent', body: 'x' } }).eq('firm_id', a.firmId).select('id')
+  check('a parent copy cannot be marked sent without an approval', Boolean(unapprovedCopy.error))
+  const badSetting = await a.client.from('students').update({ parent_copy: 'sometimes' }).eq('firm_id', a.firmId).select('id')
+  check('the parent copy setting takes only its three values', Boolean(badSetting.error))
+  const setting = await adminClient().from('students').select('parent_copy').eq('firm_id', a.firmId).single()
+  check('a student saved without the setting gets when_slipping', setting.data?.parent_copy === 'when_slipping')
+
   // ── The anon key alone ──
   const anon = anonClient()
   for (const table of ALL_TABLES) {
@@ -163,6 +188,10 @@ try {
   check('the page holds only that student', body.data?.students.length === 1 && body.data.students[0].id === seeded.A.studentId)
   check('the page has no parents, notes, reports, messages or activity', body.data?.students[0].parents.length === 0 && body.data.students[0].counselorNotes === '' && body.data.reports.length === 0 && body.data.outbox.length === 0 && body.data.activity.length === 0)
   check('the page has no private text', !/PRIVATE|parent@example\.com|Parent A/.test(text), text.match(/PRIVATE[ A-Z]*/)?.[0] ?? '')
+  const pageNotes = (body.data as unknown as { personalNotes?: unknown[] } | undefined)?.personalNotes ?? []
+  check('the page has none of the student’s things to remember', pageNotes.length === 0 && !/REMEMBERED|THING TO REMEMBER|PARENT COPY|EVIDENCE/.test(text), text.match(/[A-Za-z ]*(REMEMBERED|THING TO REMEMBER|PARENT COPY|EVIDENCE)/)?.[0] ?? '')
+  const savedNotes = await a.client.from('personal_notes').select('text').eq('student_id', seeded.A.studentId)
+  check('…while the firm itself can read them', (savedNotes.data ?? []).some((n) => n.text === NOTE_TEXT))
   check('the page has no AI drafts or transcripts', body.data?.meetings.every((m) => !('ai' in m) && !('transcript' in m)) === true)
   check('the page has no essay drafts (none approved)', body.data?.documents.length === 0)
   check('the page shows the approved recap', text.includes('Approved recap'))
@@ -201,6 +230,17 @@ try {
   check('the AI endpoint refuses the old passcode header', (await ai({ 'x-platinum-passcode': process.env.PLATINUM_PASSCODE ?? 'anything' })).status === 401)
   const signedIn = await ai({ authorization: `Bearer ${a.token}` })
   check('the AI endpoint lets a signed-in member through to validation', signedIn.status === 400 || signedIn.status === 503, `HTTP ${signedIn.status}`)
+
+  // A reminder to a parent that carries a student's personal notes is refused before any model call.
+  if (process.env.ANTHROPIC_API_KEY) {
+    const facts = { today: '2026-11-23', counselorFirstName: 'C', student: { firstName: 'S', yearLabel: 'Senior', gradYear: 2030, gpa: 0, majors: [], interests: [], activities: [] }, parents: [{ id: 'p1', name: 'P', relationship: 'Mother', language: 'en', channel: 'email' }], openTasks: [], recentlyDone: [], colleges: [] }
+    const input = { facts, recipient: { kind: 'parent', parentId: 'p1' }, channel: 'email', language: 'en', purpose: 'escalation', task: { title: 'T', owner: 'S', dueDate: 'Nov 1', dueDateZh: '11月1日', daysLate: 3 }, personalNotes: [{ id: 'n1', text: NOTE_TEXT }] }
+    const withNotes = await aiPost(new Request('http://localhost/api/ai', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${a.token}` }, body: JSON.stringify({ feature: 'reminderDraft', input }) }))
+    const reply = (await withNotes.json()) as { ok: boolean; message?: string }
+    check('the AI endpoint refuses a parent reminder that carries personal notes', withNotes.status === 400 && /personalNotes/.test(reply.message ?? ''), reply.message)
+  } else {
+    console.log('SKIP  the AI endpoint refuses a parent reminder that carries personal notes  (no ANTHROPIC_API_KEY: the endpoint stops earlier)')
+  }
 } catch (error) {
   failed++
   console.error('\nThe run stopped early:', error instanceof Error ? error.message : error)

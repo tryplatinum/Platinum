@@ -182,6 +182,15 @@ I have asked Mr. Zhang to upload the 2025 tax return for the financial aid form 
           review: 'pending',
         },
       ],
+      personalNotes: [
+        {
+          id: 'pn-kevin-1',
+          text: 'Going to his cousin’s wedding in Seattle',
+          evidence: `“He is going to his cousin's wedding in Seattle on ${en(10)} and is excited about it.”`,
+          eventDate: d(10),
+          review: 'pending',
+        },
+      ],
     },
     recap: {
       review: 'pending',
@@ -307,6 +316,7 @@ export function genericMeetingDrafts(firstName: string): { ai: MeetingAI; recap:
       ],
       parentUpdates: [],
       profileChanges: [],
+      personalNotes: [],
     },
     recap: {
       review: 'pending',
@@ -341,6 +351,7 @@ Testing
 
 Activities
 - New since September: he teaches a free Python class for middle schoolers at the public library on Saturdays. About 12 kids. He started it himself.
+- He is going to his cousin's wedding in Seattle on ${en(10)} and is excited about it; first time he will see that side of the family in three years.
 
 Blockers
 - CSS Profile still waiting on Dad to upload the 2025 tax return. NYU needs CSS by the ED2 deadline (${en(12)}). Dad has not answered two WeChat messages.

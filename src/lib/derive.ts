@@ -11,6 +11,7 @@ import type {
   Meeting,
   OwnerType,
   Parent,
+  PersonalNote,
   Student,
   StudentDocument,
   Task,
@@ -240,7 +241,7 @@ const countPending = <T extends { review: string }>(xs: T[]) => xs.filter((x) =>
 
 /** The reviewable sections of a meeting's drafts, in screen order. */
 export interface ReviewSection {
-  key: 'notes' | 'tasks' | 'parents' | 'recap' | 'profile'
+  key: 'notes' | 'tasks' | 'parents' | 'recap' | 'profile' | 'remember'
   label: string
   /** Items still waiting for the counselor. 0 means the section is settled. */
   pending: number
@@ -257,6 +258,7 @@ export function reviewSections(m: Meeting): ReviewSection[] {
   }
   if (m.recap) sections.push({ key: 'recap', label: 'Recap for the student', pending: m.recap.review === 'pending' ? 1 : 0, total: 1 })
   if (ai?.profileChanges.length) sections.push({ key: 'profile', label: 'Profile changes', pending: countPending(ai.profileChanges), total: ai.profileChanges.length })
+  if (ai?.personalNotes?.length) sections.push({ key: 'remember', label: 'Things to remember', pending: countPending(ai.personalNotes), total: ai.personalNotes.length })
   return sections
 }
 
@@ -501,6 +503,12 @@ export interface WeeklyTextItems {
   late: Task[]
   /** The student's own open tasks due within the lookahead, soonest first. */
   due: Task[]
+  /**
+   * The student's next application deadlines, soonest first, at most three.
+   * Not written into the text: they are what the AI weighs when it picks which
+   * task to put first.
+   */
+  deadlines?: Deadline[]
 }
 
 /** The meeting and tasks a weekly text would mention, or undefined when there is nothing to say. */
@@ -514,7 +522,10 @@ export function weeklyTextItems(data: AppData, studentId: ID, today: ISODate = t
   const meeting = meetingsFor(data, studentId)
     .filter((m) => m.status === 'scheduled' && m.date >= today && m.date <= horizon)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0]
-  return meeting || late.length || due.length ? { meeting, late, due } : undefined
+  const deadlines = deadlinesFor(data, studentId)
+    .filter((x) => x.kind === 'college' && x.date >= today)
+    .slice(0, 3)
+  return meeting || late.length || due.length ? { meeting, late, due, deadlines } : undefined
 }
 
 export interface WeeklyTextRow {
@@ -546,3 +557,168 @@ export function weeklyTextsDone(data: AppData, today: ISODate = todayISO()): Wee
   const weekStart = weeklyTextWeek(data.firm.weeklyTextDay, today)
   return data.weeklyTexts.filter((w) => w.weekStart === weekStart && w.status !== 'draft').reverse()
 }
+
+// ── Things to remember ──────────────────────────────────────────────────────
+// Small personal details a student mentioned in passing (a golf tournament, a
+// school play), saved once a counselor approves them. This section decides the
+// life of a note: when it is live, when a draft may mention it, and when it is
+// spent. Who may receive one is decided in lib/facts.ts (texts to the student
+// only, never a parent).
+//
+//   * A note with a date is kept until a week after the event, however far off
+//     the event is. It is offered to drafts from 14 days before: first to wish
+//     the student well ("ahead"), then, once it has happened, to ask how it
+//     went ("after").
+//   * A note with no date belongs to the meeting cycle it came from. It is
+//     dropped when the next meeting with that student is logged, or after 30
+//     days, whichever comes first.
+//   * A note is mentioned once per moment: once ahead, once after, or once if
+//     it has no date. After that it is not offered again, so the student never
+//     hears the same thing twice.
+
+/** A dated note may be mentioned from this many days before the event… */
+export const NOTE_DAYS_AHEAD = 14
+/** …and asked about until this many days after it. Then it is finished. */
+export const NOTE_DAYS_AFTER = 7
+/** A note with no date goes stale after this many days, even if no meeting has happened since. */
+export const NOTE_STALE_DAYS = 30
+/** How many notes one draft is offered. It may use at most one. */
+export const NOTES_PER_DRAFT = 3
+
+/**
+ * Where a note stands today.
+ *   later     its event is more than 14 days off: kept, not mentioned yet
+ *   ahead     its event is within 14 days: "good luck Saturday"
+ *   after     its event was in the last 7 days: "how did it go?"
+ *   undated   no date, still within the meeting cycle it came from
+ *   finished  the event is more than a week past, or a newer meeting (or 30 days) has overtaken an undated note
+ */
+export type NoteStage = 'later' | 'ahead' | 'after' | 'undated' | 'finished'
+
+/** The day a note was learned: the day of the meeting it came from, or the day it was typed in. */
+function noteLearnedOn(data: AppData, note: PersonalNote): ISODate {
+  const meeting = note.meetingId ? data.meetings.find((m) => m.id === note.meetingId) : undefined
+  return meeting?.date ?? note.createdAt.slice(0, 10)
+}
+
+export function noteStage(data: AppData, note: PersonalNote, today: ISODate = todayISO()): NoteStage {
+  if (note.eventDate) {
+    const until = daysBetween(today, note.eventDate)
+    if (until > NOTE_DAYS_AHEAD) return 'later'
+    if (until >= 0) return 'ahead'
+    // An estimated date ("sometime next month") is too loose to ask "how did it go?" on.
+    return until >= -NOTE_DAYS_AFTER && !note.eventDateApprox ? 'after' : 'finished'
+  }
+  const learned = noteLearnedOn(data, note)
+  const newerMeeting = data.meetings.some((m) => m.studentId === note.studentId && m.status === 'completed' && m.id !== note.meetingId && m.date > learned)
+  return newerMeeting || daysBetween(learned, today) > NOTE_STALE_DAYS ? 'finished' : 'undated'
+}
+
+/** Whether the note has already been mentioned at this stage. Each stage gets one mention. */
+export const noteSpent = (note: PersonalNote, stage: NoteStage): boolean => note.uses.some((u) => u.stage === stage)
+
+/** A student's saved notes, newest first. */
+export function personalNotesFor(data: AppData, studentId: ID): PersonalNote[] {
+  // Stored oldest first; reversing keeps the latest of several saved at the same moment on top.
+  return data.personalNotes.filter((n) => n.studentId === studentId).reverse().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+/** A student's notes that are still live (anything but finished), newest first, and the finished ones. */
+export function personalNotesByLife(data: AppData, studentId: ID, today: ISODate = todayISO()): { live: PersonalNote[]; finished: PersonalNote[] } {
+  const notes = personalNotesFor(data, studentId)
+  return { live: notes.filter((n) => noteStage(data, n, today) !== 'finished'), finished: notes.filter((n) => noteStage(data, n, today) === 'finished') }
+}
+
+export interface NoteToMention {
+  note: PersonalNote
+  stage: 'ahead' | 'after' | 'undated'
+}
+
+/**
+ * The notes a draft to this student may mention today, best first, at most
+ * three. A note qualifies when it is at a stage that can be mentioned and has
+ * not been mentioned at that stage before.
+ *   1. events that just happened (ask how it went), most recent first;
+ *   2. events in the next 14 days, soonest first;
+ *   3. undated notes from the current meeting cycle, newest first.
+ */
+export function notesWorthMentioning(data: AppData, studentId: ID, today: ISODate = todayISO()): NoteToMention[] {
+  const open = personalNotesFor(data, studentId).flatMap((note): NoteToMention[] => {
+    const stage = noteStage(data, note, today)
+    return (stage === 'ahead' || stage === 'after' || stage === 'undated') && !noteSpent(note, stage) ? [{ note, stage }] : []
+  })
+  const until = (n: NoteToMention) => daysBetween(today, n.note.eventDate!)
+  const after = open.filter((n) => n.stage === 'after').sort((a, b) => until(b) - until(a))
+  const ahead = open.filter((n) => n.stage === 'ahead').sort((a, b) => until(a) - until(b))
+  const undated = open.filter((n) => n.stage === 'undated')
+  return [...after, ...ahead, ...undated].slice(0, NOTES_PER_DRAFT)
+}
+
+/** "in 5 days", "tomorrow", "3 days ago": where an event sits relative to today. */
+export function eventWhen(date: ISODate, today: ISODate = todayISO()): string {
+  const n = daysBetween(today, date)
+  if (n === 0) return 'today'
+  if (n === 1) return 'tomorrow'
+  if (n === -1) return 'yesterday'
+  return n > 0 ? `in ${n} days` : `${-n} days ago`
+}
+
+/** One line on where a note stands, for the counselor: "Coming up Sat, Nov 28, in 5 days · not mentioned yet". */
+export function noteStatusLine(data: AppData, note: PersonalNote, today: ISODate = todayISO()): string {
+  const stage = noteStage(data, note, today)
+  const mentioned = (s: NoteStage) => note.uses.find((u) => u.stage === s)
+  const day = (at: string) => new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const said = note.uses.length ? ` · mentioned ${note.uses.map((u) => day(u.at)).join(' and ')}` : ''
+  if (stage === 'later') return `Kept for later: nearer the day it will be offered to a text${said}`
+  if (stage === 'ahead') return mentioned('ahead') ? `Wished well on ${day(mentioned('ahead')!.at)}. Next: asking how it went, after the day` : 'Coming up: a text may wish them well'
+  if (stage === 'after') return mentioned('after') ? `Asked about on ${day(mentioned('after')!.at)}. Not used again` : `It has happened: a text may ask how it went${said}`
+  if (stage === 'undated') return mentioned('undated') ? `Mentioned on ${day(mentioned('undated')!.at)}. Not used again` : 'A text may mention it once, until the next meeting'
+  return note.eventDate ? `Over${said}` : `From an earlier meeting cycle${said}`
+}
+
+// ── Parent copy ─────────────────────────────────────────────────────────────
+
+/** A student who has not reacted for this long to the last message sent to them counts as not responding. */
+export const NOT_RESPONDING_DAYS = 5
+
+const hasLateTask = (data: AppData, studentId: ID, today: ISODate) => tasksFor(data, studentId).some((t) => t.owner === 'student' && isLate(t, today))
+
+/**
+ * True when the student has a late task of their own and has done nothing in
+ * the app for 5 or more days since the last message to them. A student nobody
+ * has messaged is not "not responding".
+ *
+ * Student activity is anything recorded with actor 'student': a task marked
+ * started or done, a progress note, a link attached.
+ */
+export function isNotResponding(data: AppData, student: Student, today: ISODate = todayISO()): boolean {
+  if (!hasLateTask(data, student.id, today)) return false
+  // The log is newest first.
+  const last = data.outbox.find((m) => m.studentId === student.id && m.toKind === 'student')
+  if (!last || daysBetween(last.sentAt.slice(0, 10), today) < NOT_RESPONDING_DAYS) return false
+  return !data.activity.some((e) => e.studentId === student.id && e.actor === 'student' && e.at > last.sentAt)
+}
+
+/** "Slipping", for the parent copy setting: a late task of the student's own, or not responding. */
+export function isSlipping(data: AppData, student: Student, today: ISODate = todayISO()): boolean {
+  return hasLateTask(data, student.id, today) || isNotResponding(data, student, today)
+}
+
+export interface ParentCopyChoice {
+  /** Whether "Also tell parent" is offered at all: not when the setting is 'never' or there is no parent. */
+  offered: boolean
+  /** Whether it starts ticked. */
+  ticked: boolean
+  parent?: Parent
+}
+
+/** How "Also tell parent" starts for a message to this student, from their setting and how they are doing. */
+export function parentCopyChoice(data: AppData, student: Student, today: ISODate = todayISO()): ParentCopyChoice {
+  const setting = student.parentCopy ?? 'when_slipping'
+  const parent = primaryParent(student)
+  if (setting === 'never' || !parent) return { offered: false, ticked: false }
+  return { offered: true, ticked: setting === 'always' || isSlipping(data, student, today), parent }
+}
+
+/** The task a parent copy of a weekly text is about: the most overdue, or failing that the next due. */
+export const parentCopyTask = (items: WeeklyTextItems): Task | undefined => items.late[0] ?? items.due[0]

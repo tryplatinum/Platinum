@@ -23,13 +23,16 @@ import type {
   Approval,
   CollegeApp,
   DraftParentUpdate,
+  DraftPersonalNote,
   DraftTask,
   EssayFeedback,
   EssayStatus,
   Firm,
   ID,
   Meeting,
+  NoteUse,
   Parent,
+  ParentCopy,
   ParentReport,
   ProfilePatch,
   Recap,
@@ -40,6 +43,7 @@ import type {
   StudentLink,
   Task,
   TaskStatus,
+  UsedNote,
   WeeklyText,
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
@@ -157,7 +161,15 @@ interface Actions {
   updateParentUpdate: (meetingId: ID, updateId: ID, patch: Partial<DraftParentUpdate>) => void
   reviewParentUpdate: (meetingId: ID, updateId: ID, decision: Decision) => void
   reviewProfileChange: (meetingId: ID, changeId: ID, decision: Decision) => void
+  updateDraftNote: (meetingId: ID, noteId: ID, patch: Partial<Pick<DraftPersonalNote, 'text' | 'eventDate' | 'eventDateApprox'>>) => void
+  /** Approving saves the detail as a "thing to remember" for this student. Dismissing saves nothing. */
+  reviewDraftNote: (meetingId: ID, noteId: ID, decision: Decision) => void
   approveAllInMeeting: (meetingId: ID) => void
+
+  // Things to remember
+  /** A note the counselor types in. Writing it is the approval. */
+  addPersonalNote: (studentId: ID, text: string, eventDate?: string) => void
+  deletePersonalNote: (id: ID) => void
 
   // Parent reports
   addReportDraft: (report: Omit<ParentReport, 'id' | 'createdOn' | 'status'>) => void
@@ -170,7 +182,7 @@ interface Actions {
   updateRule: (id: ReminderRule['id'], patch: Partial<Pick<ReminderRule, 'mode' | 'days'>>) => void
   // Weekly texts
   /** Stores this week's draft for a student, replacing an earlier draft. Nothing is sent. */
-  setWeeklyDraft: (studentId: ID, weekStart: string, draft: Pick<WeeklyText, 'body' | 'facts' | 'source'>) => void
+  setWeeklyDraft: (studentId: ID, weekStart: string, draft: Pick<WeeklyText, 'body' | 'facts' | 'source' | 'usedNote' | 'lead'>) => void
   updateWeeklyText: (id: ID, body: string) => void
   /**
    * The counselor pressed Copy or Open in Messages, which is their approval:
@@ -180,9 +192,18 @@ interface Actions {
   skipWeeklyText: (studentId: ID, weekStart: string) => void
   /** Puts a skipped student back on this week's list. */
   unskipWeeklyText: (id: ID) => void
+  /** Stores (or with `undefined`, removes) the draft of the separate message to the parent. A copy already sent stays. */
+  setWeeklyParentCopy: (studentId: ID, weekStart: string, copy: Omit<ParentCopy, 'status' | 'approval'> | undefined) => void
+  updateWeeklyParentCopy: (id: ID, patch: Partial<Pick<ParentCopy, 'body' | 'bodyEn'>>) => void
+  /** The counselor's approval of the parent copy, on its own: records who and when, and logs it. */
+  sendWeeklyParentCopy: (id: ID) => void
 
-  /** Writes one message to the "Messages sent" log. Nothing is delivered in v0. */
-  sendMessage: (message: OutgoingMessage) => void
+  /**
+   * Writes one message to the "Messages sent" log. Nothing is delivered in v0.
+   * `usedNote` is the thing to remember the message mentioned, if any: it is
+   * marked as mentioned so it is not offered again at the same stage.
+   */
+  sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
 }
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
@@ -198,8 +219,21 @@ function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): 
   return { ...data, activity: [{ id: newId(), at: nowTimestamp(), studentId, actor, text }, ...data.activity].slice(0, ACTIVITY_LIMIT) }
 }
 
+/** Adds a message to the log. One a counselor approved carries who approved it and when. */
 function deliver(data: AppData, message: OutgoingMessage): AppData {
-  return { ...data, outbox: [simulateSend(message), ...data.outbox] }
+  const approval = message.approval ?? (message.trigger === 'approved' ? approvalBy(data) : undefined)
+  return { ...data, outbox: [simulateSend({ ...message, approval }), ...data.outbox] }
+}
+
+/**
+ * Records that a sent message mentioned a note, so the same thing is not said
+ * twice. It goes by what the draft said it used: if the counselor cut the
+ * personal line by hand before sending, the note still counts as mentioned.
+ */
+function markNoteUsed(data: AppData, used: UsedNote | undefined, via: NoteUse['in']): AppData {
+  if (!used?.stage || !data.personalNotes.some((n) => n.id === used.id)) return data
+  const use: NoteUse = { at: nowTimestamp(), stage: used.stage, in: via }
+  return { ...data, personalNotes: patchById(data.personalNotes, used.id, (n) => ({ ...n, uses: [...n.uses, use] })) }
 }
 
 function patchMeeting(data: AppData, meetingId: ID, fn: (m: Meeting) => Meeting): AppData {
@@ -277,6 +311,7 @@ function emptyData(firm: Firm): AppData {
     reminderRules: DEFAULT_REMINDER_RULES.map((r) => ({ ...r })),
     activity: [],
     weeklyTexts: [],
+    personalNotes: [],
   }
 }
 
@@ -293,6 +328,7 @@ function merged(base: AppData, add: AppData): AppData {
     outbox: [...add.outbox, ...base.outbox],
     activity: [...add.activity, ...base.activity].slice(0, ACTIVITY_LIMIT),
     weeklyTexts: [...base.weeklyTexts, ...add.weeklyTexts],
+    personalNotes: [...base.personalNotes, ...add.personalNotes],
   }
 }
 
@@ -408,8 +444,8 @@ export const useStore = create<State & Actions>()((set, get) => {
     try {
       const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as { state?: { schema?: unknown; data?: unknown } } | null
       const data = migrate(saved?.state?.schema, saved?.state?.data)
-      // Saved before weekly texts existed.
-      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [] } : undefined
+      // Saved before weekly texts and things to remember existed.
+      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
     } catch {
       return undefined
     }
@@ -696,7 +732,13 @@ export const useStore = create<State & Actions>()((set, get) => {
         return logActivity(next, meeting.studentId, 'counselor', `${data.firm.counselorFirstName} logged the meeting “${meeting.title}”`)
       }),
 
-    deleteMeeting: (id) => change((data) => ({ ...data, meetings: data.meetings.filter((m) => m.id !== id) })),
+    deleteMeeting: (id) =>
+      change((data) => ({
+        ...data,
+        meetings: data.meetings.filter((m) => m.id !== id),
+        // Notes saved from the meeting stay; they just no longer point at it.
+        personalNotes: data.personalNotes.map((n) => (n.meetingId === id ? { ...n, meetingId: undefined } : n)),
+      })),
 
     setMeetingBrief: (id, brief) => change((data) => patchMeeting(data, id, (m) => ({ ...m, brief, agenda: m.agenda ?? brief.agenda.map((a) => a.topic) }))),
 
@@ -829,6 +871,37 @@ export const useStore = create<State & Actions>()((set, get) => {
         return next
       }),
 
+    updateDraftNote: (meetingId, noteId, patch) =>
+      change((data) =>
+        patchMeeting(data, meetingId, (m) =>
+          m.ai?.personalNotes ? { ...m, ai: { ...m.ai, personalNotes: patchById(m.ai.personalNotes, noteId, (n) => (n.review === 'pending' ? { ...n, ...patch } : n)) } } : m,
+        ),
+      ),
+
+    reviewDraftNote: (meetingId, noteId, decision) =>
+      change((data) => {
+        const meeting = data.meetings.find((m) => m.id === meetingId)
+        const draft = meeting?.ai?.personalNotes?.find((n) => n.id === noteId)
+        if (!meeting || !draft || draft.review !== 'pending') return data
+        const text = draft.text.trim()
+        // Nothing to save: an emptied note can only be dismissed.
+        if (decision === 'approved' && !text) return data
+        const approval = approvalBy(data)
+        let next = patchMeeting(data, meetingId, (m) => ({
+          ...m,
+          ai: { ...m.ai!, personalNotes: patchById(m.ai!.personalNotes!, noteId, (n) => ({ ...n, review: decision, approval: decision === 'approved' ? approval : undefined })) },
+        }))
+        if (decision === 'approved') {
+          next = {
+            ...next,
+            personalNotes: [...next.personalNotes, { id: newId(), studentId: meeting.studentId, text, eventDate: draft.eventDate, eventDateApprox: draft.eventDate ? draft.eventDateApprox : undefined, uses: [], source: 'meeting', meetingId, createdAt: approval.at, approval }],
+          }
+          // The log says that something was saved, not what: it is the student's own detail.
+          next = logActivity(next, meeting.studentId, 'counselor', `${data.firm.counselorFirstName} saved something to remember from “${meeting.title}”`)
+        }
+        return next
+      }),
+
     approveAllInMeeting: (meetingId) => {
       const meeting = get().data.meetings.find((m) => m.id === meetingId)
       if (!meeting) return
@@ -838,10 +911,22 @@ export const useStore = create<State & Actions>()((set, get) => {
         a.reviewNotes(meetingId, 'approved')
         meeting.ai?.draftTasks.forEach((t) => a.reviewDraftTask(meetingId, t.id, 'approved'))
         meeting.ai?.profileChanges.forEach((c) => a.reviewProfileChange(meetingId, c.id, 'approved'))
+        meeting.ai?.personalNotes?.forEach((n) => a.reviewDraftNote(meetingId, n.id, 'approved'))
         meeting.ai?.parentUpdates.forEach((u) => a.reviewParentUpdate(meetingId, u.id, 'approved'))
         a.reviewRecap(meetingId, 'approved')
       })
     },
+
+    // ── Things to remember ──
+    addPersonalNote: (studentId, text, eventDate) =>
+      change((data) => {
+        const note = text.trim().slice(0, 300)
+        if (!note || !data.students.some((s) => s.id === studentId)) return data
+        const approval = approvalBy(data)
+        return { ...data, personalNotes: [...data.personalNotes, { id: newId(), studentId, text: note, eventDate: eventDate || undefined, uses: [], source: 'counselor', createdAt: approval.at, approval }] }
+      }),
+
+    deletePersonalNote: (id) => change((data) => ({ ...data, personalNotes: data.personalNotes.filter((n) => n.id !== id) })),
 
     // ── Parent reports ──
     addReportDraft: (report) =>
@@ -882,9 +967,11 @@ export const useStore = create<State & Actions>()((set, get) => {
         const existing = data.weeklyTexts.find((w) => w.studentId === studentId && w.weekStart === weekStart)
         // A text already sent or skipped this week is not redrafted.
         if (existing && existing.status !== 'draft') return data
+        // A redraft replaces the wording and which note it used; the parent copy is its own draft and stays.
+        const fields = { body: draft.body, facts: draft.facts, source: draft.source, usedNote: draft.usedNote, lead: draft.lead }
         return existing
-          ? { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, ...draft })) }
-          : { ...data, weeklyTexts: [...data.weeklyTexts, { id: newId(), studentId, weekStart, status: 'draft', ...draft }] }
+          ? { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, ...fields })) }
+          : { ...data, weeklyTexts: [...data.weeklyTexts, { id: newId(), studentId, weekStart, status: 'draft', ...fields }] }
       }),
 
     updateWeeklyText: (id, body) =>
@@ -901,6 +988,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (!text || !student || text.status !== 'draft' || !text.body.trim()) return data
         let next: AppData = { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, status: 'sent', approval: approvalBy(data), sentVia: via })) }
         next = deliver(next, { ...toStudent(student), channel: 'text', kind: 'weekly_text', body: text.body, trigger: 'approved', note: 'Sent from your own phone' })
+        next = markNoteUsed(next, text.usedNote, 'weekly_text')
         return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} sent ${student.firstName} the weekly text`)
       }),
 
@@ -923,7 +1011,52 @@ export const useStore = create<State & Actions>()((set, get) => {
           : { ...data, weeklyTexts: data.weeklyTexts.filter((w) => w.id !== id) }
       }),
 
-    sendMessage: (message) => change((data) => deliver(data, message)),
+    setWeeklyParentCopy: (studentId, weekStart, copy) =>
+      change((data) => {
+        const existing = data.weeklyTexts.find((w) => w.studentId === studentId && w.weekStart === weekStart)
+        // A copy the counselor already approved is a record; it is not replaced or removed.
+        if (!existing || existing.parentCopy?.status === 'sent') return data
+        if (!copy && !existing.parentCopy) return data
+        return { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, parentCopy: copy && { ...copy, status: 'draft' as const } })) }
+      }),
+
+    updateWeeklyParentCopy: (id, patch) =>
+      change((data) => {
+        const copy = data.weeklyTexts.find((w) => w.id === id)?.parentCopy
+        if (!copy || copy.status !== 'draft') return data
+        if ((patch.body ?? copy.body) === copy.body && (patch.bodyEn ?? copy.bodyEn) === copy.bodyEn) return data
+        return { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, parentCopy: { ...copy, ...patch } })) }
+      }),
+
+    sendWeeklyParentCopy: (id) =>
+      change((data) => {
+        const text = data.weeklyTexts.find((w) => w.id === id)
+        const copy = text?.parentCopy
+        const student = data.students.find((s) => s.id === text?.studentId)
+        const parent = student?.parents.find((p) => p.id === copy?.parentId)
+        if (!text || !copy || !student || !parent || copy.status !== 'draft' || !copy.body.trim()) return data
+        const approval = approvalBy(data)
+        let next: AppData = { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, parentCopy: { ...copy, status: 'sent' as const, approval } })) }
+        next = deliver(next, {
+          studentId: student.id,
+          toKind: 'parent',
+          toName: parent.name,
+          parentId: parent.id,
+          channel: copy.channel,
+          language: copy.language,
+          kind: copy.kind,
+          body: copy.body,
+          bodyEn: copy.bodyEn,
+          trigger: 'approved',
+          // Only if the task is still there: the log row points at it.
+          taskId: data.tasks.some((t) => t.id === copy.taskId) ? copy.taskId : undefined,
+          note: 'Parent copy of the weekly text',
+          approval,
+        })
+        return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} approved a parent copy to ${parent.name}`)
+      }),
+
+    sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
   }
 })
 

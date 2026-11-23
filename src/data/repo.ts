@@ -19,6 +19,7 @@ import type {
   OutboxMessage,
   Parent,
   ParentReport,
+  PersonalNote,
   ReminderRule,
   Student,
   StudentDocument,
@@ -32,7 +33,7 @@ type Row<T extends keyof Tables> = Tables[T]['Row']
 /** A row as sent to apply_changes: the database supplies firm_id and its own bookkeeping columns. */
 type Out<T extends keyof Tables> = Omit<Row<T>, 'firm_id' | 'seq' | 'created_at' | 'updated_at'>
 
-type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity' | 'weekly_texts'
+type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity' | 'weekly_texts' | 'personal_notes'
 
 /** A failed read or write, with a message fit to show the counselor. */
 export class RepoError extends Error {}
@@ -93,6 +94,7 @@ const studentFrom = (r: Row<'students'>, parents: Parent[]): Student => ({
   parents,
   reportSettings: from<Student['reportSettings']>(r.report_settings) ?? { schedule: 'after_meetings', recipientIds: [] },
   weeklyText: r.weekly_text ? undefined : false,
+  parentCopy: r.parent_copy === 'when_slipping' ? undefined : (r.parent_copy as Student['parentCopy']),
   archived: r.archived || undefined,
 })
 
@@ -198,6 +200,7 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
   trigger: r.trigger as OutboxMessage['trigger'],
   taskId: u(r.task_id),
   note: u(r.note),
+  approval: from<OutboxMessage['approval']>(r.approval),
   dedupeKey: u(r.dedupe_key),
 })
 
@@ -219,6 +222,22 @@ const weeklyTextFrom = (r: Row<'weekly_texts'>): WeeklyText => ({
   source: from<WeeklyText['source']>(r.source),
   approval: from<WeeklyText['approval']>(r.approval),
   sentVia: u(r.sent_via) as WeeklyText['sentVia'],
+  usedNote: from<WeeklyText['usedNote']>(r.used_note),
+  lead: from<WeeklyText['lead']>(r.lead),
+  parentCopy: from<WeeklyText['parentCopy']>(r.parent_copy),
+})
+
+const personalNoteFrom = (r: Row<'personal_notes'>): PersonalNote => ({
+  id: r.id,
+  studentId: r.student_id,
+  text: r.text,
+  eventDate: u(r.event_date),
+  eventDateApprox: r.event_date_approx || undefined,
+  uses: from<PersonalNote['uses']>(r.uses) ?? [],
+  source: r.source as PersonalNote['source'],
+  meetingId: u(r.meeting_id),
+  createdAt: stamp(r.created_at),
+  approval: r.approval as unknown as PersonalNote['approval'],
 })
 
 const linkFrom = (r: Row<'student_links'>): StudentLink => ({
@@ -252,6 +271,7 @@ const studentRow = (s: Student): Out<'students'> => ({
   onboarded_on: s.onboardedOn,
   report_settings: json(s.reportSettings),
   weekly_text: s.weeklyText !== false,
+  parent_copy: s.parentCopy ?? 'when_slipping',
   archived: Boolean(s.archived),
 })
 
@@ -373,6 +393,7 @@ const outboxRow = (o: OutboxMessage): Out<'outbox'> => ({
   trigger: o.trigger,
   task_id: n(o.taskId),
   note: n(o.note),
+  approval: json(o.approval),
   dedupe_key: n(o.dedupeKey),
 })
 
@@ -394,6 +415,22 @@ const weeklyTextRow = (w: WeeklyText): Out<'weekly_texts'> => ({
   source: json(w.source),
   approval: json(w.approval),
   sent_via: n(w.sentVia),
+  used_note: json(w.usedNote),
+  lead: json(w.lead),
+  parent_copy: json(w.parentCopy),
+})
+
+// created_at is the database's: a note is dated when it is saved.
+const personalNoteRow = (p: PersonalNote): Out<'personal_notes'> => ({
+  id: p.id,
+  student_id: p.studentId,
+  text: p.text,
+  event_date: n(p.eventDate),
+  event_date_approx: Boolean(p.eventDate && p.eventDateApprox),
+  uses: json(p.uses),
+  source: p.source,
+  meeting_id: n(p.meetingId),
+  approval: json(p.approval),
 })
 
 const ruleRow = (r: ReminderRule) => ({ rule: r.id, days: r.days, mode: r.mode })
@@ -471,6 +508,7 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   appended('meetings', before.meetings, after.meetings, meetingRow)
   appended('tasks', before.tasks, after.tasks, taskRow)
   appended('colleges', before.colleges, after.colleges, collegeRow)
+  appended('personal_notes', before.personalNotes, after.personalNotes, personalNoteRow)
   appended('weekly_texts', before.weeklyTexts, after.weeklyTexts, weeklyTextRow)
 
   // Lists the app adds to at the front (newest first). Rows are sent oldest
@@ -543,7 +581,7 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts] = await Promise.all([
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes] = await Promise.all([
     supabase.from('firms').select('name, weekly_text_day').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
@@ -557,6 +595,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     all('activity', firmId, true, ACTIVITY_LIMIT),
     supabase.from('reminder_rules').select('rule, days, mode').eq('firm_id', firmId),
     all('weekly_texts', firmId, false),
+    all('personal_notes', firmId, false),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
@@ -583,6 +622,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     }),
     activity: activity.map(activityFrom),
     weeklyTexts: weeklyTexts.map(weeklyTextFrom),
+    personalNotes: personalNotes.map(personalNoteFrom),
   }
 }
 

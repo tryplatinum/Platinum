@@ -5,12 +5,12 @@
 
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { formatDate } from '../../lib/dates'
+import { formatDate, formatDateLong } from '../../lib/dates'
 import { findParent, ownerLabel, pendingInMeeting, reviewSections, type ReviewSection } from '../../lib/derive'
 import { CHANNEL_LABEL } from '../../lib/language'
 import { draftMeeting } from '../../services/workflows'
 import { useData, useStore, type Decision } from '../../store/store'
-import type { Approval, DraftTask, Meeting, OwnerType, ReminderMode, ReminderRule, Review, Student } from '../../types'
+import type { Approval, DraftPersonalNote, DraftTask, Meeting, OwnerType, ReminderMode, ReminderRule, Review, Student } from '../../types'
 import { Bilingual, recipientLine } from '../Bilingual'
 import {
   AiErrorNote,
@@ -110,6 +110,7 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
       {ai && section('tasks') && <TasksSection n={number('tasks')} meeting={meeting} student={student} />}
       {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
       {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
+      {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))]">
         {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
         <RemindersSection n={sections.length + 1} student={student} />
@@ -478,7 +479,73 @@ function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
   )
 }
 
-// ── 6. Reminders ────────────────────────────────────────────────────────────
+// ── 6. Things to remember ───────────────────────────────────────────────────
+
+/**
+ * Personal details the student mentioned, picked out by the AI. Reviewed like
+ * profile changes: approve, edit or dismiss. Only approved ones are saved, and
+ * they are used only in texts to the student.
+ */
+function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
+  const notes = meeting.ai!.personalNotes ?? []
+  return (
+    <Section n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
+      <p className="text-[13px] text-muted">
+        Things {student.firstName} mentioned in passing. A saved one is brought up in a text to {student.firstName}: good luck beforehand, “how did it go?” afterwards, then never again. One with a date is kept until it has happened; one without is dropped at the next meeting. They are never used in anything a parent reads, and {student.firstName} cannot see this list.
+      </p>
+      <ul className="flex flex-col">
+        {notes.map((note) => (
+          <DraftNoteRow key={note.id} meeting={meeting} note={note} />
+        ))}
+      </ul>
+    </Section>
+  )
+}
+
+function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonalNote }) {
+  const { updateDraftNote, reviewDraftNote } = useStore.getState()
+  const [editing, setEditing] = useState(false)
+  const pending = note.review === 'pending'
+  return (
+    <li className={cx('border-t border-line py-3 first:border-t-0 first:pt-0', note.review === 'dismissed' && 'opacity-60')}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-[14rem] flex-1 text-sm">
+          <p className="font-medium">
+            {note.text}
+            {note.eventDate && <span className="font-normal text-muted"> · {note.eventDateApprox ? `around ${formatDate(note.eventDate)} (estimated: no exact day was given)` : formatDateLong(note.eventDate)}</span>}
+            {!note.eventDate && pending && <span className="font-normal text-muted"> · no date, so it is dropped at the next meeting</span>}
+          </p>
+          <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {note.evidence}</p>
+        </div>
+        {pending ? (
+          <span className="flex flex-wrap gap-1.5">
+            <Button onClick={() => reviewDraftNote(meeting.id, note.id, 'approved')} disabled={!note.text.trim()}>
+              Approve
+            </Button>
+            <Button onClick={() => setEditing(!editing)} aria-expanded={editing}>
+              {editing ? 'Done' : 'Edit'}
+            </Button>
+            <Button variant="quiet" onClick={() => reviewDraftNote(meeting.id, note.id, 'dismissed')}>
+              Dismiss
+            </Button>
+          </span>
+        ) : (
+          <span className="flex flex-wrap items-center gap-2">
+            <SectionState review={note.review} approval={note.approval} approvedLabel="Saved" />
+          </span>
+        )}
+      </div>
+      {editing && pending && (
+        <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
+          <input className={cx(inputBase, 'min-w-[14rem] flex-1')} maxLength={300} value={note.text} onChange={(e) => updateDraftNote(meeting.id, note.id, { text: e.target.value })} aria-label="Thing to remember" />
+          <input type="date" className={inputBase} value={note.eventDate ?? ''} aria-label="Date of the event, if there is one" onChange={(e) => updateDraftNote(meeting.id, note.id, { eventDate: e.target.value || undefined, eventDateApprox: undefined })} />
+        </div>
+      )}
+    </li>
+  )
+}
+
+// ── 7. Reminders ────────────────────────────────────────────────────────────
 
 /** Toggles for what goes out about tasks. These are the firm-wide rules, shown here because this is where the tasks are created. */
 function RemindersSection({ n, student }: { n: number; student: Student }) {

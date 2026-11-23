@@ -154,6 +154,8 @@ export async function studentPage(link: Link): Promise<AppData> {
     reminderRules: [],
     activity: [],
     weeklyTexts: [],
+    // Things to remember are the counselor's. No query in this file reads personal_notes.
+    personalNotes: [],
   }
 }
 

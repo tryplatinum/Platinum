@@ -3,15 +3,24 @@
 // the whole caseload here, then sends each one from their own phone. Nothing is
 // texted by Platinum: "Copy" and "Open in Messages" hand the text to the
 // counselor, and pressing either is their approval.
+//
+// Which task a text puts first is the AI's choice of the most urgent one; the
+// row says which and why ("Leads with: …"). Every date is still the code's.
+//
+// A text may draw on one "thing to remember" about the student; the row says
+// which ("Used: …") and offers a redraft without it. "Also tell parent" adds a
+// separate short draft to the primary parent, approved and logged on its own.
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, LinkButton, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
-import { WEEKDAYS, findStudent, fullName, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
+import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
+import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { WEEKLY_TEXT_MAX, weeklyTextFactLines, weeklyTextFacts } from '../../lib/reminders'
-import { draftWeeklyText, publicOrigin } from '../../services/workflows'
+import { draftWeeklyParentCopy, draftWeeklyText, publicOrigin, type WeeklyDraftOptions } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
+import type { Student, WeeklyText } from '../../types'
 
 const SENT_FROM_PHONE = 'Logged in Messages sent as sent from your own phone.'
 
@@ -28,12 +37,26 @@ export default function WeeklyTexts() {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [progress, setProgress] = useState<{ done: number; total: number; failed: number }>()
   const hasLink = Boolean(publicOrigin())
+  /** "Also tell parent" where the counselor changed it from how it started. */
+  const [tell, setTell] = useState<Record<string, boolean>>({})
 
-  const draft = async (studentId: string): Promise<boolean> => {
+  /**
+   * Whether "Also tell parent" is offered for a row, and ticked. Before a draft
+   * exists it follows the student's setting; after, it shows whether there is a copy.
+   */
+  const parentChoice = (row: WeeklyTextRow) => {
+    const choice = parentCopyChoice(data, row.student)
+    const offered = choice.offered && Boolean(parentCopyTask(row.items))
+    const ticked = offered && (row.draft?.parentCopy ? true : (tell[row.student.id] ?? (row.draft ? false : choice.ticked)))
+    return { offered, ticked, parent: choice.parent }
+  }
+
+  /** Runs one piece of drafting for a row, showing its progress and any failure on that row. */
+  const work = async (studentId: string, job: () => Promise<void>): Promise<boolean> => {
     setBusy((b) => ({ ...b, [studentId]: true }))
     setErrors(({ [studentId]: _cleared, ...rest }) => rest)
     try {
-      await draftWeeklyText(studentId)
+      await job()
       return true
     } catch (error) {
       setErrors((e) => ({ ...e, [studentId]: error instanceof Error ? error.message : 'The draft could not be prepared. Try again.' }))
@@ -43,13 +66,22 @@ export default function WeeklyTexts() {
     }
   }
 
+  const draft = (row: WeeklyTextRow, options: WeeklyDraftOptions = {}) => work(row.student.id, () => draftWeeklyText(row.student.id, { tellParent: parentChoice(row).ticked, ...options }))
+
+  const setTellParent = (row: WeeklyTextRow, checked: boolean) => {
+    setTell((t) => ({ ...t, [row.student.id]: checked }))
+    if (!row.draft) return
+    if (checked) void work(row.student.id, () => draftWeeklyParentCopy(row.student.id))
+    else useStore.getState().setWeeklyParentCopy(row.student.id, row.weekStart, undefined)
+  }
+
   /** One at a time, so the count is honest and one failure does not stop the rest. */
   const draftAll = async () => {
     const todo = rows.filter((r) => !r.draft)
     let failed = 0
     setProgress({ done: 0, total: todo.length, failed })
     for (const [i, row] of todo.entries()) {
-      if (!(await draft(row.student.id))) failed++
+      if (!(await draft(row))) failed++
       setProgress({ done: i + 1, total: todo.length, failed })
     }
     setProgress(undefined)
@@ -93,7 +125,7 @@ export default function WeeklyTexts() {
         )}
         <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
           Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]}. A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
-          texted automatically.
+          texted automatically. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well, for you to approve on its own.
           {!hasLink && ' Links are left out of these texts because this address only works on your own computer.'}
         </p>
         {rows.length === 0 ? (
@@ -103,7 +135,15 @@ export default function WeeklyTexts() {
         ) : (
           <ul>
             {rows.map((row) => (
-              <Row key={row.student.id} row={row} error={errors[row.student.id]} busy={Boolean(busy[row.student.id])} onDraft={() => void draft(row.student.id)} />
+              <Row
+                key={row.student.id}
+                row={row}
+                error={errors[row.student.id]}
+                busy={Boolean(busy[row.student.id])}
+                parent={parentChoice(row)}
+                onTellParent={(checked) => setTellParent(row, checked)}
+                onDraft={(options) => void draft(row, options)}
+              />
             ))}
           </ul>
         )}
@@ -114,7 +154,21 @@ export default function WeeklyTexts() {
   )
 }
 
-function Row({ row, error, busy, onDraft }: { row: WeeklyTextRow; error?: string; busy: boolean; onDraft: () => void }) {
+function Row({
+  row,
+  error,
+  busy,
+  parent,
+  onTellParent,
+  onDraft,
+}: {
+  row: WeeklyTextRow
+  error?: string
+  busy: boolean
+  parent: { offered: boolean; ticked: boolean; parent?: { name: string; channel: keyof typeof CHANNEL_LABEL } }
+  onTellParent: (checked: boolean) => void
+  onDraft: (options?: WeeklyDraftOptions) => void
+}) {
   const { student, draft } = row
   const firm = useData().firm
   const { updateWeeklyText, sendWeeklyText, skipWeeklyText } = useStore.getState()
@@ -176,6 +230,26 @@ function Row({ row, error, busy, onDraft }: { row: WeeklyTextRow; error?: string
               <p className={cx('text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
                 {text.length} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
               </p>
+              {draft.lead && (
+                <p className="text-[13px] text-ink-soft">
+                  <strong>Leads with:</strong> {draft.lead.title}
+                  <span className="text-muted">
+                    {' '}
+                    · the AI’s choice of the most urgent task{draft.lead.changedOrder ? ', ahead of one that is more overdue' : ', which is also the most overdue'}
+                    {draft.lead.reason && `. Its reason: ${draft.lead.reason}`}
+                  </span>
+                </p>
+              )}
+              {draft.usedNote && (
+                <p className="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
+                  <span>
+                    <strong>Used:</strong> {draft.usedNote.text}
+                  </span>
+                  <Button variant="quiet" className="-my-2" disabled={busy} onClick={() => onDraft({ useNotes: false })}>
+                    Redraft without it
+                  </Button>
+                </p>
+              )}
               {draft.source?.kind === 'placeholder' && (
                 <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
                   <strong>Fixed template, not AI wording.</strong> {draft.source.reason}
@@ -189,7 +263,7 @@ function Row({ row, error, busy, onDraft }: { row: WeeklyTextRow; error?: string
 
           <div className="flex flex-wrap items-center gap-2">
             {!draft ? (
-              <Button onClick={onDraft} disabled={busy}>
+              <Button onClick={() => onDraft()} disabled={busy}>
                 {busy ? 'Drafting…' : 'Draft'}
               </Button>
             ) : !phone ? (
@@ -221,7 +295,7 @@ function Row({ row, error, busy, onDraft }: { row: WeeklyTextRow; error?: string
                 >
                   Open in Messages
                 </a>
-                <Button variant="quiet" onClick={onDraft} disabled={busy}>
+                <Button variant="quiet" onClick={() => onDraft()} disabled={busy}>
                   {busy ? 'Drafting…' : 'Draft again'}
                 </Button>
               </>
@@ -233,6 +307,17 @@ function Row({ row, error, busy, onDraft }: { row: WeeklyTextRow; error?: string
           {draft && !phone && <p className="text-[13px] text-muted">{student.firstName} has no phone number on file, so there is nowhere to send this.</p>}
         </div>
       </div>
+
+      {parent.offered && parent.parent && (
+        <label className="flex min-h-11 flex-wrap items-center gap-2 text-sm">
+          <input type="checkbox" className="h-4 w-4" checked={parent.ticked} disabled={busy || draft?.parentCopy?.status === 'sent'} onChange={(e) => onTellParent(e.target.checked)} />
+          Also tell parent
+          <span className="text-[13px] text-muted">
+            ({parent.parent.name}, by {CHANNEL_LABEL[parent.parent.channel]}. A separate short message, approved on its own.)
+          </span>
+        </label>
+      )}
+      {draft?.parentCopy && <ParentCopyBlock text={draft} student={student} />}
     </li>
   )
 }
@@ -248,7 +333,8 @@ function Done() {
         {weeklyTextsDone(data).map((w) => {
           const student = findStudent(data, w.studentId)
           return (
-            <li key={w.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-sm">
+            <li key={w.id} className="flex flex-col gap-3 border-t border-line px-5 py-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-semibold">{student ? fullName(student) : 'Removed student'}</span>
               <span className="flex flex-wrap items-center gap-2">
                 {w.status === 'sent' ? (
@@ -267,10 +353,103 @@ function Done() {
                   </>
                 )}
               </span>
+              </div>
+              {/* A parent copy still waiting for approval stays within reach after the student's text is done. */}
+              {student && w.parentCopy && <ParentCopyBlock text={w} student={student} />}
             </li>
           )
         })}
       </ul>
     </Card>
+  )
+}
+
+/**
+ * The parent copy that goes with a weekly text: its own short draft to the
+ * primary parent about one task, in their language and for their channel.
+ * "Copy" is the counselor's approval of this message alone; it is logged
+ * separately from the student's text. It never contains a "thing to remember".
+ */
+function ParentCopyBlock({ text, student }: { text: WeeklyText; student: Student }) {
+  const data = useData()
+  const { updateWeeklyParentCopy, sendWeeklyParentCopy } = useStore.getState()
+  const toast = useToast()
+  const copy = text.parentCopy!
+  const parent = findParent(student, copy.parentId)
+  const task = data.tasks.find((t) => t.id === copy.taskId)
+  const [body, setBody] = useState(copy.body)
+  const [bodyEn, setBodyEn] = useState(copy.bodyEn)
+  useEffect(() => {
+    setBody(copy.body)
+    setBodyEn(copy.bodyEn)
+  }, [copy.body, copy.bodyEn])
+  if (!parent) return null
+  const sent = copy.status === 'sent'
+  const channel = CHANNEL_LABEL[copy.channel]
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-muted">
+          Parent copy · {channel} to {parent.name}
+          {copy.language !== 'en' && ` · ${LANGUAGE_LABEL[copy.language]}`}
+        </span>
+        <AiTag source={copy.source} />
+        {sent && <Pill tone="good">Logged as sent</Pill>}
+        {sent && copy.approval && (
+          <span className="text-[13px] text-muted">
+            Approved by {copy.approval.by}, {formatTimestamp(copy.approval.at)}
+          </span>
+        )}
+      </div>
+      {task && <p className="text-[13px] text-muted">About: {task.title}</p>}
+      {!sent && copy.source.kind === 'placeholder' && (
+        <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+          <strong>Fixed template, not AI wording.</strong> {copy.source.reason}
+        </p>
+      )}
+      {!sent &&
+        copy.warnings?.map((w) => (
+          <p key={w} role="alert" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+            Check before sending: {w}
+          </p>
+        ))}
+      {sent ? (
+        <>
+          <p lang={copy.language} className="whitespace-pre-wrap rounded-lg bg-surface px-3 py-2.5 text-sm leading-relaxed">
+            {copy.body}
+          </p>
+          {copy.bodyEn && <p className="whitespace-pre-wrap px-1 text-[13px] leading-relaxed text-muted">English: {copy.bodyEn}</p>}
+        </>
+      ) : (
+        <>
+          <textarea
+            className={cx(textareaClass, 'min-h-24')}
+            lang={copy.language}
+            aria-label={`Message to ${parent.name}`}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onBlur={() => updateWeeklyParentCopy(text.id, { body })}
+          />
+          {bodyEn !== undefined && (
+            <textarea className={textareaClass} rows={3} aria-label="English version, for your records" value={bodyEn} onChange={(e) => setBodyEn(e.target.value)} onBlur={() => updateWeeklyParentCopy(text.id, { bodyEn })} />
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={!body.trim()}
+              onClick={() => {
+                void navigator.clipboard?.writeText(body)
+                updateWeeklyParentCopy(text.id, { body, bodyEn })
+                sendWeeklyParentCopy(text.id)
+                toast(`Copied. Paste it into ${channel} to ${parent.name}. Logged in Messages sent as its own message.`)
+              }}
+            >
+              Copy for {channel}
+            </Button>
+            <span className="text-[13px] text-muted">Copying is your approval of this message on its own. Untick “Also tell parent” to drop it.</span>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
