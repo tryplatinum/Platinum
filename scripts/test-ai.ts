@@ -14,7 +14,7 @@ import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '
 import { buildSeed } from '../src/data/seed.js'
 import { formatDate, formatDateZh } from '../src/lib/dates.js'
 import { daysLate, isOpen, weeklyTextItems } from '../src/lib/derive.js'
-import { WEEKLY_TEXT_MAX, weeklyTextFacts, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks } from '../src/lib/reminders.js'
+import { WEEKLY_NOTE_ROOM, WEEKLY_TEXT_MAX, weeklyTextFacts, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks } from '../src/lib/reminders.js'
 import { briefFacts, buildFacts, notesForDraft, reminderRequest, reportFacts } from '../src/lib/facts.js'
 import { createAccount, removeAccount, requireSettings } from './testAccounts.js'
 
@@ -66,7 +66,7 @@ const kevinOwnTask = data.tasks.find((t) => t.studentId === kevin.id && t.owner 
 const studentReminder = reminderRequest(data, kevin, kevinOwnTask, { kind: 'student' }).input
 
 // A realistic weekly text: Kevin's own late and upcoming tasks, his next meeting, an invented link.
-const kevinWeekly = weeklyTextFacts(kevin, data.firm.counselorFirstName, weeklyTextItems(data, kevin.id) ?? { late: [], due: [] }, 'https://platinum.example/s/Lka1hSX5xoW6d5u4VfaKiSq-hkmUPMrnHfK0bG63aRY')
+const kevinWeekly = weeklyTextFacts(kevin, data.firm.counselorFirstName, weeklyTextItems(data, kevin.id) ?? { late: [], due: [] }, 'https://platinum.example/s/Lka1hSX5xoW6d5u4VfaKiSq-hkmUPMrnHfK0bG63aRY', undefined, kevinNotes.length ? WEEKLY_NOTE_ROOM : 0)
 inputs.weeklyText = {
   today: data.students.length ? new Date().toISOString().slice(0, 10) : '',
   studentFirstName: kevinWeekly.firstName,

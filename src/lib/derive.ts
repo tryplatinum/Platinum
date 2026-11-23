@@ -559,18 +559,63 @@ export function weeklyTextsDone(data: AppData, today: ISODate = todayISO()): Wee
 }
 
 // ── Things to remember ──────────────────────────────────────────────────────
-// Small personal details a student mentioned, saved once a counselor approves
-// them. Which ones a draft may draw on is decided here; who may receive them
-// is decided in lib/facts.ts (texts to the student only, never a parent).
+// Small personal details a student mentioned in passing (a golf tournament, a
+// school play), saved once a counselor approves them. This section decides the
+// life of a note: when it is live, when a draft may mention it, and when it is
+// spent. Who may receive one is decided in lib/facts.ts (texts to the student
+// only, never a parent).
+//
+//   * A note with a date is kept until a week after the event, however far off
+//     the event is. It is offered to drafts from 14 days before: first to wish
+//     the student well ("ahead"), then, once it has happened, to ask how it
+//     went ("after").
+//   * A note with no date belongs to the meeting cycle it came from. It is
+//     dropped when the next meeting with that student is logged, or after 30
+//     days, whichever comes first.
+//   * A note is mentioned once per moment: once ahead, once after, or once if
+//     it has no date. After that it is not offered again, so the student never
+//     hears the same thing twice.
 
-/** A dated note is worth mentioning from this many days before the event… */
+/** A dated note may be mentioned from this many days before the event… */
 export const NOTE_DAYS_AHEAD = 14
-/** …until this many days after it. */
+/** …and asked about until this many days after it. Then it is finished. */
 export const NOTE_DAYS_AFTER = 7
-/** A note with no date goes stale after this many days. */
+/** A note with no date goes stale after this many days, even if no meeting has happened since. */
 export const NOTE_STALE_DAYS = 30
 /** How many notes one draft is offered. It may use at most one. */
 export const NOTES_PER_DRAFT = 3
+
+/**
+ * Where a note stands today.
+ *   later     its event is more than 14 days off: kept, not mentioned yet
+ *   ahead     its event is within 14 days: "good luck Saturday"
+ *   after     its event was in the last 7 days: "how did it go?"
+ *   undated   no date, still within the meeting cycle it came from
+ *   finished  the event is more than a week past, or a newer meeting (or 30 days) has overtaken an undated note
+ */
+export type NoteStage = 'later' | 'ahead' | 'after' | 'undated' | 'finished'
+
+/** The day a note was learned: the day of the meeting it came from, or the day it was typed in. */
+function noteLearnedOn(data: AppData, note: PersonalNote): ISODate {
+  const meeting = note.meetingId ? data.meetings.find((m) => m.id === note.meetingId) : undefined
+  return meeting?.date ?? note.createdAt.slice(0, 10)
+}
+
+export function noteStage(data: AppData, note: PersonalNote, today: ISODate = todayISO()): NoteStage {
+  if (note.eventDate) {
+    const until = daysBetween(today, note.eventDate)
+    if (until > NOTE_DAYS_AHEAD) return 'later'
+    if (until >= 0) return 'ahead'
+    // An estimated date ("sometime next month") is too loose to ask "how did it go?" on.
+    return until >= -NOTE_DAYS_AFTER && !note.eventDateApprox ? 'after' : 'finished'
+  }
+  const learned = noteLearnedOn(data, note)
+  const newerMeeting = data.meetings.some((m) => m.studentId === note.studentId && m.status === 'completed' && m.id !== note.meetingId && m.date > learned)
+  return newerMeeting || daysBetween(learned, today) > NOTE_STALE_DAYS ? 'finished' : 'undated'
+}
+
+/** Whether the note has already been mentioned at this stage. Each stage gets one mention. */
+export const noteSpent = (note: PersonalNote, stage: NoteStage): boolean => note.uses.some((u) => u.stage === stage)
 
 /** A student's saved notes, newest first. */
 export function personalNotesFor(data: AppData, studentId: ID): PersonalNote[] {
@@ -578,21 +623,35 @@ export function personalNotesFor(data: AppData, studentId: ID): PersonalNote[] {
   return data.personalNotes.filter((n) => n.studentId === studentId).reverse().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-/**
- * The notes a draft to this student may draw on, best first, at most three:
- *   1. notes whose event is in the next 14 days or the last 7, nearest first;
- *   2. notes with no date, saved in the last 30 days, newest first;
- *   3. notes whose event is more than 14 days ahead, saved in the last 30 days.
- * An event more than 7 days past is left out, as is an undated note older than 30 days.
- */
-export function notesWorthMentioning(data: AppData, studentId: ID, today: ISODate = todayISO()): PersonalNote[] {
+/** A student's notes that are still live (anything but finished), newest first, and the finished ones. */
+export function personalNotesByLife(data: AppData, studentId: ID, today: ISODate = todayISO()): { live: PersonalNote[]; finished: PersonalNote[] } {
   const notes = personalNotesFor(data, studentId)
-  const until = (n: PersonalNote) => daysBetween(today, n.eventDate!)
-  const fresh = (n: PersonalNote) => daysBetween(n.createdAt.slice(0, 10), today) <= NOTE_STALE_DAYS
-  const near = notes.filter((n) => n.eventDate && until(n) >= -NOTE_DAYS_AFTER && until(n) <= NOTE_DAYS_AHEAD).sort((a, b) => Math.abs(until(a)) - Math.abs(until(b)))
-  const undated = notes.filter((n) => !n.eventDate && fresh(n))
-  const later = notes.filter((n) => n.eventDate && until(n) > NOTE_DAYS_AHEAD && fresh(n)).sort((a, b) => until(a) - until(b))
-  return [...near, ...undated, ...later].slice(0, NOTES_PER_DRAFT)
+  return { live: notes.filter((n) => noteStage(data, n, today) !== 'finished'), finished: notes.filter((n) => noteStage(data, n, today) === 'finished') }
+}
+
+export interface NoteToMention {
+  note: PersonalNote
+  stage: 'ahead' | 'after' | 'undated'
+}
+
+/**
+ * The notes a draft to this student may mention today, best first, at most
+ * three. A note qualifies when it is at a stage that can be mentioned and has
+ * not been mentioned at that stage before.
+ *   1. events that just happened (ask how it went), most recent first;
+ *   2. events in the next 14 days, soonest first;
+ *   3. undated notes from the current meeting cycle, newest first.
+ */
+export function notesWorthMentioning(data: AppData, studentId: ID, today: ISODate = todayISO()): NoteToMention[] {
+  const open = personalNotesFor(data, studentId).flatMap((note): NoteToMention[] => {
+    const stage = noteStage(data, note, today)
+    return (stage === 'ahead' || stage === 'after' || stage === 'undated') && !noteSpent(note, stage) ? [{ note, stage }] : []
+  })
+  const until = (n: NoteToMention) => daysBetween(today, n.note.eventDate!)
+  const after = open.filter((n) => n.stage === 'after').sort((a, b) => until(b) - until(a))
+  const ahead = open.filter((n) => n.stage === 'ahead').sort((a, b) => until(a) - until(b))
+  const undated = open.filter((n) => n.stage === 'undated')
+  return [...after, ...ahead, ...undated].slice(0, NOTES_PER_DRAFT)
 }
 
 /** "in 5 days", "tomorrow", "3 days ago": where an event sits relative to today. */
@@ -602,6 +661,19 @@ export function eventWhen(date: ISODate, today: ISODate = todayISO()): string {
   if (n === 1) return 'tomorrow'
   if (n === -1) return 'yesterday'
   return n > 0 ? `in ${n} days` : `${-n} days ago`
+}
+
+/** One line on where a note stands, for the counselor: "Coming up Sat, Nov 28, in 5 days · not mentioned yet". */
+export function noteStatusLine(data: AppData, note: PersonalNote, today: ISODate = todayISO()): string {
+  const stage = noteStage(data, note, today)
+  const mentioned = (s: NoteStage) => note.uses.find((u) => u.stage === s)
+  const day = (at: string) => new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const said = note.uses.length ? ` · mentioned ${note.uses.map((u) => day(u.at)).join(' and ')}` : ''
+  if (stage === 'later') return `Kept for later: nearer the day it will be offered to a text${said}`
+  if (stage === 'ahead') return mentioned('ahead') ? `Wished well on ${day(mentioned('ahead')!.at)}. Next: asking how it went, after the day` : 'Coming up: a text may wish them well'
+  if (stage === 'after') return mentioned('after') ? `Asked about on ${day(mentioned('after')!.at)}. Not used again` : `It has happened: a text may ask how it went${said}`
+  if (stage === 'undated') return mentioned('undated') ? `Mentioned on ${day(mentioned('undated')!.at)}. Not used again` : 'A text may mention it once, until the next meeting'
+  return note.eventDate ? `Over${said}` : `From an earlier meeting cycle${said}`
 }
 
 // ── Parent copy ─────────────────────────────────────────────────────────────

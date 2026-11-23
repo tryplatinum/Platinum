@@ -3,7 +3,7 @@
 
 import { parentCopyTask, primaryParent, weeklyTextItems, weeklyTextWeek } from '../lib/derive'
 import { notesForDraft } from '../lib/facts'
-import { weeklyTextFacts } from '../lib/reminders'
+import { WEEKLY_NOTE_ROOM, weeklyTextFacts } from '../lib/reminders'
 import { useStore } from '../store/store'
 import type { ID } from '../types'
 import { draftFromMeeting, draftTasksOnly, preMeetingBrief, reminderDraft, weeklyText } from './ai'
@@ -68,9 +68,11 @@ export async function draftWeeklyText(studentId: ID, { useNotes = true, tellPare
   const student = data.students.find((s) => s.id === studentId)
   const items = student && weeklyTextItems(data, student.id)
   if (!student || !items) return
-  const facts = weeklyTextFacts(student, data.firm.counselorFirstName, items, await studentTaskLink(student.id))
-  // Things to remember go to the student's text only. notesForDraft returns none for any other audience.
+  // Things to remember go to the student's text only. notesForDraft returns none for any other audience,
+  // and leaves out anything out of date or already mentioned.
   const notes = useNotes ? notesForDraft(data, student, 'student') : []
+  // With something personal to say, the task list gives up room for it.
+  const facts = weeklyTextFacts(student, data.firm.counselorFirstName, items, await studentTaskLink(student.id), undefined, notes.length ? WEEKLY_NOTE_ROOM : 0)
   // Students have no language setting yet, so the text is in English.
   const draft = await weeklyText(facts, 'en', notes)
   const weekStart = weeklyTextWeek(data.firm.weeklyTextDay)

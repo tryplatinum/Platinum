@@ -7,10 +7,10 @@ import { BriefCard } from '../../../components/meeting/BriefCard'
 import { AddTaskForm, TaskItem } from '../../../components/TaskRows'
 import { Button, Card, CardHeader, Empty, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { addDays, formatDate, formatDateLong, formatTimestamp, todayISO } from '../../../lib/dates'
-import { collegeIsPending, collegesFor, dueText, eventWhen, isNotResponding, isOpen, isSlipping, nextMeeting, personalNotesFor, sortByUrgency, statusText, summarize, tasksFor } from '../../../lib/derive'
+import { collegeIsPending, collegesFor, dueText, eventWhen, isNotResponding, isOpen, isSlipping, nextMeeting, noteStatusLine, personalNotesByLife, sortByUrgency, statusText, summarize, tasksFor } from '../../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { useData, useStore } from '../../../store/store'
-import type { ApplicationPlan, CollegeStatus, Parent, ParentCopySetting, Student } from '../../../types'
+import type { ApplicationPlan, CollegeStatus, Parent, ParentCopySetting, PersonalNote, Student } from '../../../types'
 
 export default function Overview({ student }: { student: Student }) {
   const data = useData()
@@ -219,35 +219,42 @@ function CollegeList({ student }: { student: Student }) {
 
 // ── Things to remember ──────────────────────────────────────────────────────
 
-/** Personal details the student mentioned, newest first. Saved from meetings once approved, or typed in here. */
+/**
+ * What the counselor is keeping track of about this student: things they
+ * mentioned in passing, saved from meetings once approved or typed in here.
+ * Each line says where the note stands (coming up, happened, mentioned). Notes
+ * that are over, or from an earlier meeting cycle, drop into "No longer used".
+ */
 function ThingsToRemember({ student }: { student: Student }) {
   const data = useData()
   const { addPersonalNote, deletePersonalNote } = useStore.getState()
-  const notes = personalNotesFor(data, student.id)
+  const { live, finished } = personalNotesByLife(data, student.id)
   const [text, setText] = useState('')
   const [date, setDate] = useState('')
+  const row = (note: PersonalNote) => (
+    <li key={note.id} className="flex items-start justify-between gap-2 border-t border-line py-2.5 text-sm first:border-t-0 first:pt-0">
+      <div className="min-w-0">
+        <p className="break-words">
+          {note.text}
+          {note.eventDate && <span className="text-muted"> · {note.eventDateApprox ? `around ${formatDate(note.eventDate)}` : `${formatDateLong(note.eventDate)}, ${eventWhen(note.eventDate)}`}</span>}
+        </p>
+        <p className="text-[13px] text-ink-soft">{noteStatusLine(data, note)}</p>
+        <p className="text-xs text-muted">
+          {note.source === 'meeting' ? 'From a meeting' : 'Added by hand'} · {note.approval.by}, {formatTimestamp(note.approval.at)}
+        </p>
+      </div>
+      <Button variant="quiet" className="-my-1.5 shrink-0" aria-label={`Delete: ${note.text}`} onClick={() => deletePersonalNote(note.id)}>
+        Delete
+      </Button>
+    </li>
+  )
   return (
     <Card className="flex flex-col gap-3 p-5">
-      <CardHeader title="Things to remember" count={notes.length || undefined} />
-      {notes.length === 0 ? (
-        <p className="text-sm text-muted">Nothing yet. Personal details {student.firstName} mentions in a meeting appear here once you approve them.</p>
+      <CardHeader title="Things to remember" count={live.length || undefined} />
+      {live.length === 0 ? (
+        <p className="text-sm text-muted">Nothing current. Things {student.firstName} mentions in passing in a meeting appear here once you approve them.</p>
       ) : (
-        <ul>
-          {notes.map((note) => (
-            <li key={note.id} className="flex items-start justify-between gap-2 border-t border-line py-2.5 text-sm first:border-t-0 first:pt-0">
-              <div className="min-w-0">
-                <p className="break-words">{note.text}</p>
-                <p className="text-[13px] text-muted">
-                  {note.eventDate && `${formatDateLong(note.eventDate)}, ${eventWhen(note.eventDate)} · `}
-                  {note.source === 'meeting' ? 'From a meeting' : 'Added by hand'} · {note.approval.by}, {formatTimestamp(note.approval.at)}
-                </p>
-              </div>
-              <Button variant="quiet" className="-my-1.5 shrink-0" aria-label={`Delete: ${note.text}`} onClick={() => deletePersonalNote(note.id)}>
-                Delete
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <ul>{live.map(row)}</ul>
       )}
       <form
         className="flex flex-wrap gap-2"
@@ -265,8 +272,15 @@ function ThingsToRemember({ student }: { student: Student }) {
           Add
         </Button>
       </form>
+      {finished.length > 0 && (
+        <details className="text-[13px]">
+          <summary className="flex min-h-11 items-center font-semibold text-accent">No longer used · {finished.length}</summary>
+          <ul>{finished.map(row)}</ul>
+        </details>
+      )}
       <p className="text-xs text-muted">
-        Used for one friendly line in a weekly text or reminder to {student.firstName}, and shown beside the draft when it is. Never used in anything a parent reads. {student.firstName} cannot see this list.
+        A text to {student.firstName} brings one of these up: good luck beforehand, “how did it go?” afterwards, and then not again. With a date it is kept until a week after the day. Without one it is dropped when you log the next meeting. Never
+        used in anything a parent reads. {student.firstName} cannot see this list.
       </p>
     </Card>
   )

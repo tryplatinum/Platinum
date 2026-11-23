@@ -491,7 +491,7 @@ function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting;
   return (
     <Section n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
       <p className="text-[13px] text-muted">
-        Personal details {student.firstName} mentioned. A saved one may be used for one friendly line in a text to {student.firstName}. They are never used in anything a parent reads, and {student.firstName} cannot see this list.
+        Things {student.firstName} mentioned in passing. A saved one is brought up in a text to {student.firstName}: good luck beforehand, “how did it go?” afterwards, then never again. One with a date is kept until it has happened; one without is dropped at the next meeting. They are never used in anything a parent reads, and {student.firstName} cannot see this list.
       </p>
       <ul className="flex flex-col">
         {notes.map((note) => (
@@ -512,7 +512,8 @@ function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonal
         <div className="min-w-[14rem] flex-1 text-sm">
           <p className="font-medium">
             {note.text}
-            {note.eventDate && <span className="font-normal text-muted"> · {formatDateLong(note.eventDate)}</span>}
+            {note.eventDate && <span className="font-normal text-muted"> · {note.eventDateApprox ? `around ${formatDate(note.eventDate)} (estimated: no exact day was given)` : formatDateLong(note.eventDate)}</span>}
+            {!note.eventDate && pending && <span className="font-normal text-muted"> · no date, so it is dropped at the next meeting</span>}
           </p>
           <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {note.evidence}</p>
         </div>
@@ -537,7 +538,7 @@ function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonal
       {editing && pending && (
         <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
           <input className={cx(inputBase, 'min-w-[14rem] flex-1')} maxLength={300} value={note.text} onChange={(e) => updateDraftNote(meeting.id, note.id, { text: e.target.value })} aria-label="Thing to remember" />
-          <input type="date" className={inputBase} value={note.eventDate ?? ''} aria-label="Date of the event, if there is one" onChange={(e) => updateDraftNote(meeting.id, note.id, { eventDate: e.target.value || undefined })} />
+          <input type="date" className={inputBase} value={note.eventDate ?? ''} aria-label="Date of the event, if there is one" onChange={(e) => updateDraftNote(meeting.id, note.id, { eventDate: e.target.value || undefined, eventDateApprox: undefined })} />
         </div>
       )}
     </li>

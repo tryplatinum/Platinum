@@ -167,9 +167,11 @@ export interface WeeklyTextFacts {
 /**
  * The facts for one student's text. At most four tasks are named (late ones
  * first); the rest become "and N more". Fewer are named when four would push
- * the fixed template past the length limit.
+ * the fixed template past the length limit. `reserve` holds back that many
+ * characters: pass WEEKLY_NOTE_ROOM when a personal line is on offer, so a
+ * student with a long list still gets one, with a task moved into "and N more".
  */
-export function weeklyTextFacts(student: Student, counselorFirstName: string, items: WeeklyTextItems, link?: string, today: ISODate = todayISO()): WeeklyTextFacts {
+export function weeklyTextFacts(student: Student, counselorFirstName: string, items: WeeklyTextItems, link?: string, today: ISODate = todayISO(), reserve = 0): WeeklyTextFacts {
   const all = [...items.late, ...items.due]
   /** "t1", "t2"… in the order the code ranks them: most overdue first, then soonest due. */
   const handle = (t: Task) => `t${all.indexOf(t) + 1}`
@@ -191,7 +193,7 @@ export function weeklyTextFacts(student: Student, counselorFirstName: string, it
   }
   for (let count = Math.min(WEEKLY_TEXT_MAX_ITEMS, all.length); count > 0; count--) {
     const facts = build(count)
-    if (weeklyTextTemplate(facts).length <= WEEKLY_TEXT_MAX) return facts
+    if (weeklyTextTemplate(facts).length + reserve <= WEEKLY_TEXT_MAX) return facts
   }
   return build(0)
 }
@@ -207,8 +209,8 @@ export function weeklyTextTemplate(f: WeeklyTextFacts): string {
   return parts.join(' ')
 }
 
-/** Roughly what one personal line ("Good luck at the scrimmage Saturday.") adds to a text. */
-const WEEKLY_NOTE_ROOM = 70
+/** Roughly what one personal line ("How did the golf tournament go on Saturday?") adds to a text. */
+export const WEEKLY_NOTE_ROOM = 90
 
 /**
  * Whether a text with these facts has room left for a personal line. When the

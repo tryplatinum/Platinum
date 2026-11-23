@@ -1023,9 +1023,11 @@ export function buildSeed(): AppData {
       studentId,
       text,
       eventDate: on === undefined ? undefined : d(on),
+      uses: [],
       source,
-      createdAt: timestampAt(-3, '17:10'),
-      approval: { by: 'Sarah Lindqvist', at: timestampAt(-3, '17:10') },
+      // Learned today, so the undated ones belong to the current meeting cycle.
+      createdAt: new Date().toISOString(),
+      approval: { by: 'Sarah Lindqvist', at: new Date().toISOString() },
     })
   remember(kevin.id, 'Robotics team is hosting an off-season scrimmage', 5)
   remember(kevin.id, 'Reading a book about the Mars rovers and loving it', undefined, 'counselor')
@@ -1041,6 +1043,7 @@ export function buildSeed(): AppData {
   remember(aarav.id, 'Rebuilding an old e-bike in the garage', undefined, 'counselor')
   remember(mia.id, 'Yearbook pages are due to the printer', 8)
   remember(mia.id, 'Habitat for Humanity build weekend', 11)
+  remember(mia.id, 'Visiting her cousins in Portland over winter break', 34)
   remember(daniel.id, 'Basketball season opener at home', 2)
   remember(daniel.id, 'Saving up for a pair of sneakers he has wanted for a year', undefined, 'counselor')
   remember(chloe.id, 'Piano recital', 10)

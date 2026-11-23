@@ -69,7 +69,9 @@ const NoteFact = z.object({
   id: text(8),
   text: text(300),
   /** When the event is, computed by our code: "Sat, Nov 28 (in 5 days)". Absent when the note has no date. */
-  when: text(60).optional(),
+  when: text(80).optional(),
+  /** Computed by our code. 'coming_up' = wish them well; 'happened' = ask how it went; 'no_date' = no time attached. */
+  timing: z.enum(['coming_up', 'happened', 'no_date']).optional(),
 })
 export type NoteFact = z.infer<typeof NoteFact>
 
@@ -249,8 +251,10 @@ export const OUTPUTS = {
         text: z.string(),
         /** The sentence from the notes that prompted it. */
         evidence: z.string(),
-        /** YYYY-MM-DD when the notes give a date or day for it, otherwise null. */
+        /** YYYY-MM-DD when the notes give a date, a day, or a rough time for it, otherwise null. */
         eventDate: z.string().nullable(),
+        /** True when eventDate is an estimate of a loose phrase ("next month or so"). */
+        eventDateIsEstimate: z.boolean(),
       }),
     ),
   }),

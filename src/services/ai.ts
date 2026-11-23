@@ -157,14 +157,14 @@ function toDraftNotes(proposed: FeatureOutput<'draftFromMeeting'>['personalNotes
     .slice(0, MAX_DRAFT_NOTES)
     .map((p) => {
       const date = p.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(p.eventDate) && !Number.isNaN(Date.parse(p.eventDate)) && Math.abs(daysBetween(today, p.eventDate)) <= 366 ? p.eventDate : undefined
-      return { id: draftId('pn'), text: p.text.trim().slice(0, MAX_NOTE_CHARS), evidence: p.evidence.trim(), eventDate: date, review: 'pending' }
+      return { id: draftId('pn'), text: p.text.trim().slice(0, MAX_NOTE_CHARS), evidence: p.evidence.trim(), eventDate: date, eventDateApprox: date && p.eventDateIsEstimate ? true : undefined, review: 'pending' }
     })
 }
 
 /** The note the model says it used, if it is one of the notes it was given. */
 function usedNoteFrom(id: string | null, notes: NoteForDraft[]): UsedNote | undefined {
-  const used = notes.find((n) => n.fact.id === id)?.note
-  return used && { id: used.id, text: used.text }
+  const used = notes.find((n) => n.fact.id === id)
+  return used && { id: used.note.id, text: used.note.text, stage: used.stage }
 }
 
 // ── 1. Meeting follow-through ───────────────────────────────────────────────

@@ -99,11 +99,14 @@ export interface NoteForDraft {
   fact: NoteFact
   /** The saved note behind it, so the screen can show "Used: …". */
   note: PersonalNote
+  /** Where the note stands today: before its event, just after, or undated. Each is mentioned once. */
+  stage: 'ahead' | 'after' | 'undated'
 }
 
 /**
  * The personal notes one draft may draw on: up to three, chosen by
- * notesWorthMentioning in lib/derive.ts.
+ * notesWorthMentioning in lib/derive.ts, which leaves out anything out of
+ * date and anything already mentioned at its current stage.
  *
  * GUARDRAIL: for any audience but the student this returns nothing. It is the
  * only function that turns a note into request data, so a message to a parent
@@ -111,9 +114,16 @@ export interface NoteForDraft {
  */
 export function notesForDraft(data: AppData, student: Student, audience: Audience, today = todayISO()): NoteForDraft[] {
   if (audience !== 'student') return []
-  return notesWorthMentioning(data, student.id, today).map((note, i) => ({
+  return notesWorthMentioning(data, student.id, today).map(({ note, stage }, i) => ({
     note,
-    fact: { id: `n${i + 1}`, text: note.text, when: note.eventDate && `${formatDateLong(note.eventDate)} (${eventWhen(note.eventDate, today)})` },
+    stage,
+    fact: {
+      id: `n${i + 1}`,
+      text: note.text,
+      timing: stage === 'after' ? ('happened' as const) : stage === 'ahead' ? ('coming_up' as const) : ('no_date' as const),
+      // An estimated date is described loosely, so the message does not state a day nobody gave.
+      when: !note.eventDate ? undefined : note.eventDateApprox ? `around ${formatDate(note.eventDate)}, the exact day is not known` : `${formatDateLong(note.eventDate)} (${eventWhen(note.eventDate, today)})`,
+    },
   }))
 }
 

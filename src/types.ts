@@ -95,6 +95,13 @@ export interface PersonalNote {
   text: string
   /** The day of the event, when the student gave one. */
   eventDate?: ISODate
+  /** True when the student only said roughly when ("sometime next month") and the date is an estimate. */
+  eventDateApprox?: boolean
+  /**
+   * Each time a message that mentioned this note was sent. A note is mentioned
+   * once per stage (see noteStage in lib/derive.ts), so nothing is repeated.
+   */
+  uses: NoteUse[]
   /** 'meeting' = suggested by the AI from a meeting's notes. 'counselor' = typed in by hand. */
   source: 'meeting' | 'counselor'
   meetingId?: ID
@@ -116,10 +123,20 @@ export interface WeeklyLead {
   changedOrder: boolean
 }
 
+/** One mention of a note in a message the counselor sent. */
+export interface NoteUse {
+  at: string
+  /** 'ahead' = before the event ("good luck"), 'after' = once it happened ("how did it go?"), 'undated' = a note with no date. */
+  stage: 'ahead' | 'after' | 'undated'
+  in: 'weekly_text' | 'reminder'
+}
+
 /** The note a draft drew on, as it read at the time. Shown beside the draft as "Used: …". */
 export interface UsedNote {
   id: ID
   text: string
+  /** The stage the note was at when the draft was written. Recorded on the note when the message is sent. */
+  stage?: NoteUse['stage']
 }
 
 export interface Student {
@@ -320,6 +337,8 @@ export interface DraftPersonalNote {
   /** The sentence in the meeting that prompted this. */
   evidence: string
   eventDate?: ISODate
+  /** True when the date is the AI's estimate of a loose phrase such as "next month". */
+  eventDateApprox?: boolean
   review: Review
   approval?: Approval
 }

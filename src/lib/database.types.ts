@@ -523,6 +523,8 @@ export type Database = {
           approval: Json
           created_at: string
           event_date: string | null
+          event_date_approx: boolean
+          uses: Json
           firm_id: string
           id: string
           meeting_id: string | null
@@ -536,6 +538,8 @@ export type Database = {
           approval: Json
           created_at?: string
           event_date?: string | null
+          event_date_approx?: boolean
+          uses?: Json
           firm_id: string
           id?: string
           meeting_id?: string | null
@@ -549,6 +553,8 @@ export type Database = {
           approval?: Json
           created_at?: string
           event_date?: string | null
+          event_date_approx?: boolean
+          uses?: Json
           firm_id?: string
           id?: string
           meeting_id?: string | null

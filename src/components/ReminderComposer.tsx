@@ -88,7 +88,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       trigger: 'approved',
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
-    })
+    }, d.toKind === 'student' ? d.usedNote : undefined)
     toast(`Reminder to ${d.toName} sent. ${SENT_NOTE}`)
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()

@@ -51,13 +51,18 @@ const TASK_RULES = `Proposed tasks.
 
 const wrap = (tag: string, body: string) => `<${tag}>\n${body.trim()}\n</${tag}>`
 
-const PERSONAL_NOTE = `Something personal, if it fits.
-You may be given "things_to_remember": up to three small personal details this student mentioned to the counselor, such as a tournament or a school play. Each has an id, and a "when" if the student gave a date. A counselor who remembers these sounds like someone who was listening, which is the only reason to use one.
-- Use at most one, and only where it fits naturally: a few words such as wishing them luck for something coming up, or asking how something went. If none fits this message, use none. A message with no personal line is better than a forced one.
-- Add nothing beyond the note. Do not supply details it does not give, guess how the event went, or build on it. Follow "when": something ahead is still ahead, something past has happened. If there is no "when", do not imply a time.
-- It is a passing remark, never the point of the message, and it does not replace or soften any fixed fact.
-- Set usedNoteId to the id of the note you used, exactly as given, or to null when you used none. The counselor is shown which note was used, so this has to be accurate.
-When no things_to_remember are given, write no personal line and set usedNoteId to null.`
+const PERSONAL_NOTE = `Make it personal.
+You may be given "things_to_remember": up to three small things this student mentioned to the counselor in passing, outside the application work, such as a golf tournament or a school play. A good counselor keeps track of these and brings them up, and that is what makes a student feel known instead of managed. When you are given any, the message should use one: it is the difference between a reminder and a message from someone who was listening.
+- Use exactly one when any fits, and at most one. Pick the one that is most alive right now: something that just happened before something still to come, something soon before something with no date.
+- Follow "timing", which our system worked out from today's date:
+  - "happened": it has taken place. Ask how it went, as a real question ("How was the golf tournament?"). You do not know how it went, so do not congratulate, commiserate or assume a result.
+  - "coming_up": it has not happened yet. Wish them well or say you hope it goes well. "when" tells you how soon; you may say the day ("Saturday") when "when" gives one. When "when" says the exact day is not known, do not name a day.
+  - "no_date": no time is attached. Mention it lightly and do not imply when.
+- Say it the way this counselor would say it out loud to a student they like: short, specific, warm. Name the thing itself ("the golf tournament"), not "your event".
+- Add nothing the note does not say. No extra details, no guesses, no follow-up plans.
+- It sits beside the practical part of the message and never replaces or softens a fixed fact.
+- Set usedNoteId to the id of the note you used, exactly as given, or to null if you used none. The counselor is shown which note was used and it will not be offered again, so this has to be accurate.
+You are only ever given things that are current and have not been said to this student before, so you do not need to worry about repeating yourself. When no things_to_remember are given, write no personal line and set usedNoteId to null.`
 
 /** Laid out for the model. Only the two features that write to the student ever call this. */
 const notesBlock = (notes: NoteFact[] | undefined) => (notes?.length ? wrap('things_to_remember', JSON.stringify(notes, null, 1)) : '')
@@ -93,13 +98,16 @@ parentUpdates: one message for each parent in the facts, telling them where thei
 
 profileChanges: suggest a change only when the notes state a fact about scores, activities, intended majors or interests that differs from the record. "label" names the field ("SAT score", "New activity", "Intended majors"), "from" is the current value in the record, "to" is the new one, and "evidence" is the wording from the notes that supports it. Fill the one value field that matches the kind and set the others to null.
 
-personalNotes: up to three personal details the student mentioned about their own life, which the counselor would want to remember when they next text this student: an event coming up (a tournament, a recital, a trip), something they are looking forward to, a new interest. The counselor reviews each one, and an approved one may later be used for a single friendly line in a text to the student, such as wishing them luck.
-- "text" is one short, plain sentence that states only what was said, for example "Regional robotics tournament this Saturday". Do not infer or embellish: if the notes say "a tournament", do not say which one, how it might go or how the student feels about it.
+personalNotes: the small things about this student's own life that came up in passing, outside the application work. Not the main business of the meeting: the asides. A golf tournament this weekend, a school play, a trip, a driving test, a concert they are going to, a new hobby, a pet, something they are excited about. A counselor who keeps track of these and asks about them later ("How was the golf tournament?") is the one a student opens up to, so listen for them the way a person would. Return up to three.
+- "text" is one short, plain sentence that states only what was said, for example "Golf tournament this Saturday". Do not infer or embellish: if the notes say "a tournament", do not say which one, how it might go or how the student feels about it.
 - "evidence" is the sentence from the notes that prompted it, quoted as written.
-- "eventDate" is YYYY-MM-DD only when the notes give a date or a day for it (work a day such as "Saturday" out from the meeting date). Otherwise null. Never guess a date.
+- "eventDate" (YYYY-MM-DD) says when it happens, because our system uses it to wish the student luck beforehand, ask how it went afterwards, and then let it go.
+  - When the notes give a date or a day ("this Saturday", "on the 12th"), work it out from the meeting date and set eventDateIsEstimate to false.
+  - When the notes give only a rough time ("next month or so", "over winter break", "in a few weeks"), give your best estimate of the middle of that period and set eventDateIsEstimate to true. This matters: a dated note is kept until it happens, while an undated one is dropped at the next meeting.
+  - When the notes give no time at all (a hobby, an interest), set eventDate to null and eventDateIsEstimate to false. Never invent a time.
 - Leave out, without exception: anything about health, sleep, stress or mood; conflict or tension in the family, and money at home; discipline or trouble at school; friendships and relationships; and anything the student asked to keep private or not to pass on. If you are unsure whether something belongs in one of those, leave it out.
-- Leave out application work (essays, tests, deadlines, college choices): that is what tasks and the profile are for. Leave out anything already in the record as an activity or interest unless there is a specific event to remember.
-- Most meetings have none or one. Return an empty list when nothing qualifies; do not reach.
+- Leave out application work (essays, tests, deadlines, college choices): that is what tasks and the profile are for. Leave out anything already in the record as an activity or interest unless there is a specific event or something new about it.
+- Return an empty list when the notes have nothing of this kind. Do not turn a passing word into a detail the student did not really share.
 These are for the counselor and for texts to the student only. Do not carry them into parentUpdates.
 
 ${TASK_RULES}
@@ -306,7 +314,7 @@ The facts are fixed strings computed by our system, and the counselor's screen c
 If any of them is altered, the draft is discarded and a stock template is used in its place. Add no other dates, tasks, deadlines or facts. You have not been given the student's record, so apart from one thing to remember (below) there is nothing else to draw on.
 
 ${PERSONAL_NOTE}
-In this text a personal line is one short sentence, either straight after the greeting or just before the link. It counts toward maxChars: if the fixed strings leave no room, leave it out.
+In this text the personal line comes first, straight after the greeting, before the meeting and the tasks, so the text opens like a person and then gets to the list. One short sentence. It counts toward maxChars, and room has been left for it; if the text still would not fit, shorten the words around the fixed strings before you give it up.
 
 The "text" field is sent to the student exactly as you return it. Compose the message in your head first and return only the finished version: one clean pass, with no corrections, second attempts, notes to the counselor or comments about the draft.
 

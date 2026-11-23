@@ -30,6 +30,7 @@ import type {
   Firm,
   ID,
   Meeting,
+  NoteUse,
   Parent,
   ParentCopy,
   ParentReport,
@@ -42,6 +43,7 @@ import type {
   StudentLink,
   Task,
   TaskStatus,
+  UsedNote,
   WeeklyText,
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
@@ -159,7 +161,7 @@ interface Actions {
   updateParentUpdate: (meetingId: ID, updateId: ID, patch: Partial<DraftParentUpdate>) => void
   reviewParentUpdate: (meetingId: ID, updateId: ID, decision: Decision) => void
   reviewProfileChange: (meetingId: ID, changeId: ID, decision: Decision) => void
-  updateDraftNote: (meetingId: ID, noteId: ID, patch: Partial<Pick<DraftPersonalNote, 'text' | 'eventDate'>>) => void
+  updateDraftNote: (meetingId: ID, noteId: ID, patch: Partial<Pick<DraftPersonalNote, 'text' | 'eventDate' | 'eventDateApprox'>>) => void
   /** Approving saves the detail as a "thing to remember" for this student. Dismissing saves nothing. */
   reviewDraftNote: (meetingId: ID, noteId: ID, decision: Decision) => void
   approveAllInMeeting: (meetingId: ID) => void
@@ -196,8 +198,12 @@ interface Actions {
   /** The counselor's approval of the parent copy, on its own: records who and when, and logs it. */
   sendWeeklyParentCopy: (id: ID) => void
 
-  /** Writes one message to the "Messages sent" log. Nothing is delivered in v0. */
-  sendMessage: (message: OutgoingMessage) => void
+  /**
+   * Writes one message to the "Messages sent" log. Nothing is delivered in v0.
+   * `usedNote` is the thing to remember the message mentioned, if any: it is
+   * marked as mentioned so it is not offered again at the same stage.
+   */
+  sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
 }
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
@@ -217,6 +223,17 @@ function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): 
 function deliver(data: AppData, message: OutgoingMessage): AppData {
   const approval = message.approval ?? (message.trigger === 'approved' ? approvalBy(data) : undefined)
   return { ...data, outbox: [simulateSend({ ...message, approval }), ...data.outbox] }
+}
+
+/**
+ * Records that a sent message mentioned a note, so the same thing is not said
+ * twice. It goes by what the draft said it used: if the counselor cut the
+ * personal line by hand before sending, the note still counts as mentioned.
+ */
+function markNoteUsed(data: AppData, used: UsedNote | undefined, via: NoteUse['in']): AppData {
+  if (!used?.stage || !data.personalNotes.some((n) => n.id === used.id)) return data
+  const use: NoteUse = { at: nowTimestamp(), stage: used.stage, in: via }
+  return { ...data, personalNotes: patchById(data.personalNotes, used.id, (n) => ({ ...n, uses: [...n.uses, use] })) }
 }
 
 function patchMeeting(data: AppData, meetingId: ID, fn: (m: Meeting) => Meeting): AppData {
@@ -428,7 +445,7 @@ export const useStore = create<State & Actions>()((set, get) => {
       const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as { state?: { schema?: unknown; data?: unknown } } | null
       const data = migrate(saved?.state?.schema, saved?.state?.data)
       // Saved before weekly texts and things to remember existed.
-      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [], personalNotes: data.personalNotes ?? [] } : undefined
+      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
     } catch {
       return undefined
     }
@@ -877,7 +894,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (decision === 'approved') {
           next = {
             ...next,
-            personalNotes: [...next.personalNotes, { id: newId(), studentId: meeting.studentId, text, eventDate: draft.eventDate, source: 'meeting', meetingId, createdAt: approval.at, approval }],
+            personalNotes: [...next.personalNotes, { id: newId(), studentId: meeting.studentId, text, eventDate: draft.eventDate, eventDateApprox: draft.eventDate ? draft.eventDateApprox : undefined, uses: [], source: 'meeting', meetingId, createdAt: approval.at, approval }],
           }
           // The log says that something was saved, not what: it is the student's own detail.
           next = logActivity(next, meeting.studentId, 'counselor', `${data.firm.counselorFirstName} saved something to remember from “${meeting.title}”`)
@@ -906,7 +923,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         const note = text.trim().slice(0, 300)
         if (!note || !data.students.some((s) => s.id === studentId)) return data
         const approval = approvalBy(data)
-        return { ...data, personalNotes: [...data.personalNotes, { id: newId(), studentId, text: note, eventDate: eventDate || undefined, source: 'counselor', createdAt: approval.at, approval }] }
+        return { ...data, personalNotes: [...data.personalNotes, { id: newId(), studentId, text: note, eventDate: eventDate || undefined, uses: [], source: 'counselor', createdAt: approval.at, approval }] }
       }),
 
     deletePersonalNote: (id) => change((data) => ({ ...data, personalNotes: data.personalNotes.filter((n) => n.id !== id) })),
@@ -971,6 +988,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (!text || !student || text.status !== 'draft' || !text.body.trim()) return data
         let next: AppData = { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, status: 'sent', approval: approvalBy(data), sentVia: via })) }
         next = deliver(next, { ...toStudent(student), channel: 'text', kind: 'weekly_text', body: text.body, trigger: 'approved', note: 'Sent from your own phone' })
+        next = markNoteUsed(next, text.usedNote, 'weekly_text')
         return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} sent ${student.firstName} the weekly text`)
       }),
 
@@ -1038,7 +1056,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} approved a parent copy to ${parent.name}`)
       }),
 
-    sendMessage: (message) => change((data) => deliver(data, message)),
+    sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
   }
 })
 
