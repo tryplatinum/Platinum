@@ -40,7 +40,7 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
       localGivenName: student.localName ? zhGiven(student) : undefined,
       yearLabel: classLabel(student.gradYear),
       gradYear: student.gradYear,
-      gpa: student.gpa,
+      gpa: student.gpa ?? 0,
       sat: student.tests.sat,
       act: student.tests.act,
       toefl: student.tests.toefl,
@@ -63,7 +63,7 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
       .map((t) => ({
         title: t.title,
         ownerType: t.owner,
-        owner: ownerLabel(t, student),
+        owner: ownerLabel(t, student) === 'You' ? 'Counselor' : ownerLabel(t, student),
         ownerParentId: t.ownerParentId,
         dueDate: t.dueDate,
         daysLate: daysLate(t, today),
@@ -139,8 +139,12 @@ export function briefFacts(data: AppData, meeting: Meeting, student: Student): B
     (d) => d.date >= today && daysBetween(today, d.date) <= BRIEF_DEADLINE_WINDOW_DAYS,
   )
 
-  const waitingOnCounselor = pendingApprovals(data, student.id).map(
-    (a) => `${a.label} (${a.count} ${a.count === 1 ? 'item' : 'items'})`,
+  const waitingOnCounselor = pendingApprovals(data, student.id).map((a) =>
+    a.kind === 'meeting'
+      ? `Drafts from the meeting “${a.meeting.title}” (${a.count} ${a.count === 1 ? 'item' : 'items'})`
+      : a.kind === 'report'
+        ? 'A parent report draft'
+        : 'An essay feedback draft',
   )
 
   return { meeting, previous, changes, overdue, deadlines, waitingOnCounselor }

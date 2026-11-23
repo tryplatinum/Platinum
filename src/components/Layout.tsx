@@ -1,184 +1,223 @@
-// App chrome: the demo bar with the Counselor / Student switcher, the counselor
-// sidebar layout and the phone-width student layout.
+// App chrome. Counselor: a dark sidebar (a top bar with a menu on narrow
+// screens) and the page. Student: a slim bar and a phone-width column.
+// The Counselor / Student switcher and the demo controls live in the sidebar
+// footer so they do not compete with the page.
 
-import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { findStudent, fullName, pendingApprovals } from '../lib/derive'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
 import { reminderQueue } from '../lib/reminders'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
-import { Avatar, cx } from './ui'
-
-const DEFAULT_STUDENT = 's-kevin'
-
-/** The student in the current URL, in either view. */
-function useCurrentStudentId(): string | undefined {
-  const { pathname } = useLocation()
-  return pathname.match(/^\/(?:app\/students|student)\/([^/]+)/)?.[1]
-}
-
-/** Top bar, present on every signed-in screen. Lets us show both sides of the product on one call. */
-export function DemoBar() {
-  const data = useData()
-  const resetDemo = useStore((s) => s.resetDemo)
-  const navigate = useNavigate()
-  const { pathname } = useLocation()
-  const inStudentView = pathname.startsWith('/student')
-  const currentId = useCurrentStudentId()
-  const studentId = findStudent(data, currentId) ? currentId! : DEFAULT_STUDENT
-
-  return (
-    <div className="sticky top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface/95 px-4 py-2 backdrop-blur">
-      <span className="text-sm font-semibold tracking-tight text-ink">◆ Platinum</span>
-      <span className="hidden rounded-full bg-canvas px-2 py-0.5 text-xs text-muted sm:inline">Demo · all data is invented</span>
-
-      <div className="ml-auto flex items-center gap-2">
-        <div className="inline-flex items-center rounded-lg border border-line bg-canvas p-0.5 text-sm" role="tablist" aria-label="View">
-          <button
-            role="tab"
-            aria-selected={!inStudentView}
-            onClick={() => navigate(inStudentView && currentId ? `/app/students/${currentId}` : '/app')}
-            className={cx('rounded-md px-3 py-1 font-medium', !inStudentView ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink')}
-          >
-            Counselor
-          </button>
-          <div className={cx('flex items-center rounded-md', inStudentView ? 'bg-surface text-ink shadow-sm' : 'text-muted')}>
-            <button role="tab" aria-selected={inStudentView} onClick={() => navigate(`/student/${studentId}`)} className="py-1 pl-3 pr-1 font-medium hover:text-ink">
-              Student
-            </button>
-            <select
-              aria-label="Which student"
-              value={studentId}
-              onChange={(e) => navigate(`/student/${e.target.value}`)}
-              className="max-w-[9.5rem] cursor-pointer bg-transparent py-1 pr-1 text-sm font-medium focus:outline-none"
-            >
-              {data.students.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {fullName(s)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            if (window.confirm('Reset the demo? This restores the original sample data.')) resetDemo()
-          }}
-          className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-canvas hover:text-ink"
-        >
-          Reset demo
-        </button>
-      </div>
-    </div>
-  )
-}
+import { Button, Field, Modal, cx, inputClass, useToast } from './ui'
 
 export function CounselorLayout() {
   const data = useData()
   const session = useStore((s) => s.session)
-  const signOut = useStore((s) => s.signOut)
   const location = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => setMenuOpen(false), [location.pathname, location.search])
+
   if (!session.signedIn) return <Navigate to="/signin" replace state={{ from: location.pathname + location.search }} />
 
-  const approvals = pendingApprovals(data).reduce((n, a) => n + a.count, 0)
-  const queued = reminderQueue(data).filter((r) => r.mode === 'needs_approval').length
   const nav = [
-    { to: '/app', label: 'Command center', end: true, badge: approvals },
-    { to: '/app/students', label: 'Students', end: false, badge: 0 },
-    { to: '/app/notes', label: 'Read my notes', end: false, badge: 0 },
-    { to: '/app/reports', label: 'Parent reports', end: false, badge: 0 },
-    { to: '/app/notifications', label: 'Reminders', end: false, badge: queued },
+    { to: '/app', label: 'Command center', end: true, badge: pendingApprovalCount(data), badgeLabel: 'waiting for approval' },
+    { to: '/app/students', label: 'Students', end: false, badge: 0, badgeLabel: '' },
+    { to: '/app/meetings', label: 'Meetings', end: false, badge: pendingApprovals(data).filter((a) => a.kind === 'meeting').length, badgeLabel: 'to review' },
+    { to: '/app/messages', label: 'Messages sent', end: false, badge: reminderQueue(data).filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
   ]
 
   return (
-    <div className="min-h-full">
-      <DemoBar />
-      <div className="mx-auto flex max-w-[1400px] flex-col md:flex-row">
-        <aside className="shrink-0 border-line md:sticky md:top-[45px] md:h-[calc(100vh-45px)] md:w-56 md:border-r">
-          <div className="flex h-full flex-col p-3">
-            <p className="hidden px-2 pb-3 pt-1 text-xs font-medium uppercase tracking-wide text-faint md:block">{data.firm.name}</p>
-            <nav className="flex gap-1 overflow-x-auto md:flex-col">
-              {nav.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    cx(
-                      'flex items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium',
-                      isActive ? 'bg-surface text-ink shadow-sm ring-1 ring-line' : 'text-muted hover:bg-surface/70 hover:text-ink',
-                    )
-                  }
-                >
-                  {item.label}
-                  {item.badge > 0 && <span className="rounded-full bg-warn-soft px-1.5 text-xs font-semibold text-warn">{item.badge}</span>}
-                </NavLink>
-              ))}
-            </nav>
-            <div className="mt-auto hidden pt-4 md:block">
-              <AiConnection />
-            </div>
-            <div className="hidden items-center gap-2 px-2 pt-3 md:flex">
-              <Avatar name={data.firm.counselorName} size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-ink">{data.firm.counselorName}</p>
-                <button onClick={signOut} className="text-xs text-muted hover:text-ink">
-                  Sign out
-                </button>
-              </div>
-            </div>
+    <div className="flex min-h-full flex-col lg:flex-row">
+      <nav aria-label="Main" className="on-dark flex shrink-0 flex-col bg-sidebar text-sidebar-ink lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 lg:px-7 lg:pb-5 lg:pt-6">
+          <Link to="/app" className="text-lg font-bold text-white">
+            Platinum
+          </Link>
+          <button
+            type="button"
+            className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-white hover:bg-sidebar-active lg:hidden"
+            aria-expanded={menuOpen}
+            aria-controls="main-menu"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? 'Close' : 'Menu'}
+          </button>
+        </div>
+
+        <div id="main-menu" className={cx('flex-1 flex-col gap-1 px-4 pb-4 lg:flex', menuOpen ? 'flex' : 'hidden')}>
+          {nav.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                cx('flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 text-sm', isActive ? 'bg-sidebar-active font-semibold text-white' : 'font-medium hover:bg-sidebar-active/60')
+              }
+            >
+              {item.label}
+              {item.badge > 0 && (
+                <span className="rounded-full bg-white px-2 text-xs font-bold text-sidebar" aria-label={`${item.badge} ${item.badgeLabel}`}>
+                  {item.badge}
+                </span>
+              )}
+            </NavLink>
+          ))}
+
+          <div className="mt-6 flex flex-col gap-3 lg:mt-auto">
+            <AiConnection />
+            <SidebarMenu />
+            <p className="px-3 text-[13px] leading-relaxed text-sidebar-muted">
+              {data.firm.name}
+              <br />
+              Signed in as {data.firm.counselorName}
+            </p>
           </div>
-        </aside>
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8">
+        </div>
+      </nav>
+
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <div className="mx-auto flex max-w-[1240px] flex-col gap-6">
           <Outlet />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   )
 }
 
-/** Phone-width column with bottom tabs. Looks right on a phone and as a narrow pane on a laptop. */
+/** Student view switcher, demo data controls, firm settings and sign out. */
+function SidebarMenu() {
+  const data = useData()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const { resetDemo, startEmpty, signOut } = useStore.getState()
+  const [settings, setSettings] = useState(false)
+  const students = activeStudents(data)
+  const item = 'flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium hover:bg-sidebar-active'
+
+  return (
+    <details className="rounded-lg border border-white/15">
+      <summary className="flex min-h-11 items-center px-3 text-sm font-medium text-white">View and settings</summary>
+      <div className="flex flex-col gap-1 border-t border-white/15 p-2">
+        <label className="px-3 pt-1 text-xs font-semibold text-sidebar-muted" htmlFor="student-view">
+          Open the student view as
+        </label>
+        <select
+          id="student-view"
+          className="mx-1 min-h-11 rounded-lg border border-white/20 bg-sidebar px-2 text-sm text-white"
+          value=""
+          disabled={students.length === 0}
+          onChange={(e) => e.target.value && navigate(`/student/${e.target.value}`)}
+        >
+          <option value="">{students.length ? 'Choose a student…' : 'No students yet'}</option>
+          {students.map((s) => (
+            <option key={s.id} value={s.id}>
+              {fullName(s)}
+            </option>
+          ))}
+        </select>
+        <button type="button" className={item} onClick={() => setSettings(true)}>
+          Firm settings
+        </button>
+        <button
+          type="button"
+          className={item}
+          onClick={() => {
+            if (window.confirm('Reset to the sample caseload? Everything you have entered will be replaced with the invented demo students.')) {
+              resetDemo()
+              toast('Sample caseload restored.')
+            }
+          }}
+        >
+          Reset demo
+        </button>
+        <button
+          type="button"
+          className={item}
+          onClick={() => {
+            if (window.confirm('Start with an empty firm? All students, tasks, meetings and messages will be removed so you can enter your own.')) {
+              startEmpty()
+              navigate('/app/students')
+              toast('Empty firm ready. Add your first student.')
+            }
+          }}
+        >
+          Start empty
+        </button>
+        <button type="button" className={item} onClick={signOut}>
+          Sign out
+        </button>
+      </div>
+      {settings && <FirmSettings onClose={() => setSettings(false)} />}
+    </details>
+  )
+}
+
+function FirmSettings({ onClose }: { onClose: () => void }) {
+  const firm = useData().firm
+  const updateFirm = useStore((s) => s.updateFirm)
+  const [name, setName] = useState(firm.name)
+  const [counselor, setCounselor] = useState(firm.counselorName)
+  return (
+    <Modal title="Firm settings" onClose={onClose}>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          updateFirm({ name: name.trim() || firm.name, counselorName: counselor.trim() || firm.counselorName })
+          onClose()
+        }}
+      >
+        <Field label="Firm name">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Your name" hint="Used to sign messages and to record who approved each draft.">
+          <input className={inputClass} value={counselor} onChange={(e) => setCounselor(e.target.value)} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary">
+            Save
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/** The student's own view: a slim bar for getting back, and a phone-width column. */
 export function StudentLayout() {
   const data = useData()
+  const navigate = useNavigate()
   const { studentId } = useParams()
   const student = findStudent(data, studentId)
-  if (!student) return <Navigate to={`/student/${DEFAULT_STUDENT}`} replace />
-
-  const tabs = [
-    { to: `/student/${student.id}`, label: 'Tasks', icon: '☑', end: true },
-    { to: `/student/${student.id}/recaps`, label: 'Recaps', icon: '✎', end: false },
-    { to: `/student/${student.id}/profile`, label: 'Profile', icon: '☺', end: false },
-  ]
+  if (!student) return <Navigate to="/app" replace />
 
   return (
     <div className="min-h-full">
-      <DemoBar />
-      <div className="mx-auto min-h-[calc(100vh-45px)] max-w-md border-line bg-canvas pb-24 sm:border-x">
-        <header className="flex items-center gap-3 px-4 pb-2 pt-5">
-          <Avatar name={fullName(student)} />
-          <div>
-            <p className="text-xs text-muted">Student view</p>
-            <p className="text-sm font-semibold text-ink">{fullName(student)}</p>
-          </div>
-        </header>
-        <main className="px-4 py-3">
-          <Outlet context={student} />
-        </main>
-      </div>
-      <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-md border-t border-line bg-surface sm:border-x">
-        {tabs.map((t) => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            end={t.end}
-            className={({ isActive }) =>
-              cx('flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium', isActive ? 'text-accent' : 'text-muted')
-            }
+      <div className="on-dark flex flex-wrap items-center justify-between gap-2 bg-sidebar px-4 py-1.5 text-sidebar-ink">
+        <label className="flex items-center gap-2 text-[13px]">
+          Student view
+          <select
+            aria-label="Which student"
+            className="min-h-11 rounded-lg border border-white/20 bg-sidebar px-2 text-sm text-white"
+            value={student.id}
+            onChange={(e) => navigate(`/student/${e.target.value}`)}
           >
-            <span className="text-base leading-none">{t.icon}</span>
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+            {activeStudents(data).map((s) => (
+              <option key={s.id} value={s.id}>
+                {fullName(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Link to={`/app/students/${student.id}`} className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-white hover:bg-sidebar-active">
+          Back to counselor view
+        </Link>
+      </div>
+      <main className="mx-auto flex min-h-[calc(100vh-56px)] max-w-md flex-col gap-4 px-4 py-6">
+        <Outlet context={student} />
+      </main>
     </div>
   )
 }

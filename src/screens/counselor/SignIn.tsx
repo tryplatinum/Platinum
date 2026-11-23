@@ -1,4 +1,4 @@
-// Firm sign-in. There is no real authentication: any credentials work.
+// Sign-in. A stand-in: there are no accounts in v0, and the screen says so.
 
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
@@ -11,37 +11,39 @@ export default function SignIn() {
   const signIn = useStore((s) => s.signIn)
   const navigate = useNavigate()
   const from = (useLocation().state as { from?: string } | null)?.from ?? '/app'
-  const [email, setEmail] = useState('sarah@alderandvine.example')
-  const [password, setPassword] = useState('demo-password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
   if (signedIn) return <Navigate to={from} replace />
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4 py-12">
+    <div className="flex min-h-full items-center justify-center bg-sidebar px-4 py-12">
       <div className="w-full max-w-sm">
-        <p className="mb-8 text-center text-xl font-semibold tracking-tight text-ink">◆ Platinum</p>
+        <p className="mb-6 text-center text-2xl font-bold text-white">Platinum</p>
         <form
-          className="space-y-4 rounded-2xl border border-line bg-surface p-6 shadow-sm"
+          className="flex flex-col gap-4 rounded-xl bg-surface p-6"
           onSubmit={(e) => {
             e.preventDefault()
-            signIn(email)
+            signIn(email.trim() || 'counselor@example.com')
             navigate(from, { replace: true })
           }}
         >
           <div>
-            <h1 className="text-lg font-semibold text-ink">Sign in to your firm</h1>
-            <p className="mt-1 text-sm text-muted">{data.firm.name}</p>
+            <h1 className="text-lg font-bold text-ink">Sign in to your firm</h1>
+            <p className="mt-0.5 text-[13px] text-muted">{data.firm.name}</p>
           </div>
           <Field label="Work email">
-            <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+            <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" placeholder="you@yourfirm.com" />
           </Field>
           <Field label="Password">
             <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
           </Field>
-          <Button type="submit" variant="primary" className="w-full">
+          <Button type="submit" variant="primary">
             Sign in
           </Button>
-          <p className="text-center text-xs text-faint">Demo: any email and password will work.</p>
+          <p className="text-xs leading-relaxed text-muted">
+            This sign-in is a stand-in. v0 has no accounts: any email and password open the workspace, and your data stays in this browser.
+          </p>
         </form>
       </div>
     </div>

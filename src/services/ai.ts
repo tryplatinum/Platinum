@@ -1,7 +1,7 @@
 // The AI module. THE ONLY THING SCREENS CALL FOR AI.
 //
 // One async function per feature. Each one:
-//   1. builds the facts in our own code (lib/facts.ts),
+//   1. builds the facts in our own code (lib/facts.ts, lib/derive.ts),
 //   2. asks the server function /api/ai, which calls Claude,
 //   3. turns the answer into a draft with review: 'pending'.
 //
@@ -28,21 +28,26 @@ import {
   sophiaEssayFeedback,
 } from '../data/fixtures'
 import { addDays, daysBetween, formatDate, formatDateZh, todayISO } from '../lib/dates'
-import { isLate, isOpen, nextMeeting, tasksFor } from '../lib/derive'
+import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, ownerLabel, tasksFor } from '../lib/derive'
 import { briefFacts, buildFacts, reportFacts, type BriefFacts } from '../lib/facts'
 import { zhGiven, zhGreeting } from '../lib/language'
+import { parentText, studentText, type ReminderKind } from '../lib/reminders'
 import type {
   AiSource,
   AppData,
+  Channel,
   DraftTask,
   EssayFeedback,
   ID,
+  Language,
   Meeting,
   MeetingAI,
+  Parent,
   ParentReport,
   ProfileChange,
   ProfilePatch,
   Recap,
+  SavedBrief,
   Student,
   StudentDocument,
   Task,
@@ -123,7 +128,8 @@ function toProfileChange(s: ProfileSuggestion): ProfileChange | undefined {
 
 export interface MeetingDrafts {
   ai: MeetingAI
-  recap: Recap
+  /** Absent when only tasks were read from the notes. */
+  recap?: Recap
 }
 
 /** Notes, proposed tasks, parent updates, profile changes and a student recap, from a meeting's notes or transcript. */
@@ -155,7 +161,11 @@ function meetingDraftsFrom(draft: FeatureOutput<'draftFromMeeting'>, student: St
   return {
     ai: {
       source,
+      decided: draft.summary.decided,
+      progress: draft.summary.progress,
+      watch: draft.summary.watch,
       notes: draft.notes,
+      notesReview: 'pending',
       draftTasks: toDraftTasks(draft.tasks, student, data),
       parentUpdates: draft.parentUpdates.flatMap((u) => {
         const parent = student.parents.find((p) => p.id === u.parentId)
@@ -214,24 +224,29 @@ export function readNotes(data: AppData, text: string, student: Student): Promis
   )
 }
 
-// ── 3. Pre-meeting brief ────────────────────────────────────────────────────
-
-/** The computed facts plus what the AI wrote around them. */
-export interface Brief extends BriefFacts {
-  headline?: string
-  agenda: { topic: string; why: string }[]
-  questions: string[]
-  source: AiSource
+/**
+ * For a meeting where the counselor only wants the assignments pulled out of
+ * their notes: the same review flow as a full draft, with tasks and nothing else.
+ */
+export async function draftTasksOnly(data: AppData, meeting: Meeting, student: Student): Promise<MeetingDrafts> {
+  const result = await readNotes(data, meeting.transcript ?? '', student)
+  return {
+    ai: { source: result.source, decided: [], progress: [], watch: [], notes: [result.summary], notesReview: 'pending', draftTasks: result.tasks, parentUpdates: [], profileChanges: [] },
+  }
 }
 
-/** The lists are computed by our code; the AI adds a headline, an agenda and questions. */
-export async function preMeetingBrief(data: AppData, meetingId: ID): Promise<Brief | undefined> {
-  const meeting = data.meetings.find((m) => m.id === meetingId)
-  const student = data.students.find((s) => s.id === meeting?.studentId)
-  if (!meeting || !student) return undefined
-  const facts = briefFacts(data, meeting, student)
+// ── 3. Pre-meeting brief ────────────────────────────────────────────────────
 
-  return withPlaceholder<Brief>(
+/**
+ * The AI's part of a pre-meeting brief: a headline, an agenda and questions.
+ * The lists it sits beside (changes, overdue, deadlines) are computed by
+ * lib/facts.ts and shown by the screen; the model is given them and never
+ * supplies them.
+ */
+export function preMeetingBrief(data: AppData, meeting: Meeting, student: Student): Promise<SavedBrief> {
+  const facts = briefFacts(data, meeting, student)
+  const preparedOn = todayISO()
+  return withPlaceholder<SavedBrief>(
     async () => {
       const { draft, model } = await callAi('preMeetingBrief', {
         facts: buildFacts(data, student),
@@ -245,15 +260,17 @@ export async function preMeetingBrief(data: AppData, meetingId: ID): Promise<Bri
         counselorNotes: student.counselorNotes || undefined,
         lastRecap: facts.previous?.recap?.review === 'approved' ? `${facts.previous.recap.summary}\n${facts.previous.recap.nextSteps.join('\n')}` : undefined,
       })
-      return { ...facts, headline: draft.headline, agenda: draft.agenda, questions: draft.questions, source: claude(model) }
+      return { headline: draft.headline, agenda: draft.agenda, questions: draft.questions, source: claude(model), preparedOn }
     },
-    (source) => ({ ...facts, agenda: placeholderAgenda(facts, student), questions: [], source }),
+    (source) => ({ agenda: placeholderAgenda(facts, student), questions: [], source, preparedOn }),
   )
 }
 
-function placeholderAgenda(facts: BriefFacts, student: Student): Brief['agenda'] {
+type Agenda = SavedBrief['agenda']
+
+function placeholderAgenda(facts: BriefFacts, student: Student): Agenda {
   const today = todayISO()
-  const agenda: Brief['agenda'] = []
+  const agenda: Agenda = []
   const nextCollege = facts.deadlines.find((d) => d.kind === 'college')
   if (nextCollege) {
     const blocking = facts.overdue.filter((o) => o.ownerType === 'student').length
@@ -370,19 +387,21 @@ function placeholderReport(data: AppData, student: Student, parentId: ID): Pick<
  * field for replacement text (see OUTPUTS.essayFeedback in shared/contract.ts).
  */
 export function essayFeedback(doc: StudentDocument, student: Student): Promise<EssayFeedback> {
+  const draft = currentDraft(doc)
   return withPlaceholder<EssayFeedback>(
     async () => {
-      if (!doc.essayText?.trim()) throw new AiFailure('bad_request', 'Paste the text of the draft first. The AI reads only what is on this page.')
-      checkLength(doc.essayText, 'This draft')
-      const { draft, model } = await callAi('essayFeedback', {
+      if (!draft?.text.trim()) throw new AiFailure('bad_request', 'Paste the text of the draft first. The AI reads only what is saved here.')
+      checkLength(draft.text, 'This draft')
+      const { draft: notes, model } = await callAi('essayFeedback', {
         studentFirstName: student.firstName,
         prompt: doc.essayPrompt?.trim() || 'No prompt was provided.',
-        essay: doc.essayText,
+        essay: draft.text,
       })
       return {
-        overall: draft.overall,
-        strengths: draft.strengths,
-        points: draft.notes,
+        draftN: draft.n,
+        overall: notes.overall,
+        strengths: notes.strengths,
+        points: notes.notes,
         review: 'pending',
         generatedOn: todayISO(),
         source: claude(model),
@@ -390,7 +409,80 @@ export function essayFeedback(doc: StudentDocument, student: Student): Promise<E
     },
     (source) => {
       const sample = doc.id === IDS.kevinEssay ? kevinEssayFeedback() : doc.id === IDS.sophiaEssay ? sophiaEssayFeedback() : genericEssayFeedback()
-      return { ...sample, source }
+      return { ...sample, draftN: draft?.n, source }
+    },
+  )
+}
+
+// ── 6. Reminder about one task ──────────────────────────────────────────────
+
+export type ReminderRecipient = { kind: 'student' } | { kind: 'parent'; parent: Parent }
+
+export interface ReminderMessage {
+  toKind: 'student' | 'parent'
+  toName: string
+  parentId?: ID
+  channel: Channel
+  language: Language
+  kind: 'reminder_upcoming' | 'reminder_late'
+  /** What the recipient reads, in their language. */
+  body: string
+  /** English, when body is in another language. */
+  bodyEn?: string
+  source: AiSource
+  /** Set when a fixed fact (title, due date, days late) is not in the draft as given. Shown to the counselor. */
+  warnings: string[]
+}
+
+/**
+ * A reminder about one task, drafted for one person in their language and for
+ * their preferred channel. The title, due date and days late are passed in as
+ * facts and checked on the way back.
+ */
+export function reminderDraft(data: AppData, student: Student, task: Task, to: ReminderRecipient): Promise<ReminderMessage> {
+  const late = daysLate(task)
+  const escalation = to.kind === 'parent' && task.owner !== 'parent'
+  const purpose: ReminderKind = escalation ? 'escalation' : late > 0 ? 'late' : 'upcoming'
+  const channel: Channel = to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text')
+  const language: Language = to.kind === 'parent' ? to.parent.language : 'en'
+  const dueDate = formatDate(task.dueDate)
+  const dueDateZh = formatDateZh(task.dueDate)
+  const base = {
+    toKind: to.kind,
+    toName: to.kind === 'parent' ? to.parent.name : fullName(student),
+    parentId: to.kind === 'parent' ? to.parent.id : undefined,
+    channel,
+    language,
+    kind: late > 0 ? ('reminder_late' as const) : ('reminder_upcoming' as const),
+  }
+
+  return withPlaceholder<ReminderMessage>(
+    async () => {
+      const { draft, model } = await callAi('reminderDraft', {
+        facts: buildFacts(data, student),
+        recipient: { kind: to.kind, parentId: to.kind === 'parent' ? to.parent.id : undefined },
+        channel,
+        language,
+        purpose,
+        task: { title: task.title, owner: ownerLabel(task, student) === 'You' ? 'Counselor' : ownerLabel(task, student), dueDate, dueDateZh, daysLate: late },
+      })
+      const local = language === 'en' ? undefined : (draft.bodyLocal ?? undefined)
+      // The fixed facts must survive the model. Tell the counselor if one did not.
+      const warnings: string[] = []
+      for (const [text, label, date] of [[draft.bodyEn, 'English', dueDate], ...(local ? [[local, 'translated', dueDateZh]] : [])] as [string, string, string][]) {
+        if (!text.includes(task.title)) warnings.push(`The ${label} text does not quote the task title exactly: “${task.title}”.`)
+        if (!text.replace(/\s/g, '').includes(date.replace(/\s/g, ''))) warnings.push(`The ${label} text does not give the due date as ${date}.`)
+        if (late > 0 && !new RegExp(`(^|\\D)${late}(\\D|$)`).test(text)) warnings.push(`The ${label} text does not say it is ${late} days late.`)
+      }
+      return { ...base, body: local ?? draft.bodyEn, bodyEn: local ? draft.bodyEn : undefined, source: claude(model), warnings }
+    },
+    (source) => {
+      // The fixed wording from lib/reminders.ts.
+      if (to.kind === 'student') return { ...base, body: studentText(late > 0 ? 'late' : 'upcoming', student, task, late), source, warnings: [] }
+      const en = parentText(purpose, 'en', to.parent, student, task, late)
+      return language === 'en'
+        ? { ...base, body: en, source, warnings: [] }
+        : { ...base, body: parentText(purpose, language, to.parent, student, task, late), bodyEn: en, source, warnings: [] }
     },
   )
 }

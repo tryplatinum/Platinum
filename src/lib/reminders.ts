@@ -9,8 +9,8 @@
 
 import type { AppData, ID, Language, OutboxMessage, Parent, ReminderMode, ReminderRule, Student, Task } from '../types'
 import { daysBetween, formatDate, formatDateZh, todayISO } from './dates'
-import { daysLate, isLate, isOpen } from './derive'
-import { STUDENT_CHANNEL, zhGiven, zhGreeting } from './language'
+import { activeStudents, daysLate, fullName, isLate, isOpen, primaryParent } from './derive'
+import { zhGiven, zhGreeting } from './language'
 
 export interface ReminderDraft {
   /** Identifies this reminder (rule + task + recipient) so it is not sent twice. */
@@ -26,9 +26,11 @@ export interface ReminderDraft {
 /** A reminder that went out this recently is not queued again. */
 const REPEAT_AFTER_DAYS = 3
 
-type Kind = 'upcoming' | 'late' | 'escalation'
+export type ReminderKind = 'upcoming' | 'late' | 'escalation'
+type Kind = ReminderKind
 
-function parentText(kind: Kind, lang: Language, p: Parent, s: Student, t: Task, late: number): string {
+/** The fixed wording for a reminder to a parent. Also the placeholder when the AI is unavailable. */
+export function parentText(kind: Kind, lang: Language, p: Parent, s: Student, t: Task, late: number): string {
   const title = t.title
   if (lang === 'zh-Hans') {
     const hi = `${zhGreeting(p)}您好，`
@@ -50,7 +52,8 @@ function parentText(kind: Kind, lang: Language, p: Parent, s: Student, t: Task, 
   return `Hello ${p.name}, a heads-up: ${s.firstName}’s task “${title}” is ${days} overdue. I am following up directly, and a nudge at home would help. Thank you!`
 }
 
-function studentText(kind: 'upcoming' | 'late', s: Student, t: Task, late: number): string {
+/** The fixed wording for a reminder to a student. */
+export function studentText(kind: 'upcoming' | 'late', s: Student, t: Task, late: number): string {
   if (kind === 'upcoming') {
     const n = daysBetween(todayISO(), t.dueDate)
     const when = n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`
@@ -70,6 +73,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
   )
   const queue: ReminderDraft[] = []
   const escalated = new Set<ID>()
+  const students = activeStudents(data)
 
   const add = (r: ReminderRule, s: Student, t: Task, message: ReminderDraft['message']) => {
     const key = `${r.id}:${t.id}:${message.parentId ?? 'student'}`
@@ -82,6 +86,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
     toKind: 'parent',
     toName: p.name,
     parentId: p.id,
+    taskId: t.id,
     channel: p.channel,
     language: p.language,
     kind: kind === 'upcoming' ? 'reminder_upcoming' : 'reminder_late',
@@ -91,7 +96,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
 
   const open = data.tasks.filter(isOpen).sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   for (const t of open) {
-    const s = data.students.find((x) => x.id === t.studentId)
+    const s = students.find((x) => x.id === t.studentId)
     if (!s) continue
     const late = daysLate(t, today)
     const until = daysBetween(today, t.dueDate)
@@ -100,8 +105,9 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
       const toStudent = (kind: 'upcoming' | 'late'): ReminderDraft['message'] => ({
         studentId: s.id,
         toKind: 'student',
-        toName: `${s.firstName} ${s.lastName}`,
-        channel: STUDENT_CHANNEL,
+        toName: fullName(s),
+        taskId: t.id,
+        channel: s.preferredChannel ?? 'text',
         language: 'en',
         kind: kind === 'upcoming' ? 'reminder_upcoming' : 'reminder_late',
         body: studentText(kind, s, t, late),
@@ -111,7 +117,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
 
       // One escalation per student, for their most overdue task, to the primary parent.
       const esc = rule('parent_escalation')
-      const primary = s.parents[0]
+      const primary = primaryParent(s)
       if (primary && late >= esc.days && !escalated.has(s.id)) {
         escalated.add(s.id)
         add(esc, s, t, toParent('escalation', primary, s, t, late))

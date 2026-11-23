@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { AiStatus } from '../../shared/contract'
 import { fetchStatus, getPasscode, setPasscode } from '../services/aiClient'
-import { cx, inputClass } from './ui'
+import { cx } from './ui'
 
 export function AiConnection() {
   const [status, setStatus] = useState<AiStatus | null>()
@@ -33,12 +33,12 @@ export function AiConnection() {
               : 'Enter the passcode to get real drafts.'
 
   return (
-    <div className="rounded-lg border border-line bg-surface px-3 py-2">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-ink">
-        <span className={cx('h-2 w-2 rounded-full', live ? 'bg-good' : 'bg-warn')} />
-        AI: {live ? 'Claude connected' : 'placeholders'}
+    <div className="rounded-lg border border-white/15 px-3 py-2.5">
+      <p className="flex items-center gap-2 text-sm font-semibold text-white">
+        <span className={cx('h-2 w-2 rounded-full', live ? 'bg-[#4ade80]' : 'bg-[#fbbf24]')} aria-hidden />
+        AI: {live ? 'connected' : 'placeholders'}
       </p>
-      <p className="mt-0.5 text-xs text-muted">{detail}</p>
+      <p className="mt-0.5 text-xs leading-relaxed text-sidebar-muted">{detail}</p>
       {serverReady &&
         (editing ? (
           <form
@@ -54,18 +54,18 @@ export function AiConnection() {
             <input
               type="password"
               autoFocus
-              className={cx(inputClass, 'px-2 py-1 text-xs')}
+              className="min-h-11 w-full rounded-lg border border-white/25 bg-sidebar px-2 text-sm text-white placeholder:text-sidebar-muted"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Passcode"
               aria-label="AI passcode"
             />
-            <button type="submit" className="rounded-md bg-ink px-2 text-xs font-medium text-white">
+            <button type="submit" className="min-h-11 rounded-lg bg-white px-3 text-sm font-semibold text-sidebar">
               Save
             </button>
           </form>
         ) : (
-          <button onClick={() => setEditing(true)} className="mt-1 text-xs text-accent hover:underline">
+          <button type="button" onClick={() => setEditing(true)} className="mt-1 flex min-h-11 items-center text-sm font-medium text-white underline">
             {passcode ? 'Change passcode' : 'Enter passcode'}
           </button>
         ))}

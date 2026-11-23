@@ -1,23 +1,16 @@
-// A message to a parent, with the English beside the parent's own language.
-// Used for parent reports and for parent updates drafted from a meeting.
+// A message to a parent, with a control to read it in the parent's language,
+// in English, or side by side. Used for parent reports, parent updates from a
+// meeting, and reminders.
 
+import { useState } from 'react'
 import { CHANNEL_LABEL, LANGUAGE_LABEL, LANGUAGE_NATIVE } from '../lib/language'
 import type { Language, Parent } from '../types'
-import { Pill, cx, inputClass } from './ui'
+import { SectionLabel, SegmentedControl, cx, textareaClass } from './ui'
 
-export function ParentLine({ parent }: { parent: Parent }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1.5">
-      <span className="text-sm font-medium text-ink">
-        {parent.name}
-        {parent.localName && <span className="ml-1 font-normal text-muted">{parent.localName}</span>}
-      </span>
-      <span className="text-xs text-muted">{parent.relationship}</span>
-      <Pill tone="neutral">{LANGUAGE_LABEL[parent.language]}</Pill>
-      <Pill tone="neutral">via {CHANNEL_LABEL[parent.channel]}</Pill>
-    </span>
-  )
-}
+/** "To Zhang Wei · WeChat · Simplified Chinese" */
+export const recipientLine = (parent: Parent) => `To ${parent.name} · ${CHANNEL_LABEL[parent.channel]} · ${LANGUAGE_LABEL[parent.language]}`
+
+type View = 'local' | 'en' | 'both'
 
 export function Bilingual({
   language,
@@ -26,6 +19,7 @@ export function Bilingual({
   editable = false,
   onChangeEn,
   onChangeLocal,
+  recipient = 'the parent',
 }: {
   language: Language
   en: string
@@ -33,35 +27,50 @@ export function Bilingual({
   editable?: boolean
   onChangeEn?: (value: string) => void
   onChangeLocal?: (value: string) => void
+  /** First name or short label, for "What Zhang Wei will receive". */
+  recipient?: string
 }) {
   const hasLocal = language !== 'en' && local !== undefined
-  const rows = Math.max(5, Math.ceil(en.length / 80) + en.split('\n').length)
+  const [view, setView] = useState<View>('both')
+  const rows = Math.max(5, Math.ceil(en.length / 70) + en.split('\n').length)
 
-  const pane = (label: string, sub: string, value: string, onChange?: (v: string) => void, lang?: string) => (
+  const pane = (label: string, value: string, onChange: ((v: string) => void) | undefined, lang: string, received: boolean) => (
     <div className="min-w-0">
-      <p className="mb-1.5 text-xs font-medium text-muted">
-        {label} <span className="font-normal text-faint">{sub}</span>
-      </p>
+      <SectionLabel className="mb-1.5">{label}</SectionLabel>
       {editable ? (
-        <textarea lang={lang} className={cx(inputClass, 'leading-relaxed')} rows={rows} value={value} onChange={(e) => onChange?.(e.target.value)} />
+        <textarea lang={lang} aria-label={label} className={textareaClass} rows={rows} value={value} onChange={(e) => onChange?.(e.target.value)} />
       ) : (
-        <p lang={lang} className="whitespace-pre-wrap rounded-lg bg-canvas px-3 py-2 text-sm leading-relaxed text-ink">
+        <p lang={lang} className={cx('whitespace-pre-wrap rounded-lg px-3 py-2.5 text-sm leading-relaxed text-ink', received ? 'bg-canvas' : 'border border-line')}>
           {value}
         </p>
       )}
     </div>
   )
 
+  if (!hasLocal) return pane(`What ${recipient} will receive`, en, onChangeEn, 'en', true)
+
   return (
-    <div>
-      <div className={cx('grid gap-4', hasLocal && 'lg:grid-cols-2')}>
-        {pane('English', hasLocal ? 'for your review' : 'what the parent receives', en, onChangeEn, 'en')}
-        {hasLocal && pane(LANGUAGE_NATIVE[language], 'what the parent receives', local!, onChangeLocal, language)}
+    <div className="flex flex-col gap-3">
+      <div>
+        <SegmentedControl
+          label="Language"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: 'both', label: 'Side by side' },
+          { value: 'local', label: LANGUAGE_NATIVE[language] },
+          { value: 'en', label: 'English' },
+        ]}
+        />
       </div>
-      {hasLocal && editable && (
-        <p className="mt-2 text-xs text-faint">
-          Demo: the two sides are edited separately. {/* TODO(real AI): re-translate when the English changes. */}
-          In the product, changing the English updates the translation.
+      <div className={cx('grid gap-4', view === 'both' && 'lg:grid-cols-2')}>
+        {view !== 'en' && pane(`What ${recipient} will receive`, local!, onChangeLocal, language, true)}
+        {view !== 'local' && pane('English, for your review', en, onChangeEn, 'en', false)}
+      </div>
+      {editable && (
+        <p className="text-xs text-muted">
+          {/* TODO: re-translate the other side when one side is edited. */}
+          The two sides are edited separately in v0. If you change one, change the other to match before you approve.
         </p>
       )}
     </div>

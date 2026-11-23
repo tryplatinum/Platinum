@@ -70,7 +70,9 @@ ${PRIVACY}
 
 What to produce:
 
-notes: the counselor's private record of the meeting. Five to nine short points, one matter per point: decisions made, what is blocked and on whom, new facts, and anything the student said that the counselor will want to remember next time. Only the counselor reads this.
+summary: the meeting at a glance, as three short lists the counselor can read in ten seconds. "decided" is what was settled in the meeting. "progress" is what has moved since last time (scores, finished work, results). "watch" is what could go wrong: things not started, blockers, deadlines closing in. One to four items each, a short phrase per item, no private details. Leave a list empty when the notes have nothing for it.
+
+notes: the counselor's fuller private record of the meeting. Five to nine short points, one matter per point: decisions made, what is blocked and on whom, new facts, and anything the student said that the counselor will want to remember next time. Only the counselor reads this.
 
 tasks: follow the rules below.
 
@@ -171,6 +173,41 @@ ${CHINESE}`,
         factsBlock(input.facts),
         wrap('report_facts', input.reportFacts.map((f) => `- ${f}`).join('\n')),
         'Draft the progress report.',
+      ].join('\n\n')
+    },
+  },
+
+  reminderDraft: {
+    effort: 'low',
+    system: `${SITUATION}
+
+The task: draft one short reminder about one task, for the counselor to send. The counselor pressed "Remind" on a task and will read your draft, edit it if needed, and send it.
+
+${STAY_WITH_THE_RECORD}
+In this feature three facts are fixed. The task's title must appear exactly as given, inside quotation marks (“ ” in English, 「 」 in Chinese), with no rewording, translation or shortening. The due date must appear exactly as given: use dueDate in the English text and dueDateZh in the Chinese text. When daysLate is more than 0, state that number of days. Do not add other deadlines, consequences or history unless they are in the facts.
+
+${PRIVACY}
+
+Who is reading and what they need:
+- A student (purpose "late" or "upcoming"): two or three sentences in the counselor's voice. Friendly and direct, no scolding. Say what is due and when, ask for one concrete thing (what they have so far, or a time they will finish), and make it easy to say they are stuck.
+- A parent about their own task (purpose "late" or "upcoming"): courteous and brief. Say what is needed and by when, and offer help if something is in the way.
+- A parent about their student's late task (purpose "escalation"): a heads-up, not an alarm. Say what is late, that the counselor is following up with the student directly, and that a word at home would help. Nothing the student would expect to stay between them and the counselor.
+
+Match the channel: a text, WeChat or LINE message is a few short sentences with no subject line or sign-off block; an email can have a greeting line and the counselor's first name at the end.
+
+bodyEn is always filled in. bodyLocal is the message in the recipient's language, or null when their language is "en".
+
+${CHINESE}`,
+    user: (input) => {
+      const who =
+        input.recipient.kind === 'student'
+          ? `the student, ${input.facts.student.firstName}`
+          : `this parent: ${JSON.stringify(input.facts.parents.find((p) => p.id === input.recipient.parentId))}`
+      return [
+        `Today is ${input.facts.today}. Write to ${who}. Channel: ${input.channel}. Language: ${input.language}. Purpose: ${input.purpose}.`,
+        wrap('task', JSON.stringify(input.task, null, 1)),
+        factsBlock(input.facts),
+        'Draft the reminder.',
       ].join('\n\n')
     },
   },

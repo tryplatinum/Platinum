@@ -118,6 +118,25 @@ export const INPUTS = {
     prompt: text(2000),
     essay: z.string().min(50).max(MAX_TEXT_CHARS),
   }),
+  reminderDraft: z.object({
+    facts: StudentFacts,
+    /** Who the message goes to. For a parent, the id of that parent in the facts. */
+    recipient: z.object({ kind: z.enum(['student', 'parent']), parentId: text(60).optional() }),
+    channel: z.enum(['email', 'wechat', 'line', 'text']),
+    language: z.enum(['en', 'zh-Hans', 'zh-Hant']),
+    /** 'escalation' = telling a parent that their student's own task is late. */
+    purpose: z.enum(['upcoming', 'late', 'escalation']),
+    /** Computed by our code. These must appear in the message unchanged. */
+    task: z.object({
+      title: text(),
+      owner: text(80),
+      /** As it should be written in English, e.g. "Nov 14". */
+      dueDate: text(40),
+      /** As it should be written in Chinese, e.g. "11月14日". */
+      dueDateZh: text(40),
+      daysLate: z.number().int().min(0),
+    }),
+  }),
 } as const
 
 export type Feature = keyof typeof INPUTS
@@ -169,6 +188,8 @@ export type ProfileSuggestion = z.infer<typeof ProfileSuggestion>
 
 export const OUTPUTS = {
   draftFromMeeting: z.object({
+    /** The meeting at a glance: three short lists. */
+    summary: z.object({ decided: z.array(z.string()), progress: z.array(z.string()), watch: z.array(z.string()) }),
     notes: z.array(z.string()),
     tasks: z.array(ProposedTask),
     recap: z.object({ summary: z.string(), nextSteps: z.array(z.string()) }),
@@ -207,6 +228,11 @@ export const OUTPUTS = {
         question: z.string(),
       }),
     ),
+  }),
+  reminderDraft: z.object({
+    bodyEn: z.string(),
+    /** In the recipient's language. Null when they read English. */
+    bodyLocal: z.string().nullable(),
   }),
 } as const
 
