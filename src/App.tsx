@@ -4,6 +4,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
 import { Card, Empty, PageHeader } from './components/ui'
+import CommandCenter from './screens/counselor/CommandCenter'
 import SignIn from './screens/counselor/SignIn'
 
 /** Stands in for a screen that a later phase of the design-v2 rebuild adds. */
@@ -23,7 +24,7 @@ export default function App() {
     <Routes>
       <Route path="/signin" element={<SignIn />} />
       <Route path="/app" element={<CounselorLayout />}>
-        <Route index element={<Pending title="Command center" />} />
+        <Route index element={<CommandCenter />} />
         <Route path="students" element={<Pending title="Students" />} />
         <Route path="students/:studentId" element={<Pending title="Student" />} />
         <Route path="meetings" element={<Pending title="Meetings" />} />
