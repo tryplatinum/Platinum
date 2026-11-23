@@ -79,9 +79,14 @@ function checkLength(text: string, what: string): void {
 }
 
 /** Model output → our draft tasks. Owners and dates are checked against the record. */
-function toDraftTasks(proposed: ProposedTask[], student: Student): DraftTask[] {
+function toDraftTasks(proposed: ProposedTask[], student: Student, data: AppData): DraftTask[] {
   const today = todayISO()
-  return proposed.map((p) => {
+  const normalize = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  // Backstop for the prompt's "do not repeat an open task" rule. Catches exact repeats only.
+  const alreadyOpen = new Set(tasksFor(data, student.id).filter(isOpen).map((t) => normalize(t.title)))
+  return proposed
+    .filter((p) => !alreadyOpen.has(normalize(p.title)))
+    .map((p) => {
     const parent = p.owner === 'parent' ? (student.parents.find((x) => x.id === p.parentId) ?? student.parents[0]) : undefined
     const validDate = /^\d{4}-\d{2}-\d{2}$/.test(p.dueDate) && p.dueDate >= today
     return {
@@ -132,7 +137,7 @@ export function draftFromMeeting(data: AppData, meeting: Meeting, student: Stude
         meeting: { title: meeting.title, date: meeting.date },
         source: meeting.transcript,
       })
-      return meetingDraftsFrom(draft, student, claude(model))
+      return meetingDraftsFrom(draft, student, data, claude(model))
     },
     (source) => {
       const sample =
@@ -146,12 +151,12 @@ export function draftFromMeeting(data: AppData, meeting: Meeting, student: Stude
   )
 }
 
-function meetingDraftsFrom(draft: FeatureOutput<'draftFromMeeting'>, student: Student, source: AiSource): MeetingDrafts {
+function meetingDraftsFrom(draft: FeatureOutput<'draftFromMeeting'>, student: Student, data: AppData, source: AiSource): MeetingDrafts {
   return {
     ai: {
       source,
       notes: draft.notes,
-      draftTasks: toDraftTasks(draft.tasks, student),
+      draftTasks: toDraftTasks(draft.tasks, student, data),
       parentUpdates: draft.parentUpdates.flatMap((u) => {
         const parent = student.parents.find((p) => p.id === u.parentId)
         if (!parent) return []
@@ -177,7 +182,7 @@ export function readNotes(data: AppData, text: string, student: Student): Promis
     async () => {
       checkLength(text, 'These notes')
       const { draft, model } = await callAi('readNotes', { facts: buildFacts(data, student), notes: text })
-      return { summary: draft.summary, tasks: toDraftTasks(draft.tasks, student), source: claude(model) }
+      return { summary: draft.summary, tasks: toDraftTasks(draft.tasks, student, data), source: claude(model) }
     },
     (source) => {
       if (student.id === IDS.sophia && text.includes('closing-shift')) return { ...sampleNoteResult(), source }
@@ -234,7 +239,7 @@ export async function preMeetingBrief(data: AppData, meetingId: ID): Promise<Bri
         computed: {
           changesSinceLastMeeting: facts.changes,
           overdue: facts.overdue.map((o) => `${o.title} — owner: ${o.owner}; ${o.daysLate} days late${o.progressNote ? `; their note: "${o.progressNote}"` : ''}`),
-          deadlinesNext14Days: facts.deadlines.map((d) => `${d.label} — ${d.date}`),
+          deadlinesNext14Days: facts.deadlines.map((d) => `${d.label} — due ${formatDate(d.date)}, in ${daysBetween(todayISO(), d.date)} days`),
           waitingOnCounselor: facts.waitingOnCounselor,
         },
         counselorNotes: student.counselorNotes || undefined,

@@ -149,7 +149,8 @@ Rules of thumb:
 ## Known gaps
 
 - **Chinese text needs a native speaker.** The placeholder drafts, the seeded past reports and the reminder templates were written by a non-native speaker. Have a native speaker check them, and read real model output in both scripts, before any of it goes in front of a Mandarin-speaking parent or counselor.
-- **Real AI output has not been reviewed by us yet.** The endpoint was built and tested up to the Anthropic API without a key (see the handover notes). Run `npm run test:ai` and read all five drafts before a call.
+- **Real AI output has only been spot-checked.** All five features return real drafts through `npm run test:ai`, and the prompts were tuned once against them. Nobody has yet clicked through the real drafts in the browser, and the model's Chinese has not been read by a native speaker. Run `npm run test:ai` and read the drafts again after any prompt change.
+- Drafts vary from run to run. The code drops a proposed task only when its title exactly matches an open task; near-duplicates rely on the prompt.
 - Placeholder parent reports keep task titles in English inside the Chinese text.
 - Editing the English side of a parent message does not update the Chinese side.
 - Essay feedback reads text pasted into the page, not the linked Google Doc.

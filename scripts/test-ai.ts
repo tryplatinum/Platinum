@@ -34,7 +34,7 @@ const inputs: Record<Feature, unknown> = {
     computed: {
       changesSinceLastMeeting: brief.changes,
       overdue: brief.overdue.map((o) => `${o.title} — owner: ${o.owner}; ${o.daysLate} days late`),
-      deadlinesNext14Days: brief.deadlines.map((d) => `${d.label} — ${d.date}`),
+      deadlinesNext14Days: brief.deadlines.map((d) => `${d.label} — due ${d.date}`),
       waitingOnCounselor: brief.waitingOnCounselor,
     },
     counselorNotes: kevin.counselorNotes,

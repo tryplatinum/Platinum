@@ -25,6 +25,8 @@ const ParentFact = z.object({
   id: text(60),
   name: text(80),
   localName: text(20).optional(),
+  /** How to address this parent in Chinese, e.g. 张先生. Computed by our code. */
+  zhAddress: text(20).optional(),
   relationship: z.enum(['Mother', 'Father', 'Guardian']),
   language: z.enum(['en', 'zh-Hans', 'zh-Hant']),
   channel: z.enum(['email', 'wechat', 'line', 'text']),

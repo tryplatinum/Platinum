@@ -21,7 +21,7 @@ import {
   tasksFor,
   type Deadline,
 } from './derive'
-import { zhGiven } from './language'
+import { zhGiven, zhGreeting } from './language'
 
 const RECENT_DAYS = 21
 const BRIEF_DEADLINE_WINDOW_DAYS = 14
@@ -48,13 +48,14 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
       interests: student.interests,
       activities: student.activities.map(({ name, role, detail }) => ({ name, role, detail })),
     },
-    parents: student.parents.map(({ id, name, localName, relationship, language, channel }) => ({
-      id,
-      name,
-      localName,
-      relationship,
-      language,
-      channel,
+    parents: student.parents.map((p) => ({
+      id: p.id,
+      name: p.name,
+      localName: p.localName,
+      zhAddress: p.localName ? zhGreeting(p) : undefined,
+      relationship: p.relationship,
+      language: p.language,
+      channel: p.channel,
     })),
     openTasks: tasks
       .filter(isOpen)
