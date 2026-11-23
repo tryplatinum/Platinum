@@ -1,18 +1,38 @@
-// Interim screen for Phase 1 of the design-v2 rebuild: the data layer is new,
-// the interface is rebuilt in the phases that follow.
+// Every route in the app. Counselor screens live under /app (behind the
+// stand-in sign-in); the student view lives under /student/:studentId.
 
-import { statusText, summarizeAll, fullName } from './lib/derive'
-import { useData } from './store/store'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { CounselorLayout, StudentLayout } from './components/Layout'
+import { Card, Empty, PageHeader } from './components/ui'
+import SignIn from './screens/counselor/SignIn'
+
+/** Stands in for a screen that a later phase of the design-v2 rebuild adds. */
+function Pending({ title }: { title: string }) {
+  return (
+    <>
+      <PageHeader title={title} />
+      <Card>
+        <Empty title="This screen is rebuilt in a later phase of the design-v2 branch." />
+      </Card>
+    </>
+  )
+}
 
 export default function App() {
-  const data = useData()
   return (
-    <ul className="p-8 text-sm text-ink">
-      {summarizeAll(data).map((s) => (
-        <li key={s.student.id}>
-          {fullName(s.student)}: {s.progress.done}/{s.progress.total} tasks, {statusText(s)}
-        </li>
-      ))}
-    </ul>
+    <Routes>
+      <Route path="/signin" element={<SignIn />} />
+      <Route path="/app" element={<CounselorLayout />}>
+        <Route index element={<Pending title="Command center" />} />
+        <Route path="students" element={<Pending title="Students" />} />
+        <Route path="students/:studentId" element={<Pending title="Student" />} />
+        <Route path="meetings" element={<Pending title="Meetings" />} />
+        <Route path="messages" element={<Pending title="Messages sent" />} />
+      </Route>
+      <Route path="/student/:studentId" element={<StudentLayout />}>
+        <Route index element={<Pending title="Student view" />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/app" replace />} />
+    </Routes>
   )
 }
