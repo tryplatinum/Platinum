@@ -4,6 +4,9 @@
 // texted by Platinum: "Copy" and "Open in Messages" hand the text to the
 // counselor, and pressing either is their approval.
 //
+// Which task a text puts first is the AI's choice of the most urgent one; the
+// row says which and why ("Leads with: …"). Every date is still the code's.
+//
 // A text may draw on one "thing to remember" about the student; the row says
 // which ("Used: …") and offers a redraft without it. "Also tell parent" adds a
 // separate short draft to the primary parent, approved and logged on its own.
@@ -227,6 +230,16 @@ function Row({
               <p className={cx('text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
                 {text.length} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
               </p>
+              {draft.lead && (
+                <p className="text-[13px] text-ink-soft">
+                  <strong>Leads with:</strong> {draft.lead.title}
+                  <span className="text-muted">
+                    {' '}
+                    · the AI’s choice of the most urgent task{draft.lead.changedOrder ? ', ahead of one that is more overdue' : ', which is also the most overdue'}
+                    {draft.lead.reason && `. Its reason: ${draft.lead.reason}`}
+                  </span>
+                </p>
+              )}
               {draft.usedNote && (
                 <p className="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
                   <span>

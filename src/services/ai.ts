@@ -31,7 +31,7 @@ import { addDays, daysBetween, formatDate, formatDateZh, todayISO } from '../lib
 import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, tasksFor } from '../lib/derive'
 import { briefFacts, buildFacts, parentReportInput, reminderRequest, type BriefFacts, type NoteForDraft, type ReminderRecipient } from '../lib/facts'
 import { zhGiven, zhGreeting } from '../lib/language'
-import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTemplate, type WeeklyTextFacts } from '../lib/reminders'
+import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks, weeklyTextTemplate, type WeeklyTextFacts } from '../lib/reminders'
 import type {
   AiSource,
   AppData,
@@ -52,6 +52,7 @@ import type {
   StudentDocument,
   Task,
   UsedNote,
+  WeeklyLead,
 } from '../types'
 import { AiFailure, AiUnavailable, callAi } from './aiClient'
 import { swapIds } from '../data/ids'
@@ -532,6 +533,21 @@ export interface WeeklyTextDraft {
   source: AiSource
   /** The "thing to remember" the text drew on, if any. Never set on the fixed template. */
   usedNote?: UsedNote
+  /** The task the AI put first as most urgent. Never set on the fixed template, which keeps the code's order. */
+  lead?: WeeklyLead
+}
+
+/**
+ * The AI's choice of which task comes first, kept only if it is true of the
+ * text: the task it names must be one it was given, and its title must be the
+ * first task title in the text.
+ */
+function leadFrom(text: string, facts: WeeklyTextFacts, leadTaskId: string | null, reason: string | null): WeeklyLead | undefined {
+  const tasks = weeklyTextTasks(facts)
+  if (tasks.length < 2) return undefined
+  const first = weeklyTextFirstTask(text, facts)
+  if (!first || first.id !== leadTaskId) return undefined
+  return { title: first.title, reason: reason?.trim().slice(0, 240) || undefined, changedOrder: first.id !== tasks[0].id }
 }
 
 /**
@@ -559,6 +575,7 @@ export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en', no
       late: facts.late,
       due: facts.due,
       more: facts.more,
+      deadlines: facts.deadlines.length ? facts.deadlines : undefined,
       link: facts.link,
       personalNotes: offered.length ? offered.map((n) => n.fact) : undefined,
       maxChars: WEEKLY_TEXT_MAX,
@@ -575,7 +592,7 @@ export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en', no
       const missing = weeklyTextMissing(text, facts)
       if (missing.length) return template(`The AI draft changed or left out “${missing[0]}”, so the fixed template is used instead.`)
       if (text.length > WEEKLY_TEXT_MAX) return template(`The AI draft was ${text.length} characters, over the limit of ${WEEKLY_TEXT_MAX}, so the fixed template is used instead.`)
-      return { body: text, facts: lines, source: claude(model), usedNote: usedNoteFrom(draft.usedNoteId, offered) }
+      return { body: text, facts: lines, source: claude(model), usedNote: usedNoteFrom(draft.usedNoteId, offered), lead: leadFrom(text, facts, draft.leadTaskId, draft.leadReason) }
     },
     (source) => template(source.kind === 'placeholder' ? source.reason : ''),
   )

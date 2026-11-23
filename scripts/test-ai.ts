@@ -14,7 +14,7 @@ import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '
 import { buildSeed } from '../src/data/seed.js'
 import { formatDate, formatDateZh } from '../src/lib/dates.js'
 import { daysLate, isOpen, weeklyTextItems } from '../src/lib/derive.js'
-import { WEEKLY_TEXT_MAX, weeklyTextFacts, weeklyTextHasRoomForNote, weeklyTextMissing } from '../src/lib/reminders.js'
+import { WEEKLY_TEXT_MAX, weeklyTextFacts, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks } from '../src/lib/reminders.js'
 import { briefFacts, buildFacts, notesForDraft, reminderRequest, reportFacts } from '../src/lib/facts.js'
 import { createAccount, removeAccount, requireSettings } from './testAccounts.js'
 
@@ -76,6 +76,7 @@ inputs.weeklyText = {
   late: kevinWeekly.late,
   due: kevinWeekly.due,
   more: kevinWeekly.more,
+  deadlines: kevinWeekly.deadlines,
   link: kevinWeekly.link,
   // Kevin's things to remember from the sample data, offered (as in the app) only when the
   // facts leave room. The text may use at most one and must say which.
@@ -121,6 +122,14 @@ for (const { feature, input, label } of runs) {
     const missing = weeklyTextMissing(body.draft.text, label ? shortWeekly : kevinWeekly)
     console.log(`weeklyText: ${body.draft.text.length} characters (limit ${WEEKLY_TEXT_MAX}); facts changed or missing: ${missing.length ? missing.join(' | ') : 'none'}`)
     if (missing.length || body.draft.text.length > WEEKLY_TEXT_MAX) failed += 1
+    // Which task it chose to put first, and whether the text really leads with it.
+    const used = label ? shortWeekly : kevinWeekly
+    const tasks = weeklyTextTasks(used)
+    const first = weeklyTextFirstTask(body.draft.text, used)
+    const claimed = tasks.find((t) => t.id === body.draft.leadTaskId)
+    console.log(`weeklyText: tasks in the code's order: ${tasks.map((t) => `${t.id} “${t.title}”`).join(', ')}`)
+    console.log(`weeklyText: says it leads with ${claimed ? `${claimed.id} “${claimed.title}”` : body.draft.leadTaskId}; the text leads with ${first?.id}. Reason: ${body.draft.leadReason}`)
+    if (tasks.length >= 2 ? first?.id !== body.draft.leadTaskId : body.draft.leadTaskId !== null) failed += 1
     if ((input as { personalNotes?: unknown[] }).personalNotes?.length) reportUsedNote('weeklyText', body.draft.usedNoteId)
     else console.log('weeklyText: no things to remember were offered (the facts leave no room); usedNoteId: ' + body.draft.usedNoteId)
   }

@@ -281,10 +281,20 @@ Who reads it: a high-school student, on their phone, between other things. It sh
 
 What it contains, in this order:
 1. The next meeting, if one is given.
-2. Late tasks, each with its due date and how late it is.
-3. Tasks due soon, each with its due date.
-4. If "more" is above 0, one short sentence of its own after the lists that contains the words "and N more" with that number (for example "And 2 more on your list."), so the student knows the lists are not complete. When "more" is 0, say nothing about more.
-5. The link, if one is given, at the very end, after a short lead-in such as "Your list:".
+2. When two or more tasks are listed: the one task to do first, on its own, introduced plainly as the first thing to do ("Start with …", "First: …"), with its due date and, if it is late, how late.
+3. The other late tasks, each with its due date and how late it is.
+4. The other tasks due soon, each with its due date.
+5. If "more" is above 0, one short sentence of its own after the lists that contains the words "and N more" with that number (for example "And 2 more on your list."), so the student knows the lists are not complete. When "more" is 0, say nothing about more.
+6. The link, if one is given, at the very end, after a short lead-in such as "Your list:".
+
+Choosing what comes first.
+A student who is behind reads a list of four things and starts with the easiest. The most useful thing this text can do is tell them which one to do first, and that is your judgment to make. Pick the single most urgent task from the ones listed, in this order of weight:
+1. The nearest application deadline. "deadlines" gives the student's next ones and how many days away each is. Unfinished work that an application due soon cannot go in without comes first, and the closer the deadline the more it outweighs everything else. Link a task to a deadline only when the task's own title names that application or college (a task titled "UC PIQ 3 and 4" belongs to a UC application). Do not assume a link the title does not state: you do not know which colleges need a given recommendation, score or form.
+2. Then how late it is, and whether it is not started ("todo") or under way ("in_progress").
+3. Then whether someone else has to act after the student does, such as a teacher who must be asked for a recommendation. That raises a task among others of similar urgency; it does not put it ahead of work a nearer deadline depends on.
+The tasks arrive ordered most overdue first. When nothing above separates them, keep that order.
+Put that task first among the tasks, and set leadTaskId to its id exactly as given. Set leadReason to one short sentence for the counselor saying why it comes first, using only what you were given (for example "It is the one piece the UC application, due in 6 days, still needs."). leadReason is shown to the counselor and is never sent to the student. When fewer than two tasks are listed there is nothing to choose: set both to null.
+The "deadlines", "category" and "status" values are there for this choice only. Do not write an application deadline, a category or a status into the text: the counselor's screen cannot check them there, and you may tell the student which task to start with but not add a reason that contains a date or a fact of your own.
 
 The facts are fixed strings computed by our system, and the counselor's screen checks the text for each of them. Copy every one into the text character for character:
 - each task title, inside “ ” quotation marks, not reworded, shortened or re-capitalised;
@@ -307,6 +317,7 @@ Language: write in the language given. The fixed strings stay exactly as they ar
       [
         `Today is ${input.today}. The student's first name is ${input.studentFirstName}. The counselor's first name is ${input.counselorFirstName}. Language: ${input.language}. maxChars: ${input.maxChars}.`,
         wrap('facts', JSON.stringify({ meeting: input.meeting ?? null, late: input.late, due: input.due, more: input.more, link: input.link ?? null }, null, 1)),
+        input.deadlines?.length ? wrap('deadlines', JSON.stringify(input.deadlines, null, 1)) : '',
         notesBlock(input.personalNotes),
         'Write the text.',
       ]

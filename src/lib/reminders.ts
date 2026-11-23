@@ -148,10 +148,16 @@ export interface WeeklyTextFacts {
   counselorFirstName: string
   /** "Tue, Nov 26 at 4:00 PM" */
   meeting?: string
-  /** Late tasks first, most overdue first. `late` reads "3 days late". */
-  late: { title: string; due: string; late: string }[]
+  /**
+   * Late tasks first, most overdue first. `late` reads "3 days late". `id` is a
+   * short handle ("t1") the AI returns to say which task it put first;
+   * `category` and `status` are there to help it judge, and are not written out.
+   */
+  late: { id: string; title: string; due: string; late: string; category: string; status: string }[]
   /** Then tasks due in the next 7 days. */
-  due: { title: string; due: string }[]
+  due: { id: string; title: string; due: string; category: string; status: string }[]
+  /** The next application deadlines, for judging what is most urgent. Never written into the text. */
+  deadlines: { label: string; due: string; inDays: number }[]
   /** Tasks left out of the two lists, written as "and N more". 0 when none. */
   more: number
   /** The student's own no-login link to their tasks. */
@@ -165,6 +171,8 @@ export interface WeeklyTextFacts {
  */
 export function weeklyTextFacts(student: Student, counselorFirstName: string, items: WeeklyTextItems, link?: string, today: ISODate = todayISO()): WeeklyTextFacts {
   const all = [...items.late, ...items.due]
+  /** "t1", "t2"… in the order the code ranks them: most overdue first, then soonest due. */
+  const handle = (t: Task) => `t${all.indexOf(t) + 1}`
   const build = (count: number): WeeklyTextFacts => {
     const shown = new Set(all.slice(0, count).map((t) => t.id))
     return {
@@ -173,9 +181,10 @@ export function weeklyTextFacts(student: Student, counselorFirstName: string, it
       meeting: items.meeting && `${formatDateLong(items.meeting.date)} at ${formatTime(items.meeting.time)}`,
       late: items.late.filter((t) => shown.has(t.id)).map((t) => {
         const n = daysLate(t, today)
-        return { title: t.title, due: formatDate(t.dueDate), late: `${n} ${n === 1 ? 'day' : 'days'} late` }
+        return { id: handle(t), title: t.title, due: formatDate(t.dueDate), late: `${n} ${n === 1 ? 'day' : 'days'} late`, category: t.category, status: t.status }
       }),
-      due: items.due.filter((t) => shown.has(t.id)).map((t) => ({ title: t.title, due: formatDate(t.dueDate) })),
+      due: items.due.filter((t) => shown.has(t.id)).map((t) => ({ id: handle(t), title: t.title, due: formatDate(t.dueDate), category: t.category, status: t.status })),
+      deadlines: (items.deadlines ?? []).map((x) => ({ label: x.label, due: formatDate(x.date), inDays: daysBetween(today, x.date) })),
       more: all.length - shown.size,
       link,
     }
@@ -225,6 +234,20 @@ export function weeklyTextMissing(text: string, f: WeeklyTextFacts): string[] {
   return weeklyTextRequired(f).filter((fact) => (fact.startsWith('and ') ? !lower.includes(fact) : !text.includes(fact)))
 }
 
+/** Every task named in the text, in the code's own order. */
+export const weeklyTextTasks = (f: WeeklyTextFacts): { id: string; title: string }[] => [...f.late, ...f.due]
+
+/**
+ * The task a text really leads with: the one whose title comes first. Used to
+ * check the AI's claim about which task it put first against the text itself.
+ */
+export function weeklyTextFirstTask(text: string, f: WeeklyTextFacts): { id: string; title: string } | undefined {
+  return weeklyTextTasks(f)
+    .map((t) => ({ t, at: text.indexOf(t.title) }))
+    .filter((x) => x.at >= 0)
+    .sort((a, b) => a.at - b.at)[0]?.t
+}
+
 /** The facts as lines for the counselor to read beside the draft. */
 export function weeklyTextFactLines(f: WeeklyTextFacts): string[] {
   return [
@@ -232,6 +255,7 @@ export function weeklyTextFactLines(f: WeeklyTextFacts): string[] {
     ...f.late.map((t) => `Late: ${t.title} (was due ${t.due}, ${t.late})`),
     ...f.due.map((t) => `Due: ${t.title} (${t.due})`),
     ...(f.more ? [`and ${f.more} more`] : []),
+    ...f.deadlines.map((x) => `Application deadline (not in the text; used to judge what comes first): ${x.label}, ${x.due}`),
     f.link ? `Link: ${f.link}` : 'No link in this text',
   ]
 }

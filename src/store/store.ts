@@ -180,7 +180,7 @@ interface Actions {
   updateRule: (id: ReminderRule['id'], patch: Partial<Pick<ReminderRule, 'mode' | 'days'>>) => void
   // Weekly texts
   /** Stores this week's draft for a student, replacing an earlier draft. Nothing is sent. */
-  setWeeklyDraft: (studentId: ID, weekStart: string, draft: Pick<WeeklyText, 'body' | 'facts' | 'source' | 'usedNote'>) => void
+  setWeeklyDraft: (studentId: ID, weekStart: string, draft: Pick<WeeklyText, 'body' | 'facts' | 'source' | 'usedNote' | 'lead'>) => void
   updateWeeklyText: (id: ID, body: string) => void
   /**
    * The counselor pressed Copy or Open in Messages, which is their approval:
@@ -951,7 +951,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         // A text already sent or skipped this week is not redrafted.
         if (existing && existing.status !== 'draft') return data
         // A redraft replaces the wording and which note it used; the parent copy is its own draft and stays.
-        const fields = { body: draft.body, facts: draft.facts, source: draft.source, usedNote: draft.usedNote }
+        const fields = { body: draft.body, facts: draft.facts, source: draft.source, usedNote: draft.usedNote, lead: draft.lead }
         return existing
           ? { ...data, weeklyTexts: patchById(data.weeklyTexts, existing.id, (w) => ({ ...w, ...fields })) }
           : { ...data, weeklyTexts: [...data.weeklyTexts, { id: newId(), studentId, weekStart, status: 'draft', ...fields }] }

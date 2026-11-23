@@ -966,6 +966,7 @@ export type Database = {
           facts: Json | null
           firm_id: string
           id: string
+          lead: Json | null
           parent_copy: Json | null
           sent_via: string | null
           seq: number
@@ -983,6 +984,7 @@ export type Database = {
           facts?: Json | null
           firm_id: string
           id?: string
+          lead?: Json | null
           parent_copy?: Json | null
           sent_via?: string | null
           seq?: number
@@ -1000,6 +1002,7 @@ export type Database = {
           facts?: Json | null
           firm_id?: string
           id?: string
+          lead?: Json | null
           parent_copy?: Json | null
           sent_via?: string | null
           seq?: number

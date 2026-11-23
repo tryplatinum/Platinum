@@ -103,6 +103,19 @@ export interface PersonalNote {
   approval: Approval
 }
 
+/**
+ * Which task a weekly text leads with. Choosing it is the AI's one judgment in
+ * that feature; the code checks the text does lead with this task, and the
+ * counselor sees the choice and the reason beside the draft.
+ */
+export interface WeeklyLead {
+  title: string
+  /** The AI's one-sentence reason, for the counselor only. */
+  reason?: string
+  /** False when the AI kept the code's own order (most overdue first). */
+  changedOrder: boolean
+}
+
 /** The note a draft drew on, as it read at the time. Shown beside the draft as "Used: …". */
 export interface UsedNote {
   id: ID
@@ -463,6 +476,8 @@ export interface WeeklyText {
   sentVia?: 'copy' | 'sms'
   /** The "thing to remember" the draft drew on, if any. */
   usedNote?: UsedNote
+  /** The task the AI chose to put first as most urgent, and why. Set only when the text really leads with it. */
+  lead?: WeeklyLead
   /** The separate short message to the primary parent, when "Also tell parent" is ticked. */
   parentCopy?: ParentCopy
 }

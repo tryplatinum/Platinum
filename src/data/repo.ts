@@ -223,6 +223,7 @@ const weeklyTextFrom = (r: Row<'weekly_texts'>): WeeklyText => ({
   approval: from<WeeklyText['approval']>(r.approval),
   sentVia: u(r.sent_via) as WeeklyText['sentVia'],
   usedNote: from<WeeklyText['usedNote']>(r.used_note),
+  lead: from<WeeklyText['lead']>(r.lead),
   parentCopy: from<WeeklyText['parentCopy']>(r.parent_copy),
 })
 
@@ -413,6 +414,7 @@ const weeklyTextRow = (w: WeeklyText): Out<'weekly_texts'> => ({
   approval: json(w.approval),
   sent_via: n(w.sentVia),
   used_note: json(w.usedNote),
+  lead: json(w.lead),
   parent_copy: json(w.parentCopy),
 })
 

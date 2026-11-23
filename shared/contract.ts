@@ -170,8 +170,12 @@ export const INPUTS = {
     // appear in the text unchanged. The counselor's private notes are never sent.
     /** "Tue, Nov 26 at 4:00 PM". Absent when no meeting is coming up. */
     meeting: text(60).optional(),
-    late: z.array(z.object({ title: text(), due: text(40), late: text(40) })).max(4),
-    due: z.array(z.object({ title: text(), due: text(40) })).max(4),
+    // `id` is a handle for this request ("t1") that the model returns as leadTaskId. category and
+    // status help it judge which task is most urgent; they are not written into the text.
+    late: z.array(z.object({ id: text(8).optional(), title: text(), due: text(40), late: text(40), category: text(20).optional(), status: text(20).optional() })).max(4),
+    due: z.array(z.object({ id: text(8).optional(), title: text(), due: text(40), category: text(20).optional(), status: text(20).optional() })).max(4),
+    /** The student's next application deadlines, computed by our code. For judging urgency only: never written into the text. */
+    deadlines: z.array(z.object({ label: text(160), due: text(40), inDays: z.number().int() })).max(3).optional(),
     /** Tasks not listed. Written as "and N more". */
     more: z.number().int().min(0),
     /** The student's own link to their tasks. */
@@ -295,6 +299,14 @@ export const OUTPUTS = {
     text: z.string(),
     /** The id of the personal note the text drew on, or null. */
     usedNoteId: z.string().nullable(),
+    /**
+     * The id of the task the text puts first as the most urgent, or null when fewer than two
+     * tasks are listed. This is the model's judgment, and the only one in this feature: every
+     * date and "days late" is still ours. The counselor is shown the choice and the reason.
+     */
+    leadTaskId: z.string().nullable(),
+    /** One short sentence for the counselor on why that task comes first, or null. Not sent to the student. */
+    leadReason: z.string().nullable(),
   }),
 } as const
 

@@ -503,6 +503,12 @@ export interface WeeklyTextItems {
   late: Task[]
   /** The student's own open tasks due within the lookahead, soonest first. */
   due: Task[]
+  /**
+   * The student's next application deadlines, soonest first, at most three.
+   * Not written into the text: they are what the AI weighs when it picks which
+   * task to put first.
+   */
+  deadlines?: Deadline[]
 }
 
 /** The meeting and tasks a weekly text would mention, or undefined when there is nothing to say. */
@@ -516,7 +522,10 @@ export function weeklyTextItems(data: AppData, studentId: ID, today: ISODate = t
   const meeting = meetingsFor(data, studentId)
     .filter((m) => m.status === 'scheduled' && m.date >= today && m.date <= horizon)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0]
-  return meeting || late.length || due.length ? { meeting, late, due } : undefined
+  const deadlines = deadlinesFor(data, studentId)
+    .filter((x) => x.kind === 'college' && x.date >= today)
+    .slice(0, 3)
+  return meeting || late.length || due.length ? { meeting, late, due, deadlines } : undefined
 }
 
 export interface WeeklyTextRow {
