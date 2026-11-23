@@ -17,7 +17,7 @@ export default function Overview({ student }: { student: Student }) {
   const [scheduling, setScheduling] = useState(false)
   const upcoming = nextMeeting(data, student.id)
   return (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-w-0 flex-col gap-6">
         <TasksCard student={student} />
         <CollegeList student={student} />
@@ -164,7 +164,7 @@ function CollegeList({ student }: { student: Student }) {
           </Empty>
         )
       ) : (
-        <div className="overflow-x-auto border-t border-line">
+        <div className="relative overflow-x-auto border-t border-line">
           <table className="w-full min-w-[560px] border-collapse text-sm">
             <thead>
               <tr className="text-left text-xs text-muted">
@@ -172,6 +172,7 @@ function CollegeList({ student }: { student: Student }) {
                 <th className="px-3 py-3 font-semibold">Plan</th>
                 <th className="px-3 py-3 font-semibold">Deadline</th>
                 <th className="px-3 py-3 font-semibold">Status</th>
+                {/* The scroll container above is "relative" so this hidden label stays inside it. */}
                 <th className="py-3 pl-3 pr-5">
                   <span className="sr-only">Remove</span>
                 </th>

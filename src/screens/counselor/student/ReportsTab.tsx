@@ -41,7 +41,7 @@ export default function ReportsTab({ student }: { student: Student }) {
     })
 
   return (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-w-0 flex-col gap-6">
         {drafts.map((r) => (
           <DraftCard key={r.id} report={r} student={student} count={drafts.length} />

@@ -11,13 +11,10 @@ import type { OutboxMessage } from '../types'
 
 export type OutgoingMessage = Omit<OutboxMessage, 'id' | 'sentAt'>
 
-let sequence = 0
-
 export function simulateSend(message: OutgoingMessage): OutboxMessage {
-  sequence += 1
   return {
     ...message,
-    id: `o-${Date.now().toString(36)}-${sequence}`,
+    id: `o-${crypto.randomUUID().slice(0, 12)}`,
     sentAt: nowTimestamp(),
   }
 }

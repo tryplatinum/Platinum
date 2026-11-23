@@ -135,8 +135,7 @@ interface Actions {
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
-let sequence = 0
-const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++sequence}`
+const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 12)}`
 
 function patchById<T extends { id: ID }>(list: T[], id: ID, fn: (item: T) => T): T[] {
   return list.map((item) => (item.id === id ? fn(item) : item))
@@ -285,7 +284,8 @@ export const useStore = create<State & Actions>()(
           change((data) =>
             patchStudent(data, studentId, (s) => {
               const id = newId('p')
-              const isPrimary = parent.isPrimary ?? s.parents.length === 0
+              // The first parent added is the main contact.
+              const isPrimary = Boolean(parent.isPrimary) || s.parents.length === 0
               const parents = [...s.parents.map((p) => (isPrimary ? { ...p, isPrimary: false } : p)), { ...parent, id, isPrimary }]
               return { ...s, parents, reportSettings: { ...s.reportSettings, recipientIds: [...s.reportSettings.recipientIds, id] } }
             }),

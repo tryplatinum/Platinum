@@ -32,8 +32,3 @@ export function zhGreeting(parent: Parent): string {
 export function zhGiven(student: Student): string {
   return student.localName ? student.localName.slice(1) : student.firstName
 }
-
-/** The handle or address a message to this parent would go to, on their preferred channel. */
-export function parentAddress(parent: Parent): string | undefined {
-  return { email: parent.email, wechat: parent.wechatId, line: parent.lineId, text: parent.phone }[parent.channel]
-}

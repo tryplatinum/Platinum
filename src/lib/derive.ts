@@ -300,8 +300,6 @@ export const DOC_CATEGORIES: { value: DocCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
-export const docCategoryLabel = (c: DocCategory) => DOC_CATEGORIES.find((x) => x.value === c)!.label
-
 /** A student's files and links, without essays (those live in the Essays tab). */
 export function documentsFor(data: AppData, studentId: ID): StudentDocument[] {
   return data.documents.filter((d) => d.studentId === studentId && d.kind !== 'essay').sort((a, b) => b.addedOn.localeCompare(a.addedOn))

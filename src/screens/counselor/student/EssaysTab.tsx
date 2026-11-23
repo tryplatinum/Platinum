@@ -128,7 +128,7 @@ export default function EssaysTab({ student }: { student: Student }) {
 
       {adding && <AddEssayForm student={student} onDone={(id) => (setAdding(false), id && select(id))} />}
 
-      <div className={cx('grid items-start gap-6', selected && 'xl:grid-cols-[minmax(0,1fr)_420px]')}>
+      <div className={cx('grid grid-cols-1 items-start gap-6', selected && 'xl:grid-cols-[minmax(0,1fr)_420px]')}>
         <div className="flex min-w-0 flex-col gap-6">
           {counts.all === 0 && !adding ? (
             <Card>

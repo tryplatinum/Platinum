@@ -93,7 +93,7 @@ function ByStudent({ summaries, onModal }: { summaries: StudentSummary[]; onModa
   }
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
       <Card className="overflow-hidden">
         <section aria-label="Students">
           <div className="border-b border-line p-3">

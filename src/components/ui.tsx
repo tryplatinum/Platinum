@@ -371,7 +371,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           aria-checked={value === o.value}
           tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
-          className={cx('min-h-10 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-ink text-white' : 'text-ink-soft hover:bg-canvas')}
+          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-ink text-white' : 'text-ink-soft hover:bg-canvas')}
         >
           {o.label}
         </button>

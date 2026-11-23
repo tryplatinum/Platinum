@@ -64,7 +64,7 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         <CheckCircle done={false} late={late} label={task.title} onToggle={toggle} />
-        <button type="button" className="min-w-[12rem] flex-1 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <button type="button" className="flex min-h-11 min-w-[12rem] flex-1 flex-col justify-center text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
           <span className="block text-[15px] font-medium text-ink">{task.title}</span>
           <span className="block text-[13px] text-muted">
             {[owner, source, task.status === 'in_progress' ? 'in progress' : undefined, task.attachments.length ? `${task.attachments.length} attached` : undefined].filter(Boolean).join(' · ') || 'Details'}
