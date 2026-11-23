@@ -1,8 +1,8 @@
 // Every data shape in the app lives here. Screens, the store, the seed data and
 // the services all import from this file.
 //
-// When you change a shape, bump SCHEMA in store/store.ts and add a step to
-// store/migrate.ts so saved data is carried forward, not discarded.
+// The database mirrors these shapes (supabase/migrations). When you change one,
+// add a migration and update the mapping in data/repo.ts.
 
 import type { ISODate } from './lib/dates'
 
@@ -20,6 +20,8 @@ export type Review = 'pending' | 'approved' | 'dismissed'
 /** Who approved an AI draft, and when. Set at the moment of approval and never without one. */
 export interface Approval {
   by: string
+  /** The approving account's user id. Absent on approvals recorded before accounts existed. */
+  byId?: ID
   at: string
 }
 
@@ -384,6 +386,14 @@ export interface ActivityEvent {
   studentId: ID
   actor: Actor
   text: string
+}
+
+/** A secret link that opens one student's page without a login. The secret itself is never stored. */
+export interface StudentLink {
+  id: ID
+  studentId: ID
+  createdAt: string
+  revokedAt?: string
 }
 
 // ── Root ────────────────────────────────────────────────────────────────────

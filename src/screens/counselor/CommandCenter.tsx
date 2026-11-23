@@ -14,7 +14,7 @@ import { useData, useStore } from '../../store/store'
 
 export default function CommandCenter() {
   const data = useData()
-  const resetDemo = useStore((s) => s.resetDemo)
+  const loadSample = useStore((s) => s.loadSample)
   const [modal, setModal] = useState<'student' | 'meeting'>()
   const summaries = summarizeAll(data)
   const approvals = pendingApprovals(data)
@@ -46,7 +46,7 @@ export default function CommandCenter() {
               <Button variant="primary" onClick={() => setModal('student')}>
                 Add student
               </Button>
-              <Button onClick={resetDemo}>Load the sample caseload</Button>
+              <Button onClick={loadSample}>Load the sample caseload</Button>
             </div>
           </Empty>
         </Card>

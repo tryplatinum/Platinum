@@ -1,14 +1,18 @@
-// Every route in the app. Counselor screens live under /app (behind the
-// stand-in sign-in); the student view lives under /student/:studentId.
+// Every route in the app.
+//   /app/…            counselor screens, behind sign-in and a firm (RequireFirm)
+//   /student/:id      the counselor's preview of a student's page, also behind sign-in
+//   /s/:token         the student's own page, opened from their secret link, no login
 
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
+import { RequireFirm } from './components/RequireFirm'
 import CommandCenter from './screens/counselor/CommandCenter'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
-import SignIn from './screens/counselor/SignIn'
+import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
+import { StudentLinkLayout } from './screens/student/StudentLinkLayout'
 import { StudentHome, StudentProfile } from './screens/student/StudentView'
 
 // ── Redirects from the v1 URLs, so old links and bookmarks keep working ──
@@ -34,26 +38,34 @@ export default function App() {
   return (
     <Routes>
       <Route path="/signin" element={<SignIn />} />
+      <Route path="/setup" element={<FirmSetup />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
-      <Route path="/app" element={<CounselorLayout />}>
-        <Route index element={<CommandCenter />} />
-        <Route path="students" element={<Students />} />
-        <Route path="students/:studentId" element={<StudentPage />} />
-        <Route path="meetings" element={<Meetings />} />
-        <Route path="messages" element={<Messages />} />
-
-        <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
-        <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />
-        <Route path="students/:studentId/documents/:docId" element={<EssayRedirect />} />
-        <Route path="notes" element={<Navigate to="/app/meetings?log=1" replace />} />
-        <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
-        <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />
+      <Route path="/s/:token" element={<StudentLinkLayout />}>
+        <Route index element={<StudentHome />} />
       </Route>
 
-      <Route path="/student/:studentId" element={<StudentLayout />}>
-        <Route index element={<StudentHome />} />
-        <Route path="profile" element={<StudentProfile />} />
-        <Route path="recaps" element={<StudentHomeRedirect />} />
+      <Route element={<RequireFirm />}>
+        <Route path="/app" element={<CounselorLayout />}>
+          <Route index element={<CommandCenter />} />
+          <Route path="students" element={<Students />} />
+          <Route path="students/:studentId" element={<StudentPage />} />
+          <Route path="meetings" element={<Meetings />} />
+          <Route path="messages" element={<Messages />} />
+
+          <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
+          <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />
+          <Route path="students/:studentId/documents/:docId" element={<EssayRedirect />} />
+          <Route path="notes" element={<Navigate to="/app/meetings?log=1" replace />} />
+          <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
+          <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />
+        </Route>
+
+        <Route path="/student/:studentId" element={<StudentLayout />}>
+          <Route index element={<StudentHome />} />
+          <Route path="profile" element={<StudentProfile />} />
+          <Route path="recaps" element={<StudentHomeRedirect />} />
+        </Route>
       </Route>
 
       <Route path="*" element={<Navigate to="/app" replace />} />

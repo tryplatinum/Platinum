@@ -3,6 +3,7 @@
 // title 16, body 14, secondary 13, labels 12. Every click target is at least
 // 44px high. Status is always shown with words, never by colour alone.
 
+import { onNotify } from '../lib/notify'
 import {
   createContext,
   useCallback,
@@ -417,6 +418,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((t) => [...t, { id, message }])
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
   }, [])
+  // The store reports failed saves through lib/notify.
+  useEffect(() => onNotify(show), [show])
   return (
     <ToastContext.Provider value={show}>
       {children}
