@@ -1,5 +1,8 @@
 // Every data shape in the app lives here. Screens, the store, the seed data and
-// the mock services all import from this file.
+// the services all import from this file.
+//
+// When you change a shape, bump SCHEMA in store/store.ts and add a step to
+// store/migrate.ts so saved data is carried forward, not discarded.
 
 import type { ISODate } from './lib/dates'
 
@@ -8,7 +11,7 @@ export type ID = string
 export type Language = 'en' | 'zh-Hans' | 'zh-Hant'
 export type Channel = 'email' | 'wechat' | 'line' | 'text'
 
-/** Who did something. Used for activity entries and attachments. */
+/** Who did something. Used for activity entries, attachments and completed tasks. */
 export type Actor = 'student' | 'parent' | 'counselor' | 'ai'
 
 /** Review state of anything the AI drafted. Nothing leaves "pending" without a counselor. */
@@ -36,9 +39,14 @@ export interface Parent {
   localName?: string
   relationship: 'Mother' | 'Father' | 'Guardian'
   language: Language
+  /** The channel this parent prefers. Messages to them are drafted for it. */
   channel: Channel
-  /** Email address, phone number or messaging handle. Invented. */
-  contact: string
+  phone?: string
+  email?: string
+  wechatId?: string
+  lineId?: string
+  /** The family's main contact. Escalations and "remind parent" go here first. */
+  isPrimary: boolean
   /** Counselor's private note, e.g. "slow to reply, prefers voice messages". */
   note?: string
 }
@@ -57,6 +65,13 @@ export interface TestScores {
   aps: { subject: string; score: number }[]
 }
 
+/** How progress reports go out for one family. There is no scheduler in v0: the schedule is a stated intention. */
+export interface ReportSettings {
+  schedule: 'after_meetings' | 'every_two_weeks' | 'monthly' | 'manual'
+  /** Parents who receive reports. */
+  recipientIds: ID[]
+}
+
 export interface Student {
   id: ID
   firstName: string
@@ -66,8 +81,10 @@ export interface Student {
   gradYear: number
   school: string
   city: string
-  email: string
-  gpa: number
+  email?: string
+  phone?: string
+  preferredChannel?: Channel
+  gpa?: number
   gpaWeighted?: number
   tests: TestScores
   majors: string[]
@@ -76,6 +93,9 @@ export interface Student {
   counselorNotes: string
   onboardedOn: ISODate
   parents: Parent[]
+  reportSettings: ReportSettings
+  /** Archived students keep their history but leave every list. */
+  archived?: boolean
 }
 
 // ── Work ────────────────────────────────────────────────────────────────────
@@ -107,12 +127,15 @@ export interface Task {
   status: TaskStatus
   progressNote?: string
   completedOn?: ISODate
+  completedBy?: Actor
   createdOn: ISODate
   /** Where the task came from. AI-sourced tasks only exist once approved. */
   source: 'counselor' | 'ai_meeting' | 'ai_notes'
   meetingId?: ID
   /** Set on tasks that began as an AI draft. */
   approval?: Approval
+  /** The task asks for a document of this category. Until one is attached it counts as "requested and not received". */
+  expectsDocument?: DocCategory
   attachments: Attachment[]
 }
 
@@ -137,7 +160,18 @@ export interface CollegeApp {
   note?: string
 }
 
+// ── Documents and essays ────────────────────────────────────────────────────
+
 export type DocumentKind = 'essay' | 'transcript' | 'score_report' | 'recommendation' | 'resume' | 'other'
+export type DocCategory = 'academic' | 'testing' | 'application' | 'recommendation' | 'financial' | 'other'
+
+export type EssayStatus = 'not_started' | 'drafting' | 'waiting_on_student' | 'needs_feedback' | 'revising' | 'final' | 'submitted'
+
+export interface EssayDraft {
+  n: number
+  text: string
+  savedOn: ISODate
+}
 
 export interface EssayFeedbackPoint {
   area: 'Structure' | 'Clarity' | 'Answers the prompt'
@@ -154,23 +188,39 @@ export interface EssayFeedback {
   points: EssayFeedbackPoint[]
   review: Review
   generatedOn: ISODate
+  /** The draft number the feedback was written about. */
+  draftN?: number
   source: AiSource
   approval?: Approval
 }
 
+/**
+ * A file, a link, or an essay. `kind: 'essay'` documents carry the essay
+ * fields and live in the Essays tab; everything else is filed by `category`.
+ */
 export interface StudentDocument {
   id: ID
   studentId: ID
   name: string
   kind: DocumentKind
+  category: DocCategory
   addedOn: ISODate
   addedBy: Actor
   url?: string
   taskId?: ID
   note?: string
-  /** Essays only: the prompt and the draft text the AI reads. */
+
+  // Essays only.
+  essayGroup?: 'college' | 'summer'
+  /** School, system or program the essay is for: "University of California", "NYU", "COSMOS". */
+  target?: string
+  /** What the essay is about, in a few words. */
+  topic?: string
   essayPrompt?: string
-  essayText?: string
+  wordLimit?: number
+  status?: EssayStatus
+  /** Oldest first. The last entry is the current draft. Word count is computed from it. */
+  drafts?: EssayDraft[]
   feedback?: EssayFeedback
 }
 
@@ -227,13 +277,29 @@ export interface Recap {
   approval?: Approval
 }
 
+/** Everything the AI drafted from one meeting. Each part is reviewed by the counselor. */
 export interface MeetingAI {
-  /** Internal notes for the counselor. Never shared. */
+  /** The meeting in three short lists. Becomes the meeting's record once approved. */
+  decided: string[]
+  progress: string[]
+  watch: string[]
+  /** Fuller notes for the counselor. Never shared. */
   notes: string[]
+  notesReview: Review
+  notesApproval?: Approval
   draftTasks: DraftTask[]
   parentUpdates: DraftParentUpdate[]
   profileChanges: ProfileChange[]
   source: AiSource
+}
+
+/** The AI's part of a pre-meeting brief, kept on the meeting once prepared. */
+export interface SavedBrief {
+  headline?: string
+  agenda: { topic: string; why: string }[]
+  questions: string[]
+  source: AiSource
+  preparedOn: ISODate
 }
 
 export interface Meeting {
@@ -244,12 +310,14 @@ export interface Meeting {
   /** 24h local time, "16:00". */
   time: string
   durationMin: number
+  /** "Zoom", "In person", a room. */
+  location?: string
   status: 'scheduled' | 'completed'
-  /** True when the AI notetaker joined (or is set to join). */
-  aiAttended: boolean
-  counselorNotes?: string
-  /** The notes or transcript the AI drafts from. Sample text in v0: there is no recording. */
+  /** Notes or a transcript, pasted or typed by the counselor. The AI drafts from this. */
   transcript?: string
+  /** The counselor's agenda for an upcoming meeting. */
+  agenda?: string[]
+  brief?: SavedBrief
   ai?: MeetingAI
   recap?: Recap
 }
@@ -278,7 +346,7 @@ export interface ParentReport {
 
 export type OutboxKind = 'parent_report' | 'reminder_upcoming' | 'reminder_late' | 'meeting_recap' | 'essay_feedback'
 
-/** One entry in the "what went out" log. Nothing is ever really sent. */
+/** One entry in the "Messages sent" log. Nothing is ever really delivered in v0. */
 export interface OutboxMessage {
   id: ID
   sentAt: string
@@ -294,6 +362,7 @@ export interface OutboxMessage {
   bodyEn?: string
   /** 'automatic' = sent by a rule the counselor switched on. 'approved' = counselor pressed the button. */
   trigger: 'automatic' | 'approved'
+  taskId?: ID
   /** Lets the reminder queue know this reminder has already gone out. */
   dedupeKey?: string
 }

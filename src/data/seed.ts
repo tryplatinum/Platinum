@@ -9,6 +9,7 @@
 // native review before it is shown to a Mandarin-speaking parent or counselor.
 
 import { addDays, formatDate, formatDateZh, timestampAt, todayISO } from '../lib/dates'
+import { CATEGORY_FOR_KIND, splitContact } from '../store/migrate'
 import type {
   ActivityEvent,
   Actor,
@@ -18,12 +19,15 @@ import type {
   Channel,
   CollegeApp,
   CollegeStatus,
+  DocCategory,
   DocumentKind,
+  EssayStatus,
   ID,
   Language,
   Meeting,
   OutboxMessage,
   OwnerType,
+  Parent,
   ParentReport,
   ReminderRule,
   Student,
@@ -37,7 +41,9 @@ import {
   KEVIN_ESSAY_TEXT,
   SOPHIA_ESSAY_PROMPT,
   SOPHIA_ESSAY_TEXT,
+  SAMPLE_SOURCE,
   danielMeetingTranscript,
+  kevinBrief,
   kevinMeetingDrafts,
   kevinMeetingTranscript,
 } from './fixtures'
@@ -80,6 +86,10 @@ export const DEFAULT_REMINDER_RULES: ReminderRule[] = [
   },
 ]
 
+/** Seed parents are written with one free-text contact; finishStudent() sorts it into fields. */
+type SeedParent = Omit<Parent, 'isPrimary' | 'phone' | 'email' | 'wechatId' | 'lineId'> & { contact: string }
+type SeedStudent = Omit<Student, 'parents' | 'reportSettings' | 'preferredChannel' | 'phone'> & { parents: SeedParent[] }
+
 export function buildSeed(): AppData {
   const today = todayISO()
   const d = (offset: number) => addDays(today, offset)
@@ -101,7 +111,7 @@ export function buildSeed(): AppData {
 
   // ── Small builders so the data below reads like a caseload, not like JSON ──
 
-  type TaskOpts = Partial<Pick<Task, 'detail' | 'status' | 'progressNote' | 'ownerParentId' | 'attachments' | 'id'>> & {
+  type TaskOpts = Partial<Pick<Task, 'detail' | 'status' | 'progressNote' | 'ownerParentId' | 'attachments' | 'id' | 'expectsDocument' | 'meetingId'>> & {
     /** Offset of the day it was completed. Marks the task done. */
     doneOn?: number
   }
@@ -123,6 +133,7 @@ export function buildSeed(): AppData {
       dueDate: d(due),
       status: doneOn !== undefined ? 'done' : 'todo',
       completedOn: doneOn !== undefined ? d(doneOn) : undefined,
+      completedBy: doneOn !== undefined ? owner : undefined,
       createdOn: d(Math.min(due, doneOn ?? due) - 14),
       source: 'counselor',
       attachments: [],
@@ -155,7 +166,35 @@ export function buildSeed(): AppData {
     on: number,
     by: Actor,
     extra: Partial<StudentDocument> = {},
-  ) => documents.push({ id: nid('doc'), studentId, name, kind, addedOn: d(on), addedBy: by, ...extra })
+  ) => documents.push({ id: nid('doc'), studentId, name, kind, category: CATEGORY_FOR_KIND[kind], addedOn: d(on), addedBy: by, ...extra })
+
+  /** An essay. Where the text is not in the sample data, the draft lives in the linked document. */
+  const essay = (
+    studentId: ID,
+    name: string,
+    target: string,
+    status: EssayStatus,
+    on: number,
+    extra: Partial<StudentDocument> & { draftN?: number; text?: string } = {},
+  ) => {
+    const { draftN, text, ...rest } = extra
+    documents.push({
+      id: nid('doc'),
+      studentId,
+      name,
+      kind: 'essay',
+      category: 'application',
+      addedOn: d(on),
+      addedBy: 'student',
+      essayGroup: 'college',
+      target,
+      status,
+      drafts: text ? [{ n: draftN ?? 1, text, savedOn: d(on) }] : [],
+      ...rest,
+    })
+  }
+  const gdoc = (slug: string) => `https://docs.google.com/document/d/demo-${slug}/edit`
+  const requested = (category: DocCategory) => ({ expectsDocument: category })
 
   const met = (
     studentId: ID,
@@ -172,14 +211,18 @@ export function buildSeed(): AppData {
       time,
       durationMin: 45,
       status: on < 0 ? 'completed' : 'scheduled',
-      aiAttended: true,
+      location: 'Zoom',
       ...extra,
     })
   const recap = (summary: string, nextSteps: string[]) => ({ recap: { summary, nextSteps, review: 'approved' as const } })
+  /** The approved record of a past meeting: what was decided, what moved, what to watch. */
+  const record = (decided: string[], progress: string[], watch: string[]) => ({
+    ai: { decided, progress, watch, notes: [], notesReview: 'approved' as const, draftTasks: [], parentUpdates: [], profileChanges: [], source: SAMPLE_SOURCE },
+  })
 
   /** A report that already went out: adds the report and its log entry. */
   const sentReport = (
-    student: Student,
+    student: SeedStudent,
     parentId: ID,
     on: number,
     subject: string,
@@ -243,11 +286,9 @@ export function buildSeed(): AppData {
   const did = (studentId: ID, on: number, time: string, actor: Actor, text: string) =>
     activity.push({ id: nid('ev'), at: timestampAt(on, time), studentId, actor, text })
 
-  const gdoc = (slug: string) => `https://docs.google.com/document/d/demo-${slug}/edit`
-
   // ══ 1. Kevin Zhang: senior, badly behind. The demo's main character. ══════
 
-  const kevin: Student = {
+  const kevin: SeedStudent = {
     id: IDS.kevin,
     firstName: 'Kevin',
     lastName: 'Zhang',
@@ -302,18 +343,22 @@ export function buildSeed(): AppData {
 
   task(kevin.id, 'Upload 2025 tax return for the CSS Profile', 'financial', 'parent', -10, {
     ownerParentId: IDS.kevinDad,
+    meetingId: 'm-kevin-plan',
+    ...requested('financial'),
     detail: 'NYU needs the CSS Profile by the ED2 deadline. Two reminders sent, no reply yet.',
   })
   task(kevin.id, 'UC PIQ 3 and 4: first drafts', 'essay', 'student', -8, {
+    meetingId: 'm-kevin-plan',
     detail: 'PIQ 3 (greatest talent or skill) and PIQ 4 (educational opportunity or barrier). 350 words each.',
   })
   task(kevin.id, 'Common App personal statement: third draft', 'essay', 'student', -5, {
     status: 'in_progress',
+    meetingId: 'm-kevin-plan',
     progressNote: 'Stuck on the middle section. Not sure what to cut.',
     attachments: [link('Personal statement (Google Doc)', gdoc('kevin-ps'), -9)],
   })
-  task(kevin.id, 'Ask Ms. Brandt (AP CSA) to upload her recommendation', 'recommendation', 'student', -3)
-  task(kevin.id, 'Finish UC activities and awards section', 'application', 'student', 2, { status: 'in_progress' })
+  task(kevin.id, 'Ask Ms. Brandt (AP CSA) to upload her recommendation', 'recommendation', 'student', -3, { meetingId: 'm-kevin-plan' })
+  task(kevin.id, 'Finish UC activities and awards section', 'application', 'student', 2, { status: 'in_progress', ...requested('application') })
   task(kevin.id, 'Pay UC application fees (4 campuses)', 'financial', 'parent', 5, { ownerParentId: IDS.kevinMom })
   task(kevin.id, 'Submit UC application', 'application', 'student', 6)
   task(kevin.id, 'Send Kevin’s family the NYU cost estimate', 'financial', 'counselor', 2)
@@ -321,9 +366,10 @@ export function buildSeed(): AppData {
   task(kevin.id, 'Georgia Tech “Why this major” essay', 'essay', 'student', 24)
   task(kevin.id, 'Finalize college list with parents', 'planning', 'student', -32, { doneOn: -30 })
   task(kevin.id, 'Common App: profile, family and education sections', 'application', 'student', -26, { doneOn: -25 })
-  task(kevin.id, 'Submit UIUC and Purdue Early Action applications', 'application', 'student', -22, { doneOn: -22 })
+  task(kevin.id, 'Submit UIUC and Purdue Early Action applications', 'application', 'student', -22, { doneOn: -22, meetingId: 'm-kevin-list' })
   task(kevin.id, 'UC PIQ 1 and 2: final drafts', 'essay', 'student', -16, {
     doneOn: -15,
+    meetingId: 'm-kevin-list',
     attachments: [link('UC PIQs (Google Doc)', gdoc('kevin-piq'), -15)],
   })
   task(kevin.id, 'Brag sheet for recommenders', 'recommendation', 'student', -45, { doneOn: -41 })
@@ -339,26 +385,50 @@ export function buildSeed(): AppData {
   college(kevin.id, 'Georgia Tech', 'RD', 41, 'in_progress', 'Reach')
   college(kevin.id, 'Northeastern', 'RD', 40, 'considering', 'Target')
 
-  doc(kevin.id, 'Personal statement, draft 2', 'essay', -9, 'student', {
+  essay(kevin.id, 'Common App personal statement', 'Common App', 'needs_feedback', -9, {
     id: IDS.kevinEssay,
     url: gdoc('kevin-ps'),
+    topic: 'The robot that stopped at the regional qualifier',
     essayPrompt: KEVIN_ESSAY_PROMPT,
-    essayText: KEVIN_ESSAY_TEXT,
+    wordLimit: 650,
+    draftN: 2,
+    text: KEVIN_ESSAY_TEXT,
   })
-  doc(kevin.id, 'UC PIQ 1 and 2, final', 'essay', -15, 'student', { url: gdoc('kevin-piq') })
+  essay(kevin.id, 'PIQ 1 · Leadership', 'University of California', 'final', -15, { url: gdoc('kevin-piq'), topic: 'Rebuilding the software team', wordLimit: 350 })
+  essay(kevin.id, 'PIQ 2 · Creative side', 'University of California', 'final', -15, { url: gdoc('kevin-piq'), topic: 'The path-planning library', wordLimit: 350 })
+  essay(kevin.id, 'PIQ 3 · Greatest talent or skill', 'University of California', 'waiting_on_student', -14, { wordLimit: 350 })
+  essay(kevin.id, 'PIQ 4 · Educational opportunity or barrier', 'University of California', 'waiting_on_student', -14, { wordLimit: 350 })
+  essay(kevin.id, 'Why NYU', 'NYU (Tandon)', 'not_started', -1, { wordLimit: 250 })
+  essay(kevin.id, 'Why this major', 'Carnegie Mellon (SCS)', 'not_started', -14, { wordLimit: 300 })
+  essay(kevin.id, 'Why this cluster', 'COSMOS', 'submitted', -290, {
+    essayGroup: 'summer',
+    topic: 'Robotics and control cluster',
+    wordLimit: 200,
+    text: 'I want to join the robotics cluster because my team’s robot only ever does what I tell it, and I have run out of things I know how to tell it. Last season I wrote our autonomous routine from tutorials and it worked until the field changed. I could not say why. At COSMOS I want to learn the control theory underneath the code I have been copying, so that when the robot drifts left I can reason about the cause instead of guessing at constants. I learn fastest when I can break something on purpose, and four weeks in a lab with people who know more than I do is the best place I can think of to do that.',
+  })
+  essay(kevin.id, 'Research interest statement', 'Garcia Summer Scholars', 'submitted', -300, {
+    essayGroup: 'summer',
+    topic: 'Sensor fusion for small robots',
+    wordLimit: 150,
+    text: 'I am interested in how small robots decide where they are. Our team’s robot uses wheel encoders and a gyroscope, and each one is wrong in a different way. I have read about combining them with a Kalman filter but I have only used a library that hides the math. I would like to spend the summer implementing sensor fusion from the equations up, measuring how much each sensor actually contributes, and writing down what I find so the next software lead on my team does not start from zero.',
+  })
   doc(kevin.id, 'Transcript through junior year.pdf', 'transcript', -60, 'parent')
   doc(kevin.id, 'SAT score report, August.pdf', 'score_report', -75, 'student')
   doc(kevin.id, 'Recommender brag sheet.docx', 'recommendation', -41, 'student')
   doc(kevin.id, 'Activities resume.pdf', 'resume', -50, 'student')
 
   met(kevin.id, 'College list review with parents', -29, '17:00', {
+    id: 'm-kevin-list',
     durationMin: 60,
+    ...record(['Ten schools on the list', 'NYU is the likely ED2 choice, pending the campus visit'], ['Common App profile sections complete'], ['Parents want more reach schools than Kevin does']),
     ...recap('We settled your list: ten schools, with NYU as the likely ED2 choice if you still feel the same after visiting.', [
       'Submit UIUC and Purdue Early Action.',
       'Visit NYU over the fall break and take notes on what you see.',
     ]),
   })
   met(kevin.id, 'Essay planning', -14, '16:00', {
+    id: 'm-kevin-plan',
+    ...record(['PIQ 3 on robotics, PIQ 4 on teaching himself computer vision', 'Personal statement stays on the regional qualifier'], ['UC PIQ 1 and 2 are final', 'UIUC and Purdue Early Action submitted'], ['Personal statement middle reads as a list', 'CSS Profile needs Dad’s tax return']),
     ...recap('UC PIQ 1 and 2 are done and they are good. We mapped out PIQ 3 and 4 and talked through the personal statement.', [
       `First drafts of PIQ 3 and 4 by ${en(-8)}.`,
       `Personal statement draft 3 by ${en(-5)}.`,
@@ -375,7 +445,7 @@ export function buildSeed(): AppData {
     ai: kevinDrafts.ai,
     recap: kevinDrafts.recap,
   })
-  met(kevin.id, 'UC submission check', 3, '16:30', { durationMin: 30 })
+  met(kevin.id, 'UC submission check', 3, '16:30', { durationMin: 30, brief: kevinBrief(), agenda: kevinBrief().agenda.map((a) => a.topic) })
 
   sentReport(
     kevin,
@@ -416,7 +486,7 @@ export function buildSeed(): AppData {
 
   // ══ 2. Emily Chen: senior, on track ═══════════════════════════════════════
 
-  const emily: Student = {
+  const emily: SeedStudent = {
     id: 's-emily',
     firstName: 'Emily',
     lastName: 'Chen',
@@ -465,11 +535,13 @@ export function buildSeed(): AppData {
   college(emily.id, 'Johns Hopkins', 'RD', 40, 'in_progress', 'Reach')
   college(emily.id, 'Rice', 'RD', 42, 'in_progress', 'Reach')
   college(emily.id, 'Emory', 'RD', 40, 'considering', 'Target')
-  doc(emily.id, 'Personal statement, final', 'essay', -31, 'student', { url: gdoc('emily-ps') })
-  doc(emily.id, 'JHU supplement, draft 1', 'essay', -3, 'student', { url: gdoc('emily-jhu') })
+  essay(emily.id, 'Common App personal statement', 'Common App', 'final', -31, { url: gdoc('emily-ps'), topic: 'Translating at her grandmother’s clinic visits', wordLimit: 650 })
+  essay(emily.id, 'Why Johns Hopkins', 'Johns Hopkins', 'revising', -3, { url: gdoc('emily-jhu'), wordLimit: 350 })
+  essay(emily.id, 'The Box', 'Rice', 'not_started', -6, { wordLimit: 0 })
   doc(emily.id, 'Transcript with senior fall grades.pdf', 'transcript', -18, 'counselor')
   doc(emily.id, 'SAT score report.pdf', 'score_report', -120, 'student')
   met(emily.id, 'Post-ED check-in', -6, '15:00', {
+    ...record(['UC application goes in this Friday'], ['Cornell Early Decision submitted on time', 'UC essays final'], ['Tends to over-edit finished essays']),
     ...recap('Cornell is in. The UC application is ready after one last proofread. Next up is Johns Hopkins.', [
       'Submit the UC application this Friday.',
       `Second draft of the Johns Hopkins supplement by ${en(9)}.`,
@@ -488,7 +560,7 @@ export function buildSeed(): AppData {
 
   // ══ 3. Sophia Martinez: senior, slipping ══════════════════════════════════
 
-  const sophia: Student = {
+  const sophia: SeedStudent = {
     id: IDS.sophia,
     firstName: 'Sophia',
     lastName: 'Martinez',
@@ -528,17 +600,20 @@ export function buildSeed(): AppData {
   college(sophia.id, 'CSU Long Beach', 'RD', 8, 'in_progress', 'Likely', 'Cal State Apply')
   college(sophia.id, 'University of San Diego', 'RD', 24, 'in_progress', 'Target')
   college(sophia.id, 'Loyola Marymount', 'RD', 45, 'considering', 'Target')
-  doc(sophia.id, 'UC PIQ 2, draft 1', 'essay', -8, 'student', {
+  essay(sophia.id, 'PIQ 2 · Creative side', 'University of California', 'needs_feedback', -8, {
     id: IDS.sophiaEssay,
     url: gdoc('sophia-piq'),
+    topic: 'Closing shifts at the family restaurant',
     essayPrompt: SOPHIA_ESSAY_PROMPT,
-    essayText: SOPHIA_ESSAY_TEXT,
+    wordLimit: 350,
+    text: SOPHIA_ESSAY_TEXT,
   })
+  essay(sophia.id, 'PIQ 1 · Leadership', 'University of California', 'final', -9, { url: gdoc('sophia-piq'), topic: 'Captaining through a losing season', wordLimit: 350 })
+  essay(sophia.id, 'Why USD', 'University of San Diego', 'not_started', -9, { wordLimit: 350 })
   doc(sophia.id, 'Transcript.pdf', 'transcript', -40, 'counselor')
   doc(sophia.id, 'ACT score report.pdf', 'score_report', -90, 'student')
   met(sophia.id, 'UC essay review', -9, '18:30', {
-    aiAttended: false,
-    counselorNotes: 'Took my own notes this time; Sophia asked not to be recorded.',
+    transcript: 'Took my own notes this time. Three of four PIQs are finished. PIQ 2 needs the closing-shift story moved to the front. Elena still has to do the FAFSA parent section.',
     ...recap('Three of your four PIQs are finished. PIQ 2 has a great story hiding in the middle of it.', [
       `Revise PIQ 2 by ${en(-2)}.`,
       'Ask your mom to finish the FAFSA parent section.',
@@ -563,7 +638,7 @@ export function buildSeed(): AppData {
 
   // ══ 4. Jason Wu: junior, on track ═════════════════════════════════════════
 
-  const jason: Student = {
+  const jason: SeedStudent = {
     id: 's-jason',
     firstName: 'Jason',
     lastName: 'Wu',
@@ -621,7 +696,7 @@ export function buildSeed(): AppData {
 
   // ══ 5. Aarav Patel: senior, on track ══════════════════════════════════════
 
-  const aarav: Student = {
+  const aarav: SeedStudent = {
     id: 's-aarav',
     firstName: 'Aarav',
     lastName: 'Patel',
@@ -659,7 +734,7 @@ export function buildSeed(): AppData {
   college(aarav.id, 'UCLA', 'UC', 6, 'in_progress', 'Reach')
   college(aarav.id, 'MIT', 'RD', 40, 'in_progress', 'Reach')
   college(aarav.id, 'Cornell', 'RD', 41, 'in_progress', 'Reach')
-  doc(aarav.id, 'MIT essays, draft 1', 'essay', -2, 'student', { url: gdoc('aarav-mit') })
+  essay(aarav.id, 'Short answers (five)', 'MIT', 'drafting', -2, { url: gdoc('aarav-mit'), topic: 'The solar car steering failure', wordLimit: 200 })
   doc(aarav.id, 'Transcript.pdf', 'transcript', -35, 'counselor')
   doc(aarav.id, 'Teacher recommendation form, Mr. Okafor.pdf', 'recommendation', -28, 'counselor')
   met(aarav.id, 'MIT essay brainstorm', -4, '16:00', {
@@ -679,7 +754,7 @@ export function buildSeed(): AppData {
 
   // ══ 6. Mia Lin: junior, slipping ══════════════════════════════════════════
 
-  const mia: Student = {
+  const mia: SeedStudent = {
     id: IDS.mia,
     firstName: 'Mia',
     lastName: 'Lin',
@@ -725,7 +800,7 @@ export function buildSeed(): AppData {
 
   // ══ 7. Daniel Kim: senior, behind ═════════════════════════════════════════
 
-  const daniel: Student = {
+  const daniel: SeedStudent = {
     id: IDS.daniel,
     firstName: 'Daniel',
     lastName: 'Kim',
@@ -750,8 +825,8 @@ export function buildSeed(): AppData {
       { id: 'p-daniel-dad', name: 'James Kim', relationship: 'Father', language: 'en', channel: 'text', contact: '(818) 555-0164' },
     ],
   }
-  task(daniel.id, 'UC PIQ 4: first draft', 'essay', 'student', -4)
-  task(daniel.id, 'UC activities list: add hours and descriptions', 'application', 'student', -3, { status: 'in_progress' })
+  task(daniel.id, 'UC PIQ 4: first draft', 'essay', 'student', -4, { meetingId: 'm-daniel-early' })
+  task(daniel.id, 'UC activities list: add hours and descriptions', 'application', 'student', -3, { status: 'in_progress', meetingId: 'm-daniel-early' })
   task(daniel.id, 'USC supplement: outline', 'essay', 'student', -1)
   task(daniel.id, 'Submit UC application', 'application', 'student', 6)
   task(daniel.id, 'Submit FAFSA', 'financial', 'parent', 10, { ownerParentId: 'p-daniel-dad' })
@@ -765,10 +840,13 @@ export function buildSeed(): AppData {
   college(daniel.id, 'USC (Marshall)', 'RD', 40, 'in_progress', 'Reach')
   college(daniel.id, 'Boston University', 'RD', 41, 'in_progress', 'Target')
   college(daniel.id, 'University of Miami', 'RD', 40, 'considering', 'Target')
-  doc(daniel.id, 'UC PIQ 1 to 3, final', 'essay', -10, 'student', { url: gdoc('daniel-piq') })
+  essay(daniel.id, 'PIQ 1 to 3', 'University of California', 'final', -10, { url: gdoc('daniel-piq'), wordLimit: 350 })
+  essay(daniel.id, 'PIQ 4 · Significant challenge', 'University of California', 'waiting_on_student', -17, { wordLimit: 350 })
   doc(daniel.id, 'Indiana admission letter.pdf', 'other', -5, 'parent')
   doc(daniel.id, 'Transcript.pdf', 'transcript', -38, 'counselor')
   met(daniel.id, 'Early results and UC plan', -17, '19:00', {
+    id: 'm-daniel-early',
+    ...record(['UC application is the priority before any RD supplements'], ['UC PIQ 1 to 3 are final', 'Indiana Early Action submitted'], ['PIQ 4 has no topic yet']),
     ...recap('Three PIQs are done. One essay and the activities list stand between you and a finished UC application.', [
       `First draft of PIQ 4 by ${en(-4)}.`,
       `Add hours to your activities list by ${en(-3)}.`,
@@ -789,7 +867,7 @@ export function buildSeed(): AppData {
 
   // ══ 8. Chloe Wang: sophomore, just onboarded ══════════════════════════════
 
-  const chloe: Student = {
+  const chloe: SeedStudent = {
     id: 's-chloe',
     firstName: 'Chloe',
     lastName: 'Wang',
@@ -814,7 +892,7 @@ export function buildSeed(): AppData {
     ],
   }
   task(chloe.id, 'Complete the onboarding questionnaire', 'planning', 'student', 2, { status: 'in_progress', progressNote: 'About half done.' })
-  task(chloe.id, 'Upload freshman-year transcript', 'application', 'parent', 4, { ownerParentId: 'p-chloe-mom' })
+  task(chloe.id, 'Upload freshman-year transcript', 'application', 'parent', 4, { ownerParentId: 'p-chloe-mom', ...requested('academic') })
   task(chloe.id, 'Draft Chloe’s four-year course plan', 'planning', 'counselor', 9)
   doc(chloe.id, 'Intake form.pdf', 'other', -6, 'parent')
   met(chloe.id, 'Intake meeting with Chloe and her mother', -6, '10:00', {
@@ -828,7 +906,7 @@ export function buildSeed(): AppData {
 
   // ══ 9. Ethan Nguyen: junior, on track ═════════════════════════════════════
 
-  const ethan: Student = {
+  const ethan: SeedStudent = {
     id: 's-ethan',
     firstName: 'Ethan',
     lastName: 'Nguyen',
@@ -874,7 +952,7 @@ export function buildSeed(): AppData {
 
   // ══ 10. Grace Huang: senior, on track ═════════════════════════════════════
 
-  const grace: Student = {
+  const grace: SeedStudent = {
     id: 's-grace',
     firstName: 'Grace',
     lastName: 'Huang',
@@ -913,10 +991,12 @@ export function buildSeed(): AppData {
   college(grace.id, 'UCLA', 'UC', 6, 'in_progress', 'Target')
   college(grace.id, 'Tufts', 'RD', 40, 'in_progress', 'Target')
   college(grace.id, 'George Washington', 'RD', 42, 'considering', 'Likely')
-  doc(grace.id, 'Personal statement, final', 'essay', -28, 'student', { url: gdoc('grace-ps') })
+  essay(grace.id, 'Common App personal statement', 'Common App', 'final', -28, { url: gdoc('grace-ps'), topic: 'Arguing both sides at Model UN', wordLimit: 650 })
+  essay(grace.id, 'Why Tufts', 'Tufts', 'not_started', -7, { wordLimit: 150 })
   doc(grace.id, 'Pittsburgh admission letter.pdf', 'other', -8, 'parent')
   doc(grace.id, 'Transcript.pdf', 'transcript', -36, 'counselor')
   met(grace.id, 'Interview prep and RD plan', -7, '15:30', {
+    ...record(['Tufts and George Washington stay on the RD list'], ['Admitted to Pittsburgh with a merit scholarship', 'Georgetown offered an alumni interview'], ['Interview is the first she has done']),
     ...recap('Pittsburgh said yes, with a scholarship. Georgetown has offered an alumni interview and we practised the first questions.', [
       `Prepare three questions for your interviewer by ${en(4)}.`,
       'Submit the UC application after the final review.',
@@ -932,9 +1012,28 @@ export function buildSeed(): AppData {
     `黃媽媽您好，我是郁庭的升學顧問 Sarah。先跟您分享好消息：郁庭已經收到匹茲堡大學的錄取通知，還拿到了獎學金！喬治城大學和密西根大學的 EA 申請都已送出，喬治城也安排了校友面試，我們正在幫她準備。加州大學（UC）的申請會在${zh(6)}截止前提交。郁庭的進度很穩定，請您放心。`,
   )
 
+  /** Turns a seed student into a full one: contact fields, a main contact, report settings. All invented. */
+  let phoneSeq = 100
+  const phone = (area: string) => `(${area}) 555-0${++phoneSeq}`
+  const emailFor = (name: string) => `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.com`
+  const finishStudent = (s: SeedStudent, index: number): Student => {
+    const area = ['408', '949', '619', '626', '408', '650', '818', '408', '714', '310'][index] ?? '415'
+    const parents: Parent[] = s.parents.map(({ contact, ...p }, i) => {
+      const known = splitContact(contact)
+      return { ...p, ...known, phone: known.phone ?? phone(area), email: known.email ?? emailFor(p.name), isPrimary: i === 0 }
+    })
+    return {
+      ...s,
+      phone: phone(area),
+      preferredChannel: 'text',
+      parents,
+      reportSettings: { schedule: s.gradYear === senior ? 'after_meetings' : 'monthly', recipientIds: parents.map((p) => p.id) },
+    }
+  }
+
   return {
     firm: { name: 'Alder & Vine College Counseling', counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },
-    students: [kevin, emily, sophia, jason, aarav, mia, daniel, chloe, ethan, grace],
+    students: [kevin, emily, sophia, jason, aarav, mia, daniel, chloe, ethan, grace].map(finishStudent),
     tasks,
     meetings,
     colleges,

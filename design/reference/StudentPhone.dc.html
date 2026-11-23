@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Student view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#1D3FD1}a:hover{color:#142C94}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; font-family: Inter, system-ui, sans-serif; color: #14181F; background: #F4F5F7; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px">
+
+<header>
+<p style="margin: 0 0 2px; font-size: 13px; color: #5A6272">Park College Advising</p>
+<h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em">Hi Emily</h1>
+</header>
+
+<section aria-label="Next meeting and deadline" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 14px"><div style="font-size: 12px; color: #5A6272">Next meeting</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px">Sat, Dec 5</div><div style="font-size: 13px; color: #5A6272">10:00 AM, Zoom</div></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 14px"><div style="font-size: 12px; color: #5A6272">Next deadline</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px">NYU ED2</div><div style="font-size: 13px; color: #5A6272">Jan 1, in 40 days</div></div>
+</section>
+
+<section aria-labelledby="owe-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px">
+<h2 id="owe-h" style="margin: 0; padding: 14px 16px; font-size: 15px; font-weight: 600; border-bottom: 1px solid #E1E4EA">What you owe</h2>
+<div style="padding: 14px 16px; border-bottom: 1px solid #EEF0F4; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<input type="checkbox" id="s1" style="width: 22px; height: 22px; margin: 0; flex: none"><label for="s1" style="flex: 1; font-size: 15px; line-height: 1.35">Rewrite the ending of your Common App essay</label>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-left: 34px">
+<span style="font-size: 13px; font-weight: 600; color: #6B4700">Due Sat, Nov 28</span>
+<button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Add file or link</button>
+</div>
+</div>
+<div style="padding: 14px 16px; border-bottom: 1px solid #EEF0F4; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<input type="checkbox" id="s2" style="width: 22px; height: 22px; margin: 0; flex: none"><label for="s2" style="flex: 1; font-size: 15px; line-height: 1.35">Write a first draft of the "Why NYU" supplement</label>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-left: 34px">
+<span style="font-size: 13px; color: #5A6272">Due Sat, Dec 5</span>
+<button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Add file or link</button>
+</div>
+</div>
+<div style="padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px">
+<input type="checkbox" id="s3" checked style="width: 22px; height: 22px; margin: 0; flex: none"><label for="s3" style="flex: 1; font-size: 15px; line-height: 1.35; color: #5A6272">Ask Ms. Rivera for a recommendation<br><span style="font-size: 13px">Done Nov 17</span></label>
+</div>
+</section>
+
+<section aria-labelledby="recap-h" style="background: #EEF1FE; border: 1px solid #C9D2FA; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+<h2 id="recap-h" style="margin: 0; font-size: 15px; font-weight: 600">Recap from Saturday</h2>
+<p style="margin: 0; font-size: 14px; line-height: 1.5">Great news on the 1510. Your essay is nearly there, and the ending is the last piece. We agreed on NYU Early Decision 2, so the "Why NYU" supplement is now your main job. I'll send two samples today.</p>
+<p style="margin: 0; font-size: 13px; color: #33415F">From Ms. Park</p>
+</section>
+
+<a href="#" style="display: block; text-align: center; padding: 14px; border-radius: 8px; background: #FFFFFF; border: 1px solid #CDD2DC; color: #14181F; font-size: 14px; font-weight: 600; text-decoration: none">Update my scores and activities</a>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

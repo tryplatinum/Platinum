@@ -1,13 +1,13 @@
 // The one store. Every screen reads from `data` and changes it only through
 // the actions below, so the counselor view and the student view can never
-// disagree. Persisted to localStorage; nothing leaves the browser.
+// disagree. Saved to localStorage and kept across days; nothing leaves the
+// browser except the facts sent with an AI request.
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { buildSeed } from '../data/seed'
+import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
 import { nowTimestamp, todayISO } from '../lib/dates'
-import { STUDENT_CHANNEL } from '../lib/language'
-import type { ReminderDraft } from '../lib/reminders'
+import { fullName } from '../lib/derive'
 import type { MeetingDrafts } from '../services/ai'
 import { simulateSend, type OutgoingMessage } from '../services/outbox'
 import type {
@@ -18,35 +18,42 @@ import type {
   DraftParentUpdate,
   DraftTask,
   EssayFeedback,
+  EssayStatus,
+  Firm,
   ID,
   Meeting,
+  Parent,
   ParentReport,
   ProfilePatch,
   Recap,
   ReminderRule,
+  SavedBrief,
   Student,
   StudentDocument,
   Task,
   TaskStatus,
 } from '../types'
+import { CATEGORY_FOR_KIND, SCHEMA, migrate } from './migrate'
 
-/** Bump when the shape of AppData changes, so old saved demos are thrown away. */
-const SCHEMA = 2
 const STORAGE_KEY = 'platinum-v0'
 
 export type Decision = 'approved' | 'dismissed'
 
-export type NewTask = Pick<Task, 'studentId' | 'title' | 'owner' | 'dueDate'> &
-  Partial<Pick<Task, 'detail' | 'category' | 'ownerParentId' | 'source' | 'meetingId'>>
+export type NewStudent = Pick<Student, 'firstName' | 'lastName' | 'gradYear' | 'school' | 'city'> &
+  Partial<Pick<Student, 'localName' | 'email' | 'phone' | 'preferredChannel'>>
 
-export type ProfileFields = Partial<
-  Pick<Student, 'gpa' | 'gpaWeighted' | 'tests' | 'majors' | 'interests' | 'activities' | 'counselorNotes'>
->
+export type StudentFields = Partial<Omit<Student, 'id' | 'parents' | 'onboardedOn'>>
+
+export type NewTask = Pick<Task, 'studentId' | 'title' | 'owner' | 'dueDate'> &
+  Partial<Pick<Task, 'detail' | 'category' | 'ownerParentId' | 'expectsDocument'>>
+
+export type NewMeeting = Pick<Meeting, 'studentId' | 'title' | 'date' | 'time'> & Partial<Pick<Meeting, 'durationMin' | 'location'>>
+
+export type NewDocument = Pick<StudentDocument, 'studentId' | 'name' | 'kind' | 'addedBy'> &
+  Partial<Omit<StudentDocument, 'id' | 'addedOn' | 'studentId' | 'name' | 'kind' | 'addedBy'>>
 
 interface State {
   schema: number
-  /** The day the seed was built. A new day rebuilds it so relative dates stay right. */
-  seedDate: string
   session: { signedIn: boolean; email: string }
   data: AppData
 }
@@ -54,28 +61,56 @@ interface State {
 interface Actions {
   signIn: (email: string) => void
   signOut: () => void
+  /** Restores the invented sample caseload. */
   resetDemo: () => void
+  /** Clears to an empty firm, for a counselor entering their own students. */
+  startEmpty: () => void
+  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName'>>) => void
 
+  // Students and families
+  addStudent: (student: NewStudent) => ID
+  updateStudent: (id: ID, fields: StudentFields, actor?: Actor, summary?: string) => void
+  archiveStudent: (id: ID, archived?: boolean) => void
+  addParent: (studentId: ID, parent: Omit<Parent, 'id' | 'isPrimary'> & { isPrimary?: boolean }) => void
+  updateParent: (studentId: ID, parentId: ID, fields: Partial<Omit<Parent, 'id'>>) => void
+  removeParent: (studentId: ID, parentId: ID) => void
+
+  // Tasks
   addTask: (task: NewTask) => void
-  updateTask: (id: ID, patch: Partial<Pick<Task, 'title' | 'detail' | 'owner' | 'ownerParentId' | 'dueDate'>>) => void
+  updateTask: (id: ID, patch: Partial<Pick<Task, 'title' | 'detail' | 'owner' | 'ownerParentId' | 'dueDate' | 'expectsDocument'>>) => void
   /** Status and/or progress note. Used by both views. */
   updateTaskProgress: (id: ID, patch: { status?: TaskStatus; progressNote?: string }, actor: Actor) => void
   /** Records a file name or a link against a task, and files it under the student's documents. */
   attachToTask: (id: ID, attachment: { kind: 'file' | 'link'; name: string; url?: string }, actor: Actor) => void
+  deleteTask: (id: ID) => void
 
-  updateProfile: (studentId: ID, fields: ProfileFields, actor: Actor, summary?: string) => void
-
+  // Colleges
   addCollege: (college: Omit<CollegeApp, 'id'>) => void
   updateCollege: (id: ID, patch: Partial<Omit<CollegeApp, 'id' | 'studentId'>>) => void
+  removeCollege: (id: ID) => void
 
-  addDocument: (doc: Omit<StudentDocument, 'id' | 'addedOn'>) => void
-  /** The essay text and prompt the AI reads. */
-  updateDocument: (docId: ID, patch: Partial<Pick<StudentDocument, 'essayText' | 'essayPrompt'>>) => void
+  // Documents and essays
+  addDocument: (doc: NewDocument) => ID
+  updateDocument: (docId: ID, patch: Partial<Omit<StudentDocument, 'id' | 'studentId' | 'drafts' | 'feedback'>>) => void
+  removeDocument: (docId: ID) => void
+  /** Saves essay text. `asNew` starts the next numbered draft; otherwise the current draft is replaced. */
+  saveEssayDraft: (docId: ID, text: string, asNew: boolean) => void
   setEssayFeedback: (docId: ID, feedback: EssayFeedback) => void
-  updateEssayFeedback: (docId: ID, patch: Partial<EssayFeedback>) => void
+  updateEssayFeedback: (docId: ID, patch: Partial<Pick<EssayFeedback, 'overall' | 'strengths' | 'points'>>) => void
   reviewEssayFeedback: (docId: ID, decision: Decision) => void
 
+  // Meetings
+  addMeeting: (meeting: NewMeeting) => ID
+  /** Reschedule, rename, or edit the agenda. */
+  updateMeeting: (id: ID, patch: Partial<Pick<Meeting, 'title' | 'date' | 'time' | 'durationMin' | 'location' | 'agenda'>>) => void
+  /** Marks a meeting as held and stores the notes or transcript the AI will read. */
+  completeMeeting: (id: ID, notes: string, heldOn?: string) => void
+  deleteMeeting: (id: ID) => void
+  setMeetingBrief: (id: ID, brief: SavedBrief) => void
+
+  // Meeting drafts and their review
   setMeetingDrafts: (meetingId: ID, drafts: MeetingDrafts) => void
+  reviewNotes: (meetingId: ID, decision: Decision) => void
   updateDraftTask: (meetingId: ID, draftId: ID, patch: Partial<DraftTask>) => void
   reviewDraftTask: (meetingId: ID, draftId: ID, decision: Decision) => void
   updateRecap: (meetingId: ID, patch: Partial<Recap>) => void
@@ -85,17 +120,17 @@ interface Actions {
   reviewProfileChange: (meetingId: ID, changeId: ID, decision: Decision) => void
   approveAllInMeeting: (meetingId: ID) => void
 
-  /** Turns approved drafts from the notes reader into real tasks. */
-  addTasksFromNotes: (studentId: ID, drafts: DraftTask[]) => void
-
+  // Parent reports
   addReportDraft: (report: Omit<ParentReport, 'id' | 'createdOn' | 'status'>) => void
   updateReport: (id: ID, patch: Partial<Pick<ParentReport, 'subject' | 'bodyEn' | 'bodyLocal'>>) => void
   /** The counselor's approval. Marks the report sent and writes it to the log. */
   approveReport: (id: ID) => void
   discardReport: (id: ID) => void
 
+  // Messages
   updateRule: (id: ReminderRule['id'], patch: Partial<Pick<ReminderRule, 'mode' | 'days'>>) => void
-  sendReminder: (reminder: ReminderDraft, trigger: 'automatic' | 'approved') => void
+  /** Writes one message to the "Messages sent" log. Nothing is delivered in v0. */
+  sendMessage: (message: OutgoingMessage) => void
 }
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
@@ -108,7 +143,7 @@ function patchById<T extends { id: ID }>(list: T[], id: ID, fn: (item: T) => T):
 }
 
 function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): AppData {
-  return { ...data, activity: [{ id: newId('ev'), at: nowTimestamp(), studentId, actor, text }, ...data.activity] }
+  return { ...data, activity: [{ id: newId('ev'), at: nowTimestamp(), studentId, actor, text }, ...data.activity].slice(0, 300) }
 }
 
 function deliver(data: AppData, message: OutgoingMessage): AppData {
@@ -117,6 +152,10 @@ function deliver(data: AppData, message: OutgoingMessage): AppData {
 
 function patchMeeting(data: AppData, meetingId: ID, fn: (m: Meeting) => Meeting): AppData {
   return { ...data, meetings: patchById(data.meetings, meetingId, fn) }
+}
+
+function patchStudent(data: AppData, studentId: ID, fn: (s: Student) => Student): AppData {
+  return { ...data, students: patchById(data.students, studentId, fn) }
 }
 
 function applyProfilePatch(student: Student, patch: ProfilePatch): Student {
@@ -136,6 +175,7 @@ function applyProfilePatch(student: Student, patch: ProfilePatch): Student {
 
 /** The record of a counselor's approval. Every approved AI draft carries one. */
 const approvalBy = (data: AppData): Approval => ({ by: data.firm.counselorName, at: nowTimestamp() })
+const stamp = (data: AppData, decision: Decision) => (decision === 'approved' ? approvalBy(data) : undefined)
 
 function taskFromDraft(studentId: ID, draft: DraftTask, source: Task['source'], approval: Approval, meetingId?: ID): Task {
   return {
@@ -165,8 +205,23 @@ const actorName = (data: AppData, studentId: ID, actor: Actor) =>
         ? 'A parent'
         : 'AI'
 
-function fresh(): Pick<State, 'schema' | 'seedDate' | 'data'> {
-  return { schema: SCHEMA, seedDate: todayISO(), data: buildSeed() }
+function toStudent(student: Student): Pick<OutgoingMessage, 'studentId' | 'toKind' | 'toName' | 'channel' | 'language'> {
+  return { studentId: student.id, toKind: 'student', toName: fullName(student), channel: student.preferredChannel ?? 'text', language: 'en' }
+}
+
+function emptyData(firm: Firm): AppData {
+  return {
+    firm,
+    students: [],
+    tasks: [],
+    meetings: [],
+    colleges: [],
+    documents: [],
+    reports: [],
+    outbox: [],
+    reminderRules: DEFAULT_REMINDER_RULES.map((r) => ({ ...r })),
+    activity: [],
+  }
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
@@ -178,29 +233,92 @@ export const useStore = create<State & Actions>()(
       const change = (fn: (data: AppData) => AppData) => set((s) => ({ data: fn(s.data) }))
 
       return {
-        ...fresh(),
+        schema: SCHEMA,
+        data: buildSeed(),
         session: { signedIn: false, email: '' },
 
         signIn: (email) => set({ session: { signedIn: true, email } }),
         signOut: () => set({ session: { signedIn: false, email: '' } }),
-        resetDemo: () => set(fresh()),
+        resetDemo: () => set({ schema: SCHEMA, data: buildSeed() }),
+        startEmpty: () => set((s) => ({ schema: SCHEMA, data: emptyData({ ...s.data.firm, name: 'My firm' }) })),
+        updateFirm: (firm) =>
+          change((data) => {
+            const next = { ...data.firm, ...firm }
+            return { ...data, firm: { ...next, counselorFirstName: next.counselorName.trim().split(/\s+/)[0] || 'Counselor' } }
+          }),
+
+        // ── Students and families ──
+        addStudent: (student) => {
+          const id = newId('s')
+          change((data) => ({
+            ...data,
+            students: [
+              ...data.students,
+              {
+                tests: { aps: [] },
+                majors: [],
+                interests: [],
+                activities: [],
+                counselorNotes: '',
+                parents: [],
+                reportSettings: { schedule: 'after_meetings', recipientIds: [] },
+                preferredChannel: 'text',
+                ...student,
+                id,
+                onboardedOn: todayISO(),
+              },
+            ],
+          }))
+          return id
+        },
+
+        updateStudent: (id, fields, actor = 'counselor', summary) =>
+          change((data) => {
+            const next = patchStudent(data, id, (s) => ({ ...s, ...fields }))
+            if (!summary) return next
+            return logActivity(next, id, actor, `${actorName(data, id, actor)} updated the profile: ${summary}`)
+          }),
+
+        archiveStudent: (id, archived = true) => change((data) => patchStudent(data, id, (s) => ({ ...s, archived }))),
+
+        addParent: (studentId, parent) =>
+          change((data) =>
+            patchStudent(data, studentId, (s) => {
+              const id = newId('p')
+              const isPrimary = parent.isPrimary ?? s.parents.length === 0
+              const parents = [...s.parents.map((p) => (isPrimary ? { ...p, isPrimary: false } : p)), { ...parent, id, isPrimary }]
+              return { ...s, parents, reportSettings: { ...s.reportSettings, recipientIds: [...s.reportSettings.recipientIds, id] } }
+            }),
+          ),
+
+        updateParent: (studentId, parentId, fields) =>
+          change((data) =>
+            patchStudent(data, studentId, (s) => ({
+              ...s,
+              // Only one parent is the main contact.
+              parents: s.parents.map((p) => (p.id === parentId ? { ...p, ...fields } : fields.isPrimary ? { ...p, isPrimary: false } : p)),
+            })),
+          ),
+
+        removeParent: (studentId, parentId) =>
+          change((data) => {
+            const next = patchStudent(data, studentId, (s) => {
+              const parents = s.parents.filter((p) => p.id !== parentId)
+              if (parents.length && !parents.some((p) => p.isPrimary)) parents[0] = { ...parents[0], isPrimary: true }
+              return { ...s, parents, reportSettings: { ...s.reportSettings, recipientIds: s.reportSettings.recipientIds.filter((x) => x !== parentId) } }
+            })
+            // Their open tasks go to the counselor to reassign; nothing is silently lost.
+            return {
+              ...next,
+              tasks: next.tasks.map((t) => (t.ownerParentId === parentId && t.status !== 'done' ? { ...t, owner: 'counselor' as const, ownerParentId: undefined } : t)),
+            }
+          }),
 
         // ── Tasks ──
         addTask: (task) =>
           change((data) => ({
             ...data,
-            tasks: [
-              ...data.tasks,
-              {
-                category: 'planning',
-                source: 'counselor',
-                ...task,
-                id: newId('t'),
-                status: 'todo',
-                createdOn: todayISO(),
-                attachments: [],
-              },
-            ],
+            tasks: [...data.tasks, { category: 'planning', ...task, id: newId('t'), source: 'counselor', status: 'todo', createdOn: todayISO(), attachments: [] }],
           })),
 
         updateTask: (id, patch) => change((data) => ({ ...data, tasks: patchById(data.tasks, id, (t) => ({ ...t, ...patch })) })),
@@ -210,21 +328,18 @@ export const useStore = create<State & Actions>()(
             const before = data.tasks.find((t) => t.id === id)
             if (!before) return data
             const status = patch.status ?? before.status
+            const done = status === 'done'
             const after: Task = {
               ...before,
               ...patch,
               status,
-              completedOn: status === 'done' ? (before.completedOn ?? todayISO()) : undefined,
+              completedOn: done ? (before.completedOn ?? todayISO()) : undefined,
+              completedBy: done ? (before.completedBy ?? actor) : undefined,
             }
             const who = actorName(data, before.studentId, actor)
             let text = `${who} updated “${before.title}”`
             if (status !== before.status) {
-              text =
-                status === 'done'
-                  ? `${who} marked “${before.title}” done`
-                  : status === 'in_progress'
-                    ? `${who} started “${before.title}”`
-                    : `${who} reopened “${before.title}”`
+              text = done ? `${who} marked “${before.title}” done` : status === 'in_progress' ? `${who} started “${before.title}”` : `${who} reopened “${before.title}”`
             } else if (patch.progressNote) {
               text += `: ${patch.progressNote}`
             }
@@ -236,54 +351,70 @@ export const useStore = create<State & Actions>()(
             const task = data.tasks.find((t) => t.id === id)
             if (!task) return data
             const today = todayISO()
-            const withAttachment = patchById(data.tasks, id, (t) => ({
+            const tasks = patchById(data.tasks, id, (t) => ({
               ...t,
               status: t.status === 'todo' ? ('in_progress' as const) : t.status,
               attachments: [...t.attachments, { ...attachment, id: newId('a'), addedOn: today, addedBy: actor }],
             }))
+            // Filed under the category the task asked for, or by the kind of task.
             const document: StudentDocument = {
               id: newId('doc'),
               studentId: task.studentId,
               name: attachment.name,
-              kind: task.category === 'essay' ? 'essay' : 'other',
+              kind: 'other',
+              category: task.expectsDocument ?? (task.category === 'financial' ? 'financial' : task.category === 'testing' ? 'testing' : task.category === 'recommendation' ? 'recommendation' : 'application'),
               addedOn: today,
               addedBy: actor,
               url: attachment.url,
               taskId: task.id,
             }
             const who = actorName(data, task.studentId, actor)
-            const verb = attachment.kind === 'link' ? 'linked' : 'uploaded'
             return logActivity(
-              { ...data, tasks: withAttachment, documents: [document, ...data.documents] },
+              { ...data, tasks, documents: [document, ...data.documents] },
               task.studentId,
               actor,
-              `${who} ${verb} “${attachment.name}” on “${task.title}”`,
+              `${who} ${attachment.kind === 'link' ? 'linked' : 'uploaded'} “${attachment.name}” on “${task.title}”`,
             )
           }),
 
-        // ── Profile ──
-        updateProfile: (studentId, fields, actor, summary) =>
-          change((data) => {
-            const next = { ...data, students: patchById(data.students, studentId, (s) => ({ ...s, ...fields })) }
-            if (actor === 'counselor' && !summary) return next
-            const who = actorName(data, studentId, actor)
-            return logActivity(next, studentId, actor, `${who} updated the profile${summary ? `: ${summary}` : ''}`)
-          }),
+        deleteTask: (id) => change((data) => ({ ...data, tasks: data.tasks.filter((t) => t.id !== id) })),
 
         // ── Colleges ──
         addCollege: (college) => change((data) => ({ ...data, colleges: [...data.colleges, { ...college, id: newId('c') }] })),
-        updateCollege: (id, patch) =>
-          change((data) => ({ ...data, colleges: patchById(data.colleges, id, (c) => ({ ...c, ...patch })) })),
+        updateCollege: (id, patch) => change((data) => ({ ...data, colleges: patchById(data.colleges, id, (c) => ({ ...c, ...patch })) })),
+        removeCollege: (id) => change((data) => ({ ...data, colleges: data.colleges.filter((c) => c.id !== id) })),
 
-        // ── Documents and essay feedback ──
-        addDocument: (doc) =>
-          change((data) => ({ ...data, documents: [{ ...doc, id: newId('doc'), addedOn: todayISO() }, ...data.documents] })),
+        // ── Documents and essays ──
+        addDocument: (doc) => {
+          const id = newId('doc')
+          change((data) => ({
+            ...data,
+            documents: [{ category: CATEGORY_FOR_KIND[doc.kind], ...(doc.kind === 'essay' ? { essayGroup: 'college' as const, status: 'not_started' as EssayStatus, drafts: [] } : {}), ...doc, id, addedOn: todayISO() }, ...data.documents],
+          }))
+          return id
+        },
 
-        updateDocument: (docId, patch) =>
-          change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, ...patch })) })),
+        updateDocument: (docId, patch) => change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, ...patch })) })),
 
-        setEssayFeedback: (docId, feedback) =>
-          change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, feedback })) })),
+        removeDocument: (docId) => change((data) => ({ ...data, documents: data.documents.filter((d) => d.id !== docId) })),
+
+        saveEssayDraft: (docId, text, asNew) =>
+          change((data) => ({
+            ...data,
+            documents: patchById(data.documents, docId, (d) => {
+              const drafts = d.drafts ?? []
+              const today = todayISO()
+              const next =
+                asNew || drafts.length === 0
+                  ? [...drafts, { n: (drafts.at(-1)?.n ?? 0) + 1, text, savedOn: today }]
+                  : [...drafts.slice(0, -1), { ...drafts.at(-1)!, text, savedOn: today }]
+              // A new draft arriving means it is the counselor's turn.
+              const status: EssayStatus = d.status === 'not_started' || d.status === 'waiting_on_student' || (asNew && d.status === 'revising') ? 'needs_feedback' : (d.status ?? 'drafting')
+              return { ...d, drafts: next, status }
+            }),
+          })),
+
+        setEssayFeedback: (docId, feedback) => change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, feedback })) })),
 
         updateEssayFeedback: (docId, patch) =>
           change((data) => ({
@@ -295,21 +426,18 @@ export const useStore = create<State & Actions>()(
           change((data) => {
             const doc = data.documents.find((d) => d.id === docId)
             const student = data.students.find((s) => s.id === doc?.studentId)
-            if (!doc?.feedback || !student) return data
+            if (!doc?.feedback || !student || doc.feedback.review !== 'pending') return data
             let next: AppData = {
               ...data,
               documents: patchById(data.documents, docId, (d) => ({
                 ...d,
-                feedback: { ...d.feedback!, review: decision, approval: decision === 'approved' ? approvalBy(data) : undefined },
+                status: decision === 'approved' ? 'revising' : d.status,
+                feedback: { ...d.feedback!, review: decision, approval: stamp(data, decision) },
               })),
             }
             if (decision === 'approved') {
               next = deliver(next, {
-                studentId: student.id,
-                toKind: 'student',
-                toName: `${student.firstName} ${student.lastName}`,
-                channel: STUDENT_CHANNEL,
-                language: 'en',
+                ...toStudent(student),
                 kind: 'essay_feedback',
                 body: `Hi ${student.firstName}, ${data.firm.counselorFirstName} shared feedback on “${doc.name}”. Open Platinum to read it.`,
                 trigger: 'approved',
@@ -319,20 +447,46 @@ export const useStore = create<State & Actions>()(
             return next
           }),
 
-        // ── Meetings: AI drafts and their review ──
+        // ── Meetings ──
+        addMeeting: (meeting) => {
+          const id = newId('m')
+          change((data) => ({ ...data, meetings: [...data.meetings, { durationMin: 45, ...meeting, id, status: 'scheduled' }] }))
+          return id
+        },
+
+        updateMeeting: (id, patch) => change((data) => patchMeeting(data, id, (m) => ({ ...m, ...patch }))),
+
+        completeMeeting: (id, notes, heldOn) =>
+          change((data) => {
+            const meeting = data.meetings.find((m) => m.id === id)
+            if (!meeting) return data
+            const next = patchMeeting(data, id, (m) => ({ ...m, status: 'completed', date: heldOn ?? (m.date > todayISO() ? todayISO() : m.date), transcript: notes.trim() || m.transcript }))
+            return logActivity(next, meeting.studentId, 'counselor', `${data.firm.counselorFirstName} logged the meeting “${meeting.title}”`)
+          }),
+
+        deleteMeeting: (id) => change((data) => ({ ...data, meetings: data.meetings.filter((m) => m.id !== id) })),
+
+        setMeetingBrief: (id, brief) => change((data) => patchMeeting(data, id, (m) => ({ ...m, brief, agenda: m.agenda ?? brief.agenda.map((a) => a.topic) }))),
+
+        // ── Meeting drafts and their review ──
         setMeetingDrafts: (meetingId, drafts) =>
           change((data) => {
             const meeting = data.meetings.find((m) => m.id === meetingId)
             if (!meeting) return data
             const next = patchMeeting(data, meetingId, (m) => ({ ...m, ai: drafts.ai, recap: drafts.recap }))
-            return logActivity(next, meeting.studentId, 'ai', `AI notetaker drafted follow-ups from “${meeting.title}”`)
+            return logActivity(next, meeting.studentId, 'ai', `Drafts from “${meeting.title}” are ready for review`)
           }),
+
+        reviewNotes: (meetingId, decision) =>
+          change((data) =>
+            patchMeeting(data, meetingId, (m) =>
+              m.ai && m.ai.notesReview === 'pending' ? { ...m, ai: { ...m.ai, notesReview: decision, notesApproval: stamp(data, decision) } } : m,
+            ),
+          ),
 
         updateDraftTask: (meetingId, draftId, patch) =>
           change((data) =>
-            patchMeeting(data, meetingId, (m) =>
-              m.ai ? { ...m, ai: { ...m.ai, draftTasks: patchById(m.ai.draftTasks, draftId, (t) => ({ ...t, ...patch })) } } : m,
-            ),
+            patchMeeting(data, meetingId, (m) => (m.ai ? { ...m, ai: { ...m.ai, draftTasks: patchById(m.ai.draftTasks, draftId, (t) => ({ ...t, ...patch })) } } : m)),
           ),
 
         reviewDraftTask: (meetingId, draftId, decision) =>
@@ -352,22 +506,17 @@ export const useStore = create<State & Actions>()(
             return next
           }),
 
-        updateRecap: (meetingId, patch) =>
-          change((data) => patchMeeting(data, meetingId, (m) => (m.recap ? { ...m, recap: { ...m.recap, ...patch } } : m))),
+        updateRecap: (meetingId, patch) => change((data) => patchMeeting(data, meetingId, (m) => (m.recap ? { ...m, recap: { ...m.recap, ...patch } } : m))),
 
         reviewRecap: (meetingId, decision) =>
           change((data) => {
             const meeting = data.meetings.find((m) => m.id === meetingId)
             const student = data.students.find((s) => s.id === meeting?.studentId)
             if (!meeting?.recap || !student || meeting.recap.review !== 'pending') return data
-            let next = patchMeeting(data, meetingId, (m) => ({ ...m, recap: { ...m.recap!, review: decision, approval: decision === 'approved' ? approvalBy(data) : undefined } }))
+            let next = patchMeeting(data, meetingId, (m) => ({ ...m, recap: { ...m.recap!, review: decision, approval: stamp(data, decision) } }))
             if (decision === 'approved') {
               next = deliver(next, {
-                studentId: student.id,
-                toKind: 'student',
-                toName: `${student.firstName} ${student.lastName}`,
-                channel: STUDENT_CHANNEL,
-                language: 'en',
+                ...toStudent(student),
                 kind: 'meeting_recap',
                 body: `Hi ${student.firstName}, your recap from “${meeting.title}” is ready, with ${meeting.recap.nextSteps.length} next steps. Open Platinum to see it.`,
                 trigger: 'approved',
@@ -439,15 +588,10 @@ export const useStore = create<State & Actions>()(
             if (!meeting || !item || item.review !== 'pending') return data
             let next = patchMeeting(data, meetingId, (m) => ({
               ...m,
-              ai: { ...m.ai!, profileChanges: patchById(m.ai!.profileChanges, changeId, (c) => ({
-                  ...c,
-                  review: decision,
-                  approval: decision === 'approved' ? approvalBy(data) : undefined,
-                })),
-              },
+              ai: { ...m.ai!, profileChanges: patchById(m.ai!.profileChanges, changeId, (c) => ({ ...c, review: decision, approval: stamp(data, decision) })) },
             }))
             if (decision === 'approved') {
-              next = { ...next, students: patchById(next.students, meeting.studentId, (s) => applyProfilePatch(s, item.patch)) }
+              next = patchStudent(next, meeting.studentId, (s) => applyProfilePatch(s, item.patch))
               next = logActivity(next, meeting.studentId, 'counselor', `Profile updated: ${item.label} → ${item.to}`)
             }
             return next
@@ -457,30 +601,16 @@ export const useStore = create<State & Actions>()(
           const meeting = get().data.meetings.find((m) => m.id === meetingId)
           if (!meeting) return
           const a = get()
+          a.reviewNotes(meetingId, 'approved')
           meeting.ai?.draftTasks.forEach((t) => a.reviewDraftTask(meetingId, t.id, 'approved'))
           meeting.ai?.profileChanges.forEach((c) => a.reviewProfileChange(meetingId, c.id, 'approved'))
           meeting.ai?.parentUpdates.forEach((u) => a.reviewParentUpdate(meetingId, u.id, 'approved'))
           a.reviewRecap(meetingId, 'approved')
         },
 
-        addTasksFromNotes: (studentId, drafts) =>
-          change((data) => {
-            if (drafts.length === 0) return data
-            const next = { ...data, tasks: [...data.tasks, ...drafts.map((d) => taskFromDraft(studentId, d, 'ai_notes', approvalBy(data)))] }
-            return logActivity(
-              next,
-              studentId,
-              'counselor',
-              `${data.firm.counselorFirstName} approved ${drafts.length} ${drafts.length === 1 ? 'task' : 'tasks'} from uploaded notes`,
-            )
-          }),
-
         // ── Parent reports ──
         addReportDraft: (report) =>
-          change((data) => ({
-            ...data,
-            reports: [{ ...report, id: newId('r'), createdOn: todayISO(), status: 'draft' }, ...data.reports],
-          })),
+          change((data) => ({ ...data, reports: [{ ...report, id: newId('r'), createdOn: todayISO(), status: 'draft' }, ...data.reports] })),
 
         updateReport: (id, patch) => change((data) => ({ ...data, reports: patchById(data.reports, id, (r) => ({ ...r, ...patch })) })),
 
@@ -490,10 +620,7 @@ export const useStore = create<State & Actions>()(
             const student = data.students.find((s) => s.id === report?.studentId)
             const parent = student?.parents.find((p) => p.id === report?.parentId)
             if (!report || !student || !parent || report.status !== 'draft') return data
-            let next: AppData = {
-              ...data,
-              reports: patchById(data.reports, id, (r) => ({ ...r, status: 'sent', sentOn: todayISO(), approval: approvalBy(data) })),
-            }
+            let next: AppData = { ...data, reports: patchById(data.reports, id, (r) => ({ ...r, status: 'sent', sentOn: todayISO(), approval: approvalBy(data) })) }
             next = deliver(next, {
               studentId: student.id,
               toKind: 'parent',
@@ -511,23 +638,22 @@ export const useStore = create<State & Actions>()(
 
         discardReport: (id) => change((data) => ({ ...data, reports: data.reports.filter((r) => r.id !== id || r.status !== 'draft') })),
 
-        // ── Reminders ──
-        updateRule: (id, patch) =>
-          change((data) => ({ ...data, reminderRules: data.reminderRules.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
+        // ── Messages ──
+        updateRule: (id, patch) => change((data) => ({ ...data, reminderRules: data.reminderRules.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
 
-        sendReminder: (reminder, trigger) => change((data) => deliver(data, { ...reminder.message, trigger })),
+        sendMessage: (message) => change((data) => deliver(data, message)),
       }
     },
     {
       name: STORAGE_KEY,
-      partialize: ({ schema, seedDate, session, data }) => ({ schema, seedDate, session, data }),
-      // Keep saved demo state only if it is from today and from this schema.
-      // Otherwise start from a fresh seed (dates are relative to today) but stay signed in.
+      partialize: ({ schema, session, data }) => ({ schema, session, data }),
+      // Saved data is kept across days and migrated forward when the shapes change.
+      // Only data that cannot be read at all falls back to the sample caseload.
       merge: (saved, current) => {
         const s = saved as Partial<State> | undefined
         if (!s) return current
-        if (s.schema === SCHEMA && s.seedDate === todayISO() && s.data) return { ...current, ...s }
-        return { ...current, session: s.session ?? current.session }
+        const data = migrate(s.schema, s.data)
+        return { ...current, session: s.session ?? current.session, schema: SCHEMA, data: data ?? current.data }
       },
     },
   ),

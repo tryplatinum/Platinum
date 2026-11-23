@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Student overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#1D3FD1}a:hover{color:#142C94}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #14181F; background: #F4F5F7; min-height: 1120px; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Main" style="flex: 1 1 220px; max-width: 240px; background: #10141C; color: #C9CEDA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 18px; font-weight: 700; color: #FFFFFF; padding: 0 12px 20px">Platinum</div>
+<a href="Main.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Command center</a>
+<a href="Student.dc.html" style="display: block; padding: 12px; border-radius: 8px; background: #263049; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none">Students</a>
+<a href="Meeting.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Meetings</a>
+<a href="#" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Messages sent</a>
+<div style="margin-top: auto; padding: 12px; font-size: 13px; color: #9AA2B4">Park College Advising<br>Signed in as Grace Park</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px">
+<div>
+<p style="margin: 0 0 4px; font-size: 13px"><a href="Main.dc.html">Students</a> <span style="color: #5A6272">/ Kevin Zhang</span></p>
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em">Kevin Zhang</h1>
+<span style="display: inline-block; padding: 4px 10px; border-radius: 999px; background: #FDE8DF; color: #8F2507; font-size: 12px; font-weight: 600">Behind</span>
+</div>
+<p style="margin: 8px 0 0; font-size: 14px; color: #5A6272">Class of 2027 · Lynbrook High School · GPA 3.86 · SAT 1480 · Mechanical Engineering</p>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 14px Inter, sans-serif">Remind Kevin</button>
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Log a meeting</button>
+</div>
+</header>
+
+<div style="display: flex; gap: 4px; border-bottom: 1px solid #D5D9E1; overflow-x: auto">
+<a href="Student.dc.html" style="padding: 12px 16px; border-bottom: 2px solid #1D3FD1; color: #14181F; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap">Overview</a>
+<a href="StudentMeetings.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap">Meetings</a>
+<a href="StudentDocs.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap">Documents</a>
+<a href="StudentEssays.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap">Essays</a>
+<a href="StudentReports.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap">Parent reports</a>
+<a href="#" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap">Profile</a>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<div style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section aria-labelledby="tasks-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+<h2 id="tasks-h" style="margin: 0; font-size: 18px; font-weight: 700">Tasks</h2>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Add task</button>
+</div>
+<div>
+<div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px"><span style="font-weight: 600">1 of 5 done</span><span style="font-weight: 600; color: #8F2507">3 late</span></div>
+<div role="img" aria-label="1 of 5 tasks done" style="height: 8px; border-radius: 999px; background: #E6E9EF; overflow: hidden"><div style="width: 20%; height: 8px; background: #B93A0F"></div></div>
+</div>
+
+<h3 style="margin: 4px 0 0; font-size: 12px; font-weight: 600; color: #5A6272">TO DO · 4</h3>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #F3C4B2; border-left: 4px solid #B93A0F; border-radius: 10px; background: #FFF8F5; flex-wrap: wrap">
+<button type="button" aria-label="Mark done: send second draft of UC essay 2" style="width: 44px; height: 44px; border: 0; background: none; padding: 0; flex: none"><span style="display: block; width: 22px; height: 22px; margin: auto; border: 2px solid #8F2507; border-radius: 999px; box-sizing: border-box"></span></button>
+<div style="flex: 1 1 260px; min-width: 0"><div style="font-size: 15px; font-weight: 600">Send second draft of UC essay 2 (leadership)</div><div style="font-size: 13px; color: #5A6272; margin-top: 2px">Kevin · from the Nov 10 meeting</div></div>
+<span style="padding: 6px 10px; border-radius: 8px; background: #FDE8DF; color: #8F2507; font-size: 13px; font-weight: 600; white-space: nowrap">9 days late</span>
+<button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #1D3FD1; background: #FFFFFF; color: #1D3FD1; font: 600 13px Inter, sans-serif">Remind</button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #F3C4B2; border-left: 4px solid #B93A0F; border-radius: 10px; background: #FFF8F5; flex-wrap: wrap">
+<button type="button" aria-label="Mark done: fill in the UC activities section" style="width: 44px; height: 44px; border: 0; background: none; padding: 0; flex: none"><span style="display: block; width: 22px; height: 22px; margin: auto; border: 2px solid #8F2507; border-radius: 999px; box-sizing: border-box"></span></button>
+<div style="flex: 1 1 260px; min-width: 0"><div style="font-size: 15px; font-weight: 600">Fill in the UC activities section</div><div style="font-size: 13px; color: #5A6272; margin-top: 2px">Kevin · from the Nov 10 meeting</div></div>
+<span style="padding: 6px 10px; border-radius: 8px; background: #FDE8DF; color: #8F2507; font-size: 13px; font-weight: 600; white-space: nowrap">5 days late</span>
+<button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #1D3FD1; background: #FFFFFF; color: #1D3FD1; font: 600 13px Inter, sans-serif">Remind</button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #F3C4B2; border-left: 4px solid #B93A0F; border-radius: 10px; background: #FFF8F5; flex-wrap: wrap">
+<button type="button" aria-label="Mark done: confirm the final UC campus list" style="width: 44px; height: 44px; border: 0; background: none; padding: 0; flex: none"><span style="display: block; width: 22px; height: 22px; margin: auto; border: 2px solid #8F2507; border-radius: 999px; box-sizing: border-box"></span></button>
+<div style="flex: 1 1 260px; min-width: 0"><div style="font-size: 15px; font-weight: 600">Confirm the final UC campus list</div><div style="font-size: 13px; color: #5A6272; margin-top: 2px">Mrs. Zhang (parent) · from the Nov 10 meeting</div></div>
+<span style="padding: 6px 10px; border-radius: 8px; background: #FDE8DF; color: #8F2507; font-size: 13px; font-weight: 600; white-space: nowrap">2 days late</span>
+<button type="button" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #1D3FD1; background: #FFFFFF; color: #1D3FD1; font: 600 13px Inter, sans-serif">Remind</button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #E1E4EA; border-left: 4px solid #1D3FD1; border-radius: 10px; flex-wrap: wrap">
+<button type="button" aria-label="Mark done: give feedback on essay 1" style="width: 44px; height: 44px; border: 0; background: none; padding: 0; flex: none"><span style="display: block; width: 22px; height: 22px; margin: auto; border: 2px solid #5A6272; border-radius: 999px; box-sizing: border-box"></span></button>
+<div style="flex: 1 1 260px; min-width: 0"><div style="font-size: 15px; font-weight: 600">Give feedback on essay 1 (final read)</div><div style="font-size: 13px; color: #5A6272; margin-top: 2px">You</div></div>
+<span style="padding: 6px 10px; border-radius: 8px; background: #EEF0F4; color: #33415F; font-size: 13px; font-weight: 600; white-space: nowrap">Due Nov 24</span>
+</div>
+
+<h3 style="margin: 4px 0 0; font-size: 12px; font-weight: 600; color: #5A6272">DONE · 1</h3>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-radius: 10px; background: #F4F5F7">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 0 11px; border-radius: 999px; background: #0F7A63; flex: none"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"></path></svg></span>
+<div style="flex: 1; font-size: 14px; color: #5A6272; text-decoration: line-through">Request transcript from school counselor</div>
+<span style="font-size: 13px; color: #5A6272; white-space: nowrap">Done Nov 12 by Kevin</span>
+</div>
+</section>
+
+<section aria-labelledby="col-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px">
+<div style="padding: 16px 20px; border-bottom: 1px solid #E1E4EA"><h2 id="col-h" style="margin: 0; font-size: 18px; font-weight: 700">College list</h2></div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 480px; border-collapse: collapse; font-size: 14px">
+<thead><tr style="text-align: left; color: #5A6272; font-size: 12px"><th style="padding: 12px 20px; font-weight: 600">College</th><th style="padding: 12px; font-weight: 600">Plan</th><th style="padding: 12px; font-weight: 600">Deadline</th><th style="padding: 12px 20px 12px 12px; font-weight: 600">Status</th></tr></thead>
+<tbody>
+<tr style="border-top: 1px solid #EEF0F4"><td style="padding: 14px 20px; font-weight: 500">UC Berkeley, UCLA, UC San Diego, UC Davis</td><td style="padding: 14px 12px">UC</td><td style="padding: 14px 12px; color: #8F2507; font-weight: 600">Nov 30 · 8 days</td><td style="padding: 14px 20px 14px 12px">In progress</td></tr>
+<tr style="border-top: 1px solid #EEF0F4"><td style="padding: 14px 20px; font-weight: 500">Carnegie Mellon University</td><td style="padding: 14px 12px">Regular</td><td style="padding: 14px 12px">Jan 2</td><td style="padding: 14px 20px 14px 12px">Planning</td></tr>
+<tr style="border-top: 1px solid #EEF0F4"><td style="padding: 14px 20px; font-weight: 500">University of Michigan</td><td style="padding: 14px 12px">Regular</td><td style="padding: 14px 12px">Feb 1</td><td style="padding: 14px 20px 14px 12px">Planning</td></tr>
+<tr style="border-top: 1px solid #EEF0F4"><td style="padding: 14px 20px; font-weight: 500">Purdue University</td><td style="padding: 14px 12px">Early Action</td><td style="padding: 14px 12px; color: #5A6272">Nov 1</td><td style="padding: 14px 20px 14px 12px; color: #0A5645; font-weight: 600">Submitted</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section aria-labelledby="brief-h" style="background: #EEF1FE; border: 1px solid #C9D2FA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+<h2 id="brief-h" style="margin: 0; font-size: 16px; font-weight: 600">Before your next meeting</h2>
+<span style="font-size: 12px; font-weight: 600; color: #1D3FD1">AI brief</span>
+</div>
+<p style="margin: 0; font-size: 13px; color: #33415F">Tuesday, Nov 24 at 4:30 PM</p>
+<ul style="margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px">
+<li>Essay 2 has not moved since Nov 10. Kevin said he was stuck on the opening.</li>
+<li>Mrs. Zhang has not confirmed the campus list.</li>
+</ul>
+<p style="margin: 0; font-size: 13px; font-weight: 600">Suggested agenda</p>
+<ol style="margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5">
+<li>Outline essay 2 together</li>
+<li>Lock the campus list on the call</li>
+<li>Daily check-in until Nov 30</li>
+</ol>
+</section>
+
+<section aria-labelledby="fam-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 id="fam-h" style="margin: 0; font-size: 16px; font-weight: 600">Family</h2>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px">
+<div><span style="font-weight: 600">Lihua Zhang</span> <span style="color: #5A6272">· mother · main contact</span></div>
+<div style="font-size: 13px; color: #33415F">WeChat: lihua_zhang88</div>
+<div style="font-size: 13px; color: #33415F">(408) 555-0142 · <a href="mailto:lihua.zhang@example.com">lihua.zhang@example.com</a></div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Reads Chinese (Simplified)</span><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Prefers WeChat</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 14px">
+<div><span style="font-weight: 600">Wei Zhang</span> <span style="color: #5A6272">· father</span></div>
+<div style="font-size: 13px; color: #33415F">(408) 555-0167 · <a href="mailto:wei.zhang@example.com">wei.zhang@example.com</a></div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Reads English</span><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Prefers email</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 14px">
+<div><span style="font-weight: 600">Kevin</span> <span style="color: #5A6272">· student</span></div>
+<div style="font-size: 13px; color: #33415F">(408) 555-0193 · <a href="mailto:kevin.zhang@example.com">kevin.zhang@example.com</a></div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Prefers text</span></div>
+</div>
+</section>
+
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

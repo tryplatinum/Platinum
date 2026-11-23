@@ -21,9 +21,6 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
   text: 'Text',
 }
 
-/** Students get reminders by text in v0. */
-export const STUDENT_CHANNEL: Channel = 'text'
-
 /** "张先生" / "刘女士". Falls back to the romanised name. */
 export function zhGreeting(parent: Parent): string {
   if (!parent.localName) return parent.name
@@ -36,7 +33,7 @@ export function zhGiven(student: Student): string {
   return student.localName ? student.localName.slice(1) : student.firstName
 }
 
-/** "Mr. Zhang"-style greeting is not derivable from the data, so English messages use the full name. */
-export function enGreeting(parent: Parent): string {
-  return parent.name
+/** The handle or address a message to this parent would go to, on their preferred channel. */
+export function parentAddress(parent: Parent): string | undefined {
+  return { email: parent.email, wechat: parent.wechatId, line: parent.lineId, text: parent.phone }[parent.channel]
 }

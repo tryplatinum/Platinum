@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meetings by student</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#1D3FD1}a:hover{color:#142C94}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #14181F; background: #F4F5F7; min-height: 1240px; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Main" style="flex: 1 1 220px; max-width: 240px; background: #10141C; color: #C9CEDA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 18px; font-weight: 700; color: #FFFFFF; padding: 0 12px 20px">Platinum</div>
+<a href="Main.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Command center</a>
+<a href="Student.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Students</a>
+<a href="Meeting.dc.html" style="display: block; padding: 12px; border-radius: 8px; background: #263049; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none">Meetings</a>
+<a href="#" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Messages sent</a>
+<div style="margin-top: auto; padding: 12px; font-size: 13px; color: #9AA2B4">Park College Advising<br>Signed in as Grace Park</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em">Meetings</h1>
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Log a meeting</button>
+</header>
+
+<div style="display: flex; gap: 4px; border-bottom: 1px solid #D5D9E1">
+<a href="Meeting.dc.html" style="padding: 12px 16px; border-bottom: 2px solid #1D3FD1; color: #14181F; font-size: 14px; font-weight: 600; text-decoration: none">By student</a>
+<a href="MeetingsCalendar.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none">Calendar</a>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<section aria-label="Students" style="flex: 1 1 280px; max-width: 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; overflow: hidden">
+<div style="padding: 12px"><label for="q" style="position: absolute; left: -9999px">Search students</label><input id="q" type="search" placeholder="Search students" style="width: 100%; box-sizing: border-box; height: 44px; padding: 0 12px; border: 1px solid #CDD2DC; border-radius: 8px; font: 14px Inter, sans-serif"></div>
+<div style="padding: 6px 16px; font-size: 12px; font-weight: 600; color: #5A6272; background: #F4F5F7">Needs review</div>
+<a href="Meeting.dc.html" style="display: block; padding: 14px 16px; background: #EEF1FE; border-left: 3px solid #1D3FD1; color: #14181F; text-decoration: none"><div style="display: flex; justify-content: space-between; gap: 8px"><span style="font-size: 14px; font-weight: 600">Emily Chen</span><span style="font-size: 12px; font-weight: 600; color: #1D3FD1">Review ready</span></div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Met yesterday · next Sat, Dec 5</div></a>
+<div style="padding: 6px 16px; font-size: 12px; font-weight: 600; color: #5A6272; background: #F4F5F7">Meeting this week</div>
+<a href="#" style="display: block; padding: 14px 16px; border-top: 1px solid #EEF0F4; color: #14181F; text-decoration: none"><div style="display: flex; justify-content: space-between; gap: 8px"><span style="font-size: 14px; font-weight: 600">Kevin Zhang</span><span style="font-size: 12px; font-weight: 600; color: #8F2507">Behind</span></div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Next Tue, Nov 24, 4:30 PM</div></a>
+<a href="#" style="display: block; padding: 14px 16px; border-top: 1px solid #EEF0F4; color: #14181F; text-decoration: none"><div style="font-size: 14px; font-weight: 600">Sophia Martinez</div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Next Wed, Nov 25, 5:00 PM</div></a>
+<a href="#" style="display: block; padding: 14px 16px; border-top: 1px solid #EEF0F4; color: #14181F; text-decoration: none"><div style="font-size: 14px; font-weight: 600">Daniel Wu</div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Next Fri, Nov 27, 3:00 PM</div></a>
+<div style="padding: 6px 16px; font-size: 12px; font-weight: 600; color: #5A6272; background: #F4F5F7">Later</div>
+<a href="#" style="display: block; padding: 14px 16px; color: #14181F; text-decoration: none"><div style="font-size: 14px; font-weight: 600">Aiden Lin</div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Next Thu, Dec 3</div></a>
+<a href="#" style="display: block; padding: 14px 16px; border-top: 1px solid #EEF0F4; color: #14181F; text-decoration: none"><div style="font-size: 14px; font-weight: 600">Maya Patel</div><div style="font-size: 12px; color: #5A6272; margin-top: 2px">Next Fri, Dec 4</div></a>
+<a href="#" style="display: block; padding: 14px 16px; border-top: 1px solid #EEF0F4; color: #14181F; text-decoration: none"><div style="font-size: 14px; font-weight: 600">Olivia Brooks</div><div style="font-size: 12px; color: #8F2507; margin-top: 2px">No meeting scheduled</div></a>
+</section>
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 20px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px">
+<div>
+<h2 style="margin: 0; font-size: 20px; font-weight: 700">Emily Chen</h2>
+<p style="margin: 4px 0 0; font-size: 14px; color: #5A6272">Last meeting Sat, Nov 21 · 47 min on Zoom · Next Sat, Dec 5, 10:00 AM</p>
+</div>
+<div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+<div style="font-size: 14px"><span style="font-weight: 700">1 of 4</span> <span style="color: #5A6272">approved</span></div>
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Approve everything left</button>
+</div>
+</div>
+
+<section aria-labelledby="n-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+<h3 id="n-h" style="margin: 0; font-size: 16px; font-weight: 600">1. Meeting notes</h3>
+<span style="padding: 4px 10px; border-radius: 999px; background: #DDF1EC; color: #0A5645; font-size: 12px; font-weight: 600">Approved</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
+<div style="background: #F4F5F7; border-radius: 8px; padding: 12px"><div style="font-size: 12px; font-weight: 600; color: #5A6272; margin-bottom: 4px">Decided</div><div style="font-size: 14px; line-height: 1.45">Apply NYU Early Decision 2. Drop Boston College.</div></div>
+<div style="background: #F4F5F7; border-radius: 8px; padding: 12px"><div style="font-size: 12px; font-weight: 600; color: #5A6272; margin-bottom: 4px">Progress</div><div style="font-size: 14px; line-height: 1.45">SAT 1510. Main essay nearly done. Both recommenders confirmed.</div></div>
+<div style="background: #F4F5F7; border-radius: 8px; padding: 12px"><div style="font-size: 12px; font-weight: 600; color: #5A6272; margin-bottom: 4px">Watch</div><div style="font-size: 14px; line-height: 1.45">NYU supplement not started. Family unsure about ED2 cost.</div></div>
+</div>
+<div style="display: flex; gap: 16px; font-size: 13px"><a href="#">Full notes</a><a href="#">Transcript</a></div>
+</section>
+
+<section aria-labelledby="t-h" style="background: #FFFFFF; border: 1px solid #C9D2FA; border-radius: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; flex-wrap: wrap">
+<h3 id="t-h" style="margin: 0; font-size: 16px; font-weight: 600">2. Tasks from this meeting</h3>
+<div style="display: flex; align-items: center; gap: 12px"><span style="padding: 4px 10px; border-radius: 999px; background: #E4E9FD; color: #1D3FD1; font-size: 12px; font-weight: 600">Needs approval</span><button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Add 4 tasks</button></div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid #EEF0F4; flex-wrap: wrap">
+<input type="checkbox" id="p1" checked aria-label="Keep" style="width: 18px; height: 18px"><label for="p1" style="flex: 1 1 240px; font-size: 14px">Rewrite the ending of the Common App essay</label><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Emily</span><span style="font-size: 13px; color: #5A6272; width: 70px; text-align: right">Nov 28</span>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid #EEF0F4; flex-wrap: wrap">
+<input type="checkbox" id="p2" checked aria-label="Keep" style="width: 18px; height: 18px"><label for="p2" style="flex: 1 1 240px; font-size: 14px">Draft the "Why NYU" supplement</label><span style="padding: 4px 8px; border-radius: 6px; background: #EEF0F4; color: #33415F; font-size: 12px; font-weight: 600">Emily</span><span style="font-size: 13px; color: #5A6272; width: 70px; text-align: right">Dec 5</span>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid #EEF0F4; flex-wrap: wrap">
+<input type="checkbox" id="p3" checked aria-label="Keep" style="width: 18px; height: 18px"><label for="p3" style="flex: 1 1 240px; font-size: 14px">Confirm ED2 after reviewing NYU's cost estimate</label><span style="padding: 4px 8px; border-radius: 6px; background: #FBEFC9; color: #6B4700; font-size: 12px; font-weight: 600">Mrs. Chen</span><span style="font-size: 13px; color: #5A6272; width: 70px; text-align: right">Dec 1</span>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid #EEF0F4; flex-wrap: wrap">
+<input type="checkbox" id="p4" checked aria-label="Keep" style="width: 18px; height: 18px"><label for="p4" style="flex: 1 1 240px; font-size: 14px">Send Emily two sample "Why us" essays</label><span style="padding: 4px 8px; border-radius: 6px; background: #E4E9FD; color: #1D3FD1; font-size: 12px; font-weight: 600">You</span><span style="font-size: 13px; color: #5A6272; width: 70px; text-align: right">Nov 23</span>
+</div>
+</section>
+
+<section aria-labelledby="u-h" style="background: #FFFFFF; border: 1px solid #C9D2FA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+<h3 id="u-h" style="margin: 0; font-size: 16px; font-weight: 600">3. Parent update</h3>
+<span style="padding: 4px 10px; border-radius: 999px; background: #E4E9FD; color: #1D3FD1; font-size: 12px; font-weight: 600">Needs approval</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+<span style="font-size: 13px; color: #5A6272">To Mrs. Chen · WeChat</span>
+<div role="group" aria-label="Language" style="display: flex; border: 1px solid #CDD2DC; border-radius: 8px; overflow: hidden">
+<button type="button" aria-pressed="true" style="height: 44px; padding: 0 14px; border: 0; background: #14181F; color: #FFFFFF; font: 600 13px Inter, sans-serif">中文</button>
+<button type="button" aria-pressed="false" style="height: 44px; padding: 0 14px; border: 0; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">English</button>
+<button type="button" aria-pressed="false" style="height: 44px; padding: 0 14px; border: 0; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Side by side</button>
+</div>
+</div>
+<div style="background: #F4F5F7; border-radius: 10px; padding: 16px; font-size: 14px; line-height: 1.7">陈妈妈您好，周六和 Emily 开完会，跟您同步三点：<br>1. SAT 考到 1510 分，提高了 50 分。<br>2. 主文书接近完成，本周修改结尾。<br>3. 我们决定申请 NYU 的 Early Decision 2。<br><span style="font-weight: 600">需要您做的：</span>请在 12 月 1 日前看一下 NYU 的费用估算并确认是否同意 ED2，因为录取后必须入学。</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Approve and send</button>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 14px Inter, sans-serif">Edit</button>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 14px Inter, sans-serif">Copy for WeChat</button>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px">
+
+<section aria-labelledby="c-h" style="background: #FFFFFF; border: 1px solid #C9D2FA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h3 id="c-h" style="margin: 0; font-size: 16px; font-weight: 600">4. Profile changes</h3>
+<span style="padding: 4px 10px; border-radius: 999px; background: #E4E9FD; color: #1D3FD1; font-size: 12px; font-weight: 600">Needs approval</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px"><span>SAT <span style="color: #5A6272; text-decoration: line-through">1460</span> <span style="font-weight: 600">1510</span></span><button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Accept</button></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 12px"><span>Add <span style="font-weight: 600">NYU, ED2, Jan 1</span></span><button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Accept</button></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 12px"><span>Remove <span style="color: #5A6272; text-decoration: line-through">Boston College</span></span><button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 13px Inter, sans-serif">Accept</button></div>
+</section>
+
+<section aria-labelledby="r-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h3 id="r-h" style="margin: 0; font-size: 16px; font-weight: 600">5. Reminders</h3>
+<p style="margin: 0; font-size: 13px; color: #5A6272">Sent automatically once the tasks above are approved.</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px"><label for="r1">Emily: 2 days before each due date, by text</label><input id="r1" type="checkbox" checked style="width: 20px; height: 20px"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 12px"><label for="r2">Emily: the day a task becomes late</label><input id="r2" type="checkbox" checked style="width: 20px; height: 20px"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 12px"><label for="r3">Mrs. Chen: Nov 29, about the ED2 decision, by WeChat</label><input id="r3" type="checkbox" checked style="width: 20px; height: 20px"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; border-top: 1px solid #EEF0F4; padding-top: 12px"><label for="r4">Ask me before each one goes out</label><input id="r4" type="checkbox" style="width: 20px; height: 20px"></div>
+</section>
+
+</div>
+
+<p style="margin: 0; font-size: 13px; color: #5A6272">For a student with no new meeting, this panel shows the last meeting's notes, how its tasks are going, the parent update that was sent, profile changes, and active reminders.</p>
+
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

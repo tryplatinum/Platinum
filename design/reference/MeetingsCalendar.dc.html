@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meetings calendar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#1D3FD1}a:hover{color:#142C94}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #14181F; background: #F4F5F7; min-height: 900px; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Main" style="flex: 1 1 220px; max-width: 240px; background: #10141C; color: #C9CEDA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 18px; font-weight: 700; color: #FFFFFF; padding: 0 12px 20px">Platinum</div>
+<a href="Main.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Command center</a>
+<a href="Student.dc.html" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Students</a>
+<a href="Meeting.dc.html" style="display: block; padding: 12px; border-radius: 8px; background: #263049; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none">Meetings</a>
+<a href="#" style="display: block; padding: 12px; border-radius: 8px; color: #C9CEDA; font-size: 14px; font-weight: 500; text-decoration: none">Messages sent</a>
+<div style="margin-top: auto; padding: 12px; font-size: 13px; color: #9AA2B4">Park College Advising<br>Signed in as Grace Park</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em">Meetings</h1>
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 0; background: #1D3FD1; color: #FFFFFF; font: 600 14px Inter, sans-serif">Schedule a meeting</button>
+</header>
+
+<div style="display: flex; gap: 4px; border-bottom: 1px solid #D5D9E1">
+<a href="Meeting.dc.html" style="padding: 12px 16px; color: #5A6272; font-size: 14px; font-weight: 500; text-decoration: none">By student</a>
+<a href="MeetingsCalendar.dc.html" style="padding: 12px 16px; border-bottom: 2px solid #1D3FD1; color: #14181F; font-size: 14px; font-weight: 600; text-decoration: none">Calendar</a>
+</div>
+
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+<div style="display: flex; align-items: center; gap: 8px">
+<button type="button" aria-label="Previous week" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 16px Inter, sans-serif">&lsaquo;</button>
+<button type="button" aria-label="Next week" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 16px Inter, sans-serif">&rsaquo;</button>
+<h2 style="margin: 0 0 0 8px; font-size: 18px; font-weight: 600">Nov 23 to Nov 29</h2>
+</div>
+<div style="font-size: 13px; color: #5A6272">5 meetings this week · 1 brief ready</div>
+</div>
+
+<div style="overflow-x: auto">
+<div style="display: grid; grid-template-columns: repeat(7, minmax(140px, 1fr)); gap: 8px; min-width: 1020px">
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">MON 23</div>
+<div style="font-size: 13px; color: #5A6272">No meetings</div>
+</div>
+
+<div style="background: #FFFFFF; border: 2px solid #1D3FD1; border-radius: 12px; padding: 11px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #1D3FD1">TUE 24</div>
+<a href="Student.dc.html" style="display: block; background: #FDE8DF; border-radius: 8px; padding: 10px; color: #14181F; text-decoration: none"><div style="font-size: 12px; font-weight: 600; color: #8F2507">4:30 PM · Behind</div><div style="font-size: 14px; font-weight: 600; margin-top: 2px">Kevin Zhang</div><div style="font-size: 12px; color: #33415F; margin-top: 4px">Essay 2, campus list</div><div style="font-size: 12px; font-weight: 600; color: #1D3FD1; margin-top: 6px">Brief ready</div></a>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">WED 25</div>
+<a href="#" style="display: block; background: #FDE8DF; border-radius: 8px; padding: 10px; color: #14181F; text-decoration: none"><div style="font-size: 12px; font-weight: 600; color: #8F2507">5:00 PM · Behind</div><div style="font-size: 14px; font-weight: 600; margin-top: 2px">Sophia Martinez</div><div style="font-size: 12px; color: #33415F; margin-top: 4px">UC activities list</div></a>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">THU 26</div>
+<div style="font-size: 13px; color: #5A6272">Thanksgiving</div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">FRI 27</div>
+<a href="#" style="display: block; background: #FDE8DF; border-radius: 8px; padding: 10px; color: #14181F; text-decoration: none"><div style="font-size: 12px; font-weight: 600; color: #8F2507">3:00 PM · Behind</div><div style="font-size: 14px; font-weight: 600; margin-top: 2px">Daniel Wu</div><div style="font-size: 12px; color: #33415F; margin-top: 4px">USC scholarship essay</div></a>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">SAT 28</div>
+<a href="#" style="display: block; background: #DDF1EC; border-radius: 8px; padding: 10px; color: #14181F; text-decoration: none"><div style="font-size: 12px; font-weight: 600; color: #0A5645">10:00 AM · On track</div><div style="font-size: 14px; font-weight: 600; margin-top: 2px">Noah Kim</div><div style="font-size: 12px; color: #33415F; margin-top: 4px">Junior year course plan</div></a>
+<a href="#" style="display: block; background: #FBEFC9; border-radius: 8px; padding: 10px; color: #14181F; text-decoration: none"><div style="font-size: 12px; font-weight: 600; color: #6B4700">1:00 PM · Slipping</div><div style="font-size: 14px; font-weight: 600; margin-top: 2px">Aiden Lin</div><div style="font-size: 12px; color: #33415F; margin-top: 4px">Summer program shortlist</div></a>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 12px; min-height: 420px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; font-weight: 600; color: #5A6272">SUN 29</div>
+<div style="font-size: 13px; color: #5A6272">No meetings</div>
+</div>
+
+</div>
+</div>
+
+<section aria-labelledby="ns-h" style="background: #FFFFFF; border: 1px solid #E1E4EA; border-radius: 12px; padding: 16px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<div><h2 id="ns-h" style="margin: 0; font-size: 15px; font-weight: 600">2 students have no meeting scheduled</h2><p style="margin: 4px 0 0; font-size: 13px; color: #5A6272">Olivia Brooks (last met Oct 30) and Ethan Nguyen (last met Nov 2)</p></div>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #CDD2DC; background: #FFFFFF; color: #14181F; font: 600 14px Inter, sans-serif">Send scheduling links</button>
+</section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

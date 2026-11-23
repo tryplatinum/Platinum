@@ -8,7 +8,7 @@
 // must review it before a Mandarin-speaking parent or counselor sees it.
 
 import { addDays, formatDate, formatDateZh, todayISO } from '../lib/dates'
-import type { AiSource, EssayFeedback, MeetingAI, Recap } from '../types'
+import type { AiSource, EssayFeedback, MeetingAI, Recap, SavedBrief } from '../types'
 
 /** Marks everything in this file as sample text, not model output. */
 export const SAMPLE_SOURCE: AiSource = { kind: 'placeholder', reason: 'Sample draft that ships with the demo.' }
@@ -49,6 +49,10 @@ export function kevinMeetingDrafts(): { ai: MeetingAI; recap: Recap } {
   return {
     ai: {
       source: SAMPLE_SOURCE,
+      notesReview: 'pending',
+      decided: ['NYU (Tandon), Computer Science, is the ED2 choice', 'Personal statement gets rebuilt around the regional qualifier'],
+      progress: ['October SAT: 1530, up from 1490', 'UC PIQ 1 and 2 are final', 'New Saturday Python class at the library'],
+      watch: [`UC PIQ 3 and 4 not started; UC deadline is ${en(6)}`, 'CSS Profile blocked on Dad’s 2025 tax return', 'Mr. Alvarez has not confirmed his recommendation'],
       notes: [
         'Kevin confirmed NYU (Tandon, Computer Science) as his ED2 choice after the campus visit. Mom agrees. Dad wants to see the cost estimate before committing.',
         'Personal statement is still on draft 2. The robot-failure opening works; the middle lists achievements instead of showing how he changed. He agreed to rebuild it around the regional qualifier.',
@@ -199,6 +203,10 @@ export function danielMeetingDrafts(): { ai: MeetingAI; recap: Recap } {
   return {
     ai: {
       source: SAMPLE_SOURCE,
+      notesReview: 'pending',
+      decided: ['PIQ 4 will be about the sneaker resale business', 'USC supplement waits until the UC application is in'],
+      progress: ['Admitted to Indiana (Kelley, direct admit) and Arizona State', 'Practice ACT: 32'],
+      watch: [`UC application due ${en(6)}; PIQ 4 has no draft`, 'Motivation has dropped since the two admits'],
       notes: [
         'Daniel was admitted to Indiana (Kelley direct admit) and Arizona State. He is relieved, and less motivated on the UC essays as a result.',
         `UC application is due ${en(6)}. PIQ 4 has no draft and the activities list is missing hours.`,
@@ -279,6 +287,10 @@ export function genericMeetingDrafts(firstName: string): { ai: MeetingAI; recap:
   return {
     ai: {
       source: SAMPLE_SOURCE,
+      notesReview: 'pending',
+      decided: ['Priorities for the next two weeks agreed'],
+      progress: ['Open tasks reviewed'],
+      watch: [],
       notes: [
         `Reviewed open tasks with ${firstName} and agreed priorities for the next two weeks.`,
         'No changes to the college list.',
@@ -351,6 +363,22 @@ export function danielMeetingTranscript(): string {
 - ACT: took a practice test at home, got a 32 (official score is still 30). He is registered for the December test. Nothing to change until there is an official score.
 - Asked Grace (mom) to sit down with him and compare the Kelley and ASU scholarship letters once both arrive, say by ${en(7)}.
 - He mentioned his dad is pushing for ASU because it is cheaper and closer, and he would rather go to Indiana. He does not want me to raise that with his parents yet.`
+}
+
+/** The AI part of the brief for Kevin's next meeting, so the demo opens with one ready. */
+export function kevinBrief(): SavedBrief {
+  const { today, en } = dateCtx()
+  return {
+    source: SAMPLE_SOURCE,
+    preparedOn: today,
+    headline: `The UC application is due ${en(6)} and PIQ 3 and 4 are still not drafted. The CSS Profile is waiting on Dad.`,
+    agenda: [
+      { topic: 'Draft PIQ 3 together, in the meeting', why: 'He avoids starting alone. One PIQ drafted on the call leaves one for homework.' },
+      { topic: 'Confirm the UC activities section is done', why: 'It is due the day before this meeting.' },
+      { topic: 'Agree how to reach Dad about the tax return', why: 'Two WeChat messages unanswered. A voice message, or ask Mom to raise it.' },
+    ],
+    questions: ['What is making PIQ 3 and 4 hard to start?', 'Which part of the personal statement middle do you already know you want to cut?'],
+  }
 }
 
 // ── Reading a counselor's own notes ─────────────────────────────────────────

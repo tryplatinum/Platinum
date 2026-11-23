@@ -3,7 +3,7 @@
 // each draft. Run with:  npm run test:ai
 //
 // Needs ANTHROPIC_API_KEY and PLATINUM_PASSCODE in .env.local. Each run makes
-// five real model calls. Pass a feature name to run just one:
+// six real model calls. Pass a feature name to run just one:
 //   npm run test:ai -- parentReport
 
 import { POST } from '../api/ai.js'
@@ -11,6 +11,8 @@ import { PASSCODE_HEADER } from '../shared/constants.js'
 import type { Feature } from '../shared/contract.js'
 import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '../src/data/fixtures.js'
 import { buildSeed } from '../src/data/seed.js'
+import { formatDate, formatDateZh } from '../src/lib/dates.js'
+import { daysLate } from '../src/lib/derive.js'
 import { briefFacts, buildFacts, reportFacts } from '../src/lib/facts.js'
 
 const data = buildSeed()
@@ -20,6 +22,7 @@ const sophia = student(IDS.sophia)
 const kevinMeeting = data.meetings.find((m) => m.id === IDS.kevinMeeting)!
 const kevinNext = data.meetings.find((m) => m.studentId === kevin.id && m.status === 'scheduled')!
 const brief = briefFacts(data, kevinNext, kevin)
+const lateParentTask = data.tasks.find((t) => t.studentId === kevin.id && t.owner === 'parent' && t.status !== 'done')!
 
 const inputs: Record<Feature, unknown> = {
   draftFromMeeting: {
@@ -41,6 +44,15 @@ const inputs: Record<Feature, unknown> = {
   },
   parentReport: { facts: buildFacts(data, kevin), parentId: IDS.kevinDad, reportFacts: reportFacts(data, kevin, IDS.kevinDad) },
   essayFeedback: { studentFirstName: kevin.firstName, prompt: KEVIN_ESSAY_PROMPT, essay: KEVIN_ESSAY_TEXT },
+  // A late task owned by Kevin's father, in Simplified Chinese for WeChat.
+  reminderDraft: {
+    facts: buildFacts(data, kevin),
+    recipient: { kind: 'parent', parentId: IDS.kevinDad },
+    channel: 'wechat',
+    language: 'zh-Hans',
+    purpose: 'late',
+    task: { title: lateParentTask.title, owner: 'Dad (Zhang Wei)', dueDate: formatDate(lateParentTask.dueDate), dueDateZh: formatDateZh(lateParentTask.dueDate), daysLate: daysLate(lateParentTask) },
+  },
 }
 
 const only = process.argv[2] as Feature | undefined
