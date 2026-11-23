@@ -36,8 +36,16 @@ function onSession(session: Session | null): void {
   }
   // Token refreshes and tab focus fire this again for the same person: nothing to do.
   if ('userId' in account && account.userId === session.user.id) return
-  void enter(session.user.id, session.user.email ?? '')
+  // At startup Supabase reports the same session twice in a row; load once.
+  if (entering === session.user.id) return
+  entering = session.user.id
+  void enter(session.user.id, session.user.email ?? '').finally(() => {
+    entering = undefined
+  })
 }
+
+/** The user whose firm is being looked up and loaded right now. */
+let entering: string | undefined
 
 let started = false
 

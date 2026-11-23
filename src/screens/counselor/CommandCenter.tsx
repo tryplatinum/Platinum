@@ -8,7 +8,7 @@ import { LogMeetingModal, StudentFormModal } from '../../components/forms'
 import { StudentTable } from '../../components/StudentTable'
 import { AiTag, Button, Card, CardHeader, Empty, LinkButton, PageHeader, SENT_NOTE, useToast } from '../../components/ui'
 import { formatDate, formatDateLong, formatRelative, todayISO } from '../../lib/dates'
-import { findParent, findStudent, fullName, pendingApprovals, summarizeAll, type ApprovalItem } from '../../lib/derive'
+import { WEEKDAYS, findParent, findStudent, fullName, pendingApprovals, summarizeAll, weeklyTextRows, type ApprovalItem } from '../../lib/derive'
 import { reminderQueue } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
 
@@ -22,6 +22,7 @@ export default function CommandCenter() {
   const behind = summaries.filter((s) => s.status === 'behind').length
   const late = summaries.reduce((n, s) => n + s.progress.late, 0)
   const queued = reminderQueue(data).length
+  const weekly = weeklyTextRows(data).length
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
   return (
@@ -75,6 +76,20 @@ export default function CommandCenter() {
             )}
             <p className="text-[13px] text-ink-soft">Nothing in this box has been sent to anyone.</p>
           </Card>
+
+          {weekly > 0 && (
+            <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div>
+                <p className="text-[15px] font-semibold">Weekly texts: {weekly} to send</p>
+                <p className="text-[13px] text-muted">
+                  This week’s text to each student (the week starts on {WEEKDAYS[data.firm.weeklyTextDay]}): next meeting, what is late, what is due. You send them from your own phone.
+                </p>
+              </div>
+              <LinkButton variant="primary" to="/app/messages?tab=weekly">
+                Write this week’s texts
+              </LinkButton>
+            </Card>
+          )}
 
           <Card>
             <CardHeader

@@ -24,6 +24,7 @@ import type {
   StudentDocument,
   StudentLink,
   Task,
+  WeeklyText,
 } from '../types'
 
 type Tables = Database['public']['Tables']
@@ -31,7 +32,7 @@ type Row<T extends keyof Tables> = Tables[T]['Row']
 /** A row as sent to apply_changes: the database supplies firm_id and its own bookkeeping columns. */
 type Out<T extends keyof Tables> = Omit<Row<T>, 'firm_id' | 'seq' | 'created_at' | 'updated_at'>
 
-type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity'
+type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity' | 'weekly_texts'
 
 /** A failed read or write, with a message fit to show the counselor. */
 export class RepoError extends Error {}
@@ -91,6 +92,7 @@ const studentFrom = (r: Row<'students'>, parents: Parent[]): Student => ({
   onboardedOn: r.onboarded_on,
   parents,
   reportSettings: from<Student['reportSettings']>(r.report_settings) ?? { schedule: 'after_meetings', recipientIds: [] },
+  weeklyText: r.weekly_text ? undefined : false,
   archived: r.archived || undefined,
 })
 
@@ -195,6 +197,7 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
   bodyEn: u(r.body_en),
   trigger: r.trigger as OutboxMessage['trigger'],
   taskId: u(r.task_id),
+  note: u(r.note),
   dedupeKey: u(r.dedupe_key),
 })
 
@@ -206,9 +209,22 @@ const activityFrom = (r: Row<'activity'>): ActivityEvent => ({
   text: r.text,
 })
 
+const weeklyTextFrom = (r: Row<'weekly_texts'>): WeeklyText => ({
+  id: r.id,
+  studentId: r.student_id,
+  weekStart: r.week_start,
+  status: r.status as WeeklyText['status'],
+  body: r.body,
+  facts: from<string[]>(r.facts),
+  source: from<WeeklyText['source']>(r.source),
+  approval: from<WeeklyText['approval']>(r.approval),
+  sentVia: u(r.sent_via) as WeeklyText['sentVia'],
+})
+
 const linkFrom = (r: Row<'student_links'>): StudentLink => ({
   id: r.id,
   studentId: r.student_id,
+  token: u(r.token),
   createdAt: stamp(r.created_at),
   revokedAt: r.revoked_at ? stamp(r.revoked_at) : undefined,
 })
@@ -235,6 +251,7 @@ const studentRow = (s: Student): Out<'students'> => ({
   counselor_notes: s.counselorNotes,
   onboarded_on: s.onboardedOn,
   report_settings: json(s.reportSettings),
+  weekly_text: s.weeklyText !== false,
   archived: Boolean(s.archived),
 })
 
@@ -355,6 +372,7 @@ const outboxRow = (o: OutboxMessage): Out<'outbox'> => ({
   body_en: n(o.bodyEn),
   trigger: o.trigger,
   task_id: n(o.taskId),
+  note: n(o.note),
   dedupe_key: n(o.dedupeKey),
 })
 
@@ -366,6 +384,18 @@ const activityRow = (e: ActivityEvent): Out<'activity'> => ({
   text: e.text,
 })
 
+const weeklyTextRow = (w: WeeklyText): Out<'weekly_texts'> => ({
+  id: w.id,
+  student_id: w.studentId,
+  week_start: w.weekStart,
+  status: w.status,
+  body: w.body,
+  facts: json(w.facts),
+  source: json(w.source),
+  approval: json(w.approval),
+  sent_via: n(w.sentVia),
+})
+
 const ruleRow = (r: ReminderRule) => ({ rule: r.id, days: r.days, mode: r.mode })
 
 // ── Changes ─────────────────────────────────────────────────────────────────
@@ -374,7 +404,7 @@ type WriteTable = DataTable | 'reminder_rules'
 
 /** One batch for apply_changes. See supabase/migrations/…_apply_changes.sql. */
 export interface Changes {
-  firm?: { name?: string; displayName?: string }
+  firm?: { name?: string; displayName?: string; weeklyTextDay?: number }
   /** Remove everything the firm has before applying the rest. */
   clear?: boolean
   upsert: Partial<Record<WriteTable, object[]>>
@@ -413,8 +443,9 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
     any = true
   }
 
-  if (before.firm.name !== after.firm.name || before.firm.counselorName !== after.firm.counselorName) {
+  if (before.firm.name !== after.firm.name || before.firm.counselorName !== after.firm.counselorName || before.firm.weeklyTextDay !== after.firm.weeklyTextDay) {
     changes.firm = {}
+    if (before.firm.weeklyTextDay !== after.firm.weeklyTextDay) changes.firm.weeklyTextDay = after.firm.weeklyTextDay
     if (before.firm.name !== after.firm.name) changes.firm.name = after.firm.name
     if (before.firm.counselorName !== after.firm.counselorName) changes.firm.displayName = after.firm.counselorName
     any = true
@@ -440,6 +471,7 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   appended('meetings', before.meetings, after.meetings, meetingRow)
   appended('tasks', before.tasks, after.tasks, taskRow)
   appended('colleges', before.colleges, after.colleges, collegeRow)
+  appended('weekly_texts', before.weeklyTexts, after.weeklyTexts, weeklyTextRow)
 
   // Lists the app adds to at the front (newest first). Rows are sent oldest
   // first, so insertion order in the database matches and loading can reverse it.
@@ -511,8 +543,8 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules] = await Promise.all([
-    supabase.from('firms').select('name').eq('id', firmId).single(),
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts] = await Promise.all([
+    supabase.from('firms').select('name, weekly_text_day').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
     all('parents', firmId, false),
@@ -524,6 +556,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     all('outbox', firmId, true),
     all('activity', firmId, true, ACTIVITY_LIMIT),
     supabase.from('reminder_rules').select('rule, days, mode').eq('firm_id', firmId),
+    all('weekly_texts', firmId, false),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
@@ -532,7 +565,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
   const parentsOf = new Map<ID, Parent[]>()
   for (const p of parents) parentsOf.set(p.student_id, [...(parentsOf.get(p.student_id) ?? []), parentFrom(p)])
   const saved = new Map(rules.data.map((r) => [r.rule, r]))
-  const info: Firm = { name: firm.data.name, counselorName: member.data.display_name, counselorFirstName: firstNameOf(member.data.display_name) }
+  const info: Firm = { name: firm.data.name, weeklyTextDay: firm.data.weekly_text_day, counselorName: member.data.display_name, counselorFirstName: firstNameOf(member.data.display_name) }
 
   return {
     firm: info,
@@ -549,6 +582,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
       return row ? { ...rule, days: row.days, mode: row.mode as ReminderRule['mode'] } : { ...rule }
     }),
     activity: activity.map(activityFrom),
+    weeklyTexts: weeklyTexts.map(weeklyTextFrom),
   }
 }
 
@@ -563,8 +597,9 @@ export async function listStudentLinks(firmId: ID): Promise<StudentLink[]> {
 }
 
 /**
- * Makes a new link for a student. The secret token is returned once, here; the
- * database keeps only its SHA-256 hash, so it cannot be shown again later.
+ * Makes a new link for a student. The database keeps the token (readable by the
+ * firm's members, so the link can go into a weekly text) and its SHA-256 hash,
+ * which is what the server looks a link up by.
  */
 export async function createStudentLink(firmId: ID, studentId: ID, userId: ID): Promise<{ link: StudentLink; token: string }> {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -572,7 +607,7 @@ export async function createStudentLink(firmId: ID, studentId: ID, userId: ID): 
   const hash = toHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))
   const { data, error } = await supabase
     .from('student_links')
-    .insert({ firm_id: firmId, student_id: studentId, token_hash: hash, created_by: userId })
+    .insert({ firm_id: firmId, student_id: studentId, token_hash: hash, token, created_by: userId })
     .select('*')
     .single()
   if (error) fail(error, 'Could not create the link')

@@ -8,8 +8,8 @@
 // NOTE: Chinese templates need a native-speaker review.
 
 import type { AppData, ID, Language, OutboxMessage, Parent, ReminderMode, ReminderRule, Student, Task } from '../types'
-import { daysBetween, formatDate, formatDateZh, todayISO } from './dates'
-import { activeStudents, daysLate, fullName, isLate, isOpen, primaryParent } from './derive'
+import { daysBetween, formatDate, formatDateLong, formatDateZh, formatTime, todayISO, type ISODate } from './dates'
+import { activeStudents, daysLate, fullName, isLate, isOpen, primaryParent, type WeeklyTextItems } from './derive'
 import { zhGiven, zhGreeting } from './language'
 
 export interface ReminderDraft {
@@ -132,4 +132,96 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
     }
   }
   return queue
+}
+
+// ── The weekly text ─────────────────────────────────────────────────────────
+// One short text per student per week. The facts below are computed here and
+// must appear in the text unchanged, whether the AI words it or the fixed
+// template does.
+
+/** A text message this long still arrives as one conversation bubble on most phones. */
+export const WEEKLY_TEXT_MAX = 480
+const WEEKLY_TEXT_MAX_ITEMS = 4
+
+export interface WeeklyTextFacts {
+  firstName: string
+  counselorFirstName: string
+  /** "Tue, Nov 26 at 4:00 PM" */
+  meeting?: string
+  /** Late tasks first, most overdue first. `late` reads "3 days late". */
+  late: { title: string; due: string; late: string }[]
+  /** Then tasks due in the next 7 days. */
+  due: { title: string; due: string }[]
+  /** Tasks left out of the two lists, written as "and N more". 0 when none. */
+  more: number
+  /** The student's own no-login link to their tasks. */
+  link?: string
+}
+
+/**
+ * The facts for one student's text. At most four tasks are named (late ones
+ * first); the rest become "and N more". Fewer are named when four would push
+ * the fixed template past the length limit.
+ */
+export function weeklyTextFacts(student: Student, counselorFirstName: string, items: WeeklyTextItems, link?: string, today: ISODate = todayISO()): WeeklyTextFacts {
+  const all = [...items.late, ...items.due]
+  const build = (count: number): WeeklyTextFacts => {
+    const shown = new Set(all.slice(0, count).map((t) => t.id))
+    return {
+      firstName: student.firstName,
+      counselorFirstName,
+      meeting: items.meeting && `${formatDateLong(items.meeting.date)} at ${formatTime(items.meeting.time)}`,
+      late: items.late.filter((t) => shown.has(t.id)).map((t) => {
+        const n = daysLate(t, today)
+        return { title: t.title, due: formatDate(t.dueDate), late: `${n} ${n === 1 ? 'day' : 'days'} late` }
+      }),
+      due: items.due.filter((t) => shown.has(t.id)).map((t) => ({ title: t.title, due: formatDate(t.dueDate) })),
+      more: all.length - shown.size,
+      link,
+    }
+  }
+  for (let count = Math.min(WEEKLY_TEXT_MAX_ITEMS, all.length); count > 0; count--) {
+    const facts = build(count)
+    if (weeklyTextTemplate(facts).length <= WEEKLY_TEXT_MAX) return facts
+  }
+  return build(0)
+}
+
+/** The fixed wording. Used when the AI is unavailable or its draft dropped a fact. */
+export function weeklyTextTemplate(f: WeeklyTextFacts): string {
+  const parts = [`Hi ${f.firstName}, here is your week.`]
+  if (f.meeting) parts.push(`We meet ${f.meeting}.`)
+  if (f.late.length) parts.push(`Late: ${f.late.map((t) => `“${t.title}” (was due ${t.due}, ${t.late})`).join('; ')}.`)
+  if (f.due.length) parts.push(`Due soon: ${f.due.map((t) => `“${t.title}” (${t.due})`).join('; ')}.`)
+  if (f.more) parts.push(`And ${f.more} more.`)
+  if (f.link) parts.push(`Your tasks: ${f.link}`)
+  return parts.join(' ')
+}
+
+/** Every string that must appear in the text exactly as computed. */
+export function weeklyTextRequired(f: WeeklyTextFacts): string[] {
+  return [
+    ...(f.meeting ? [f.meeting] : []),
+    ...f.late.flatMap((t) => [t.title, t.due, t.late]),
+    ...f.due.flatMap((t) => [t.title, t.due]),
+    ...(f.more ? [`and ${f.more} more`] : []),
+    ...(f.link ? [f.link] : []),
+  ]
+}
+
+/** The required strings that `text` does not contain. "and N more" may start a sentence, so its case is ignored. */
+export function weeklyTextMissing(text: string, f: WeeklyTextFacts): string[] {
+  const lower = text.toLowerCase()
+  return weeklyTextRequired(f).filter((fact) => (fact.startsWith('and ') ? !lower.includes(fact) : !text.includes(fact)))
+}
+
+/** The facts as lines for the counselor to read beside the draft. */
+export function weeklyTextFactLines(f: WeeklyTextFacts): string[] {
+  return [
+    f.meeting ? `Next meeting: ${f.meeting}` : 'No meeting in the next 7 days',
+    ...f.late.map((t) => `Late: ${t.title} (was due ${t.due}, ${t.late})`),
+    ...f.due.map((t) => `Due: ${t.title} (${t.due})`),
+    ...(f.more ? [`and ${f.more} more`] : []),
+    f.link ? `Link: ${f.link}` : 'No link in this text',
+  ]
 }

@@ -31,7 +31,7 @@ import { addDays, daysBetween, formatDate, formatDateZh, todayISO } from '../lib
 import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, ownerLabel, tasksFor } from '../lib/derive'
 import { briefFacts, buildFacts, reportFacts, type BriefFacts } from '../lib/facts'
 import { zhGiven, zhGreeting } from '../lib/language'
-import { parentText, studentText, type ReminderKind } from '../lib/reminders'
+import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextMissing, weeklyTextTemplate, type ReminderKind, type WeeklyTextFacts } from '../lib/reminders'
 import type {
   AiSource,
   AppData,
@@ -501,5 +501,48 @@ export function reminderDraft(data: AppData, student: Student, task: Task, to: R
         ? { ...base, body: en, source, warnings: [] }
         : { ...base, body: parentText(purpose, language, to.parent, student, task, late), bodyEn: en, source, warnings: [] }
     },
+  )
+}
+
+// ── 7. The weekly text to a student ─────────────────────────────────────────
+
+export interface WeeklyTextDraft {
+  body: string
+  /** The fact lines the text was built from, for the counselor to read beside it. */
+  facts: string[]
+  source: AiSource
+}
+
+/**
+ * This week's short text to one student. Every fact (meeting time, task titles,
+ * due dates, days late, the link) is computed in lib/reminders.ts and passed
+ * in; the counselor's private notes are not. The model only chooses the words
+ * around the facts. If its text changes or drops any fact, or runs long, the
+ * fixed template is used instead and labelled.
+ */
+export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en'): Promise<WeeklyTextDraft> {
+  const lines = weeklyTextFactLines(facts)
+  const template = (reason: string): WeeklyTextDraft => ({ body: weeklyTextTemplate(facts), facts: lines, source: { kind: 'placeholder', reason } })
+  return withPlaceholder<WeeklyTextDraft>(
+    async () => {
+      const { draft, model } = await callAi('weeklyText', {
+        today: todayISO(),
+        studentFirstName: facts.firstName,
+        counselorFirstName: facts.counselorFirstName,
+        language,
+        meeting: facts.meeting,
+        late: facts.late,
+        due: facts.due,
+        more: facts.more,
+        link: facts.link,
+        maxChars: WEEKLY_TEXT_MAX,
+      })
+      const text = draft.text.trim()
+      const missing = weeklyTextMissing(text, facts)
+      if (missing.length) return template(`The AI draft changed or left out “${missing[0]}”, so the fixed template is used instead.`)
+      if (text.length > WEEKLY_TEXT_MAX) return template(`The AI draft was ${text.length} characters, over the limit of ${WEEKLY_TEXT_MAX}, so the fixed template is used instead.`)
+      return { body: text, facts: lines, source: claude(model) }
+    },
+    (source) => template(source.kind === 'placeholder' ? source.reason : ''),
   )
 }

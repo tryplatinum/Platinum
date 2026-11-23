@@ -4,7 +4,7 @@ A workspace for private college counselors: every student in one place, with an 
 
 It is still a v0. Four limits matter before you put real work in it:
 
-1. **Nothing is delivered.** Reminders, parent reports, recaps and feedback are written to a log (Messages sent). Use "Copy" to paste a message into email, text, WeChat or LINE yourself.
+1. **Nothing is delivered.** Reminders, parent reports, recaps and feedback are written to a log (Messages sent). Use "Copy" to paste a message into email, text, WeChat or LINE yourself. The weekly text to each student is the same: Platinum writes it, and you send it from your own phone.
 2. **AI requests send data to Anthropic.** When AI is connected, the facts for one student (first name, scores, tasks, deadlines, your pasted notes or essay text) are sent to Anthropic's API to write a draft. Last names, emails, phone numbers and messaging handles are left out. There is no privacy agreement in place, and students are minors: decide whether that is acceptable before entering real students.
 3. **Nothing AI-written reaches a student or parent until you approve it.** Each approval records who approved (name and account) and when.
 4. **A student link is a password.** Anyone holding a student's link can see that student's page and mark their tasks done. Send it only to the student, and revoke it if it leaks.
@@ -29,7 +29,7 @@ npm run dev                    # http://localhost:5173
 | `npm run db:push` | Apply the SQL in `supabase/migrations/` to the linked Supabase project |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` from the linked project |
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
-| `npm run test:ai` | Call all six AI features for real and print the drafts |
+| `npm run test:ai` | Call all seven AI features for real and print the drafts |
 
 ### Environment variables
 
@@ -41,6 +41,7 @@ In `.env.local` (git-ignored) for local work, and in the host's settings for a d
 | `VITE_SUPABASE_ANON_KEY` | browser and server | The **anon / publishable** key (`sb_publishable_…` or a JWT with role `anon`). Public by design: row level security decides what it can reach. |
 | `SUPABASE_SERVICE_ROLE_KEY` | server only | The **service role / secret** key (`sb_secret_…`). Bypasses row level security. Used only by the student link function. Never give it a `VITE_` name: anything with that prefix is shipped to the browser. |
 | `ANTHROPIC_API_KEY` | server only | Your Anthropic key. Without it the app still runs and AI drafts are labelled placeholders. |
+| `VITE_PUBLIC_URL` | browser, optional | The address students reach the app at, used for the link in weekly texts. Only needed when you open the app at a different address from the one students use. |
 | `ANTHROPIC_MODEL` | server only, optional | Model for every AI feature. Default `claude-sonnet-5-5`. |
 | `AI_REFUSAL_FALLBACK` | server only, optional | `off` stops the API re-running a declined request on a fallback model. |
 
@@ -76,6 +77,7 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | AI drafts (meeting follow-through, tasks from notes, brief, parent report, essay feedback, reminders) | **Real**, via a server function calling Claude, for signed-in members of a firm. Labelled placeholders when the server has no API key |
 | Approvals | **Real.** Drafts become tasks, profile changes, recaps and reports only on approval, with the approver's name, account id and time |
 | Sending (email, text, WeChat, LINE) | **Faked.** Every send writes to Messages sent and the confirmation says "Delivery is not connected in v0" |
+| Weekly text to each student | **Real** drafts and a real record of what was sent or skipped each week. **You** send each text from your own phone ("Copy" or "Open in Messages"); Platinum texts nobody |
 | Reminder rules and queue | Real rules, real queue, fixed wording. No scheduler: a button stands in for the daily send |
 | Report schedule | A recorded intention. Nothing is drafted on a timer |
 | Meeting recording | None. You paste or type notes or a transcript |
@@ -96,12 +98,22 @@ screen ─▶ src/services/ai.ts ─▶ POST /api/ai ─▶ server/claude.ts ─
         draft, review: 'pending' ─▶ counselor approves ─▶ store ─▶ database
 ```
 
-- **Screens call only `src/services/ai.ts`** (and `services/workflows.ts`, which stores its results as pending drafts): `draftFromMeeting`, `readNotes`, `preMeetingBrief`, `parentReport`, `essayFeedback`, `reminderDraft`.
+- **Screens call only `src/services/ai.ts`** (and `services/workflows.ts`, which stores its results as pending drafts): `draftFromMeeting`, `readNotes`, `preMeetingBrief`, `parentReport`, `essayFeedback`, `reminderDraft`, `weeklyText`.
 - **Facts are ours, wording is the model's.** Overdue items, days late and deadlines are computed in our code, sent in, and shown beside the draft. No output schema lets the model supply them. The reminder draft is checked on return: if the task title, due date or days late is not in the text as given, the counselor sees a warning.
 - **Fixed shapes.** `shared/contract.ts` has a Zod input and output schema per feature.
 - **Errors are shown.** A refusal or a draft cut off at `max_tokens` is discarded and the counselor sees why. Placeholders are used only when real drafts are unavailable (no endpoint, or a server with no API key).
 - **Essay guardrail.** The essay schema has an observation, a question and a location per note, and no field for replacement text. The screen says "Feedback only. Platinum never writes or rewrites essay text."
 - **Prompts** are in `server/prompts.ts`.
+
+### The weekly text
+
+Messages → **Weekly texts** lists every included student who has a late task, a task due in the next 7 days, or a meeting in the next 7 days. "Draft all" prepares one short text each (under 480 characters) with a progress count, and carries on past a draft that fails.
+
+- **A week starts on the firm's weekly text day** (default Sunday, set on that tab) and runs for seven days. A student leaves the list when their text is sent or skipped, and comes back when the next week starts. A student can be left out for good with the switch on their profile.
+- **The facts are ours.** The meeting time, task titles, due dates, days late, "and N more" and the link are built in `src/lib/reminders.ts` (who gets a text is decided in `src/lib/derive.ts`). At most four tasks are named, late ones first. The model only chooses the words around them. On return, the code checks that every fact string is in the text unchanged and that the text fits; if not, the fixed template is used and labelled. The counselor's private notes are never sent to this feature.
+- **The link is the student's own no-login link.** One is created when a text is drafted if the student has none. Links are now kept so they can be reused each week (see below). When the app is open at an address only your computer can reach (localhost), the link is left out and the screen says so.
+- **You send it.** "Copy" puts the text on the clipboard. "Open in Messages" is an `sms:` link that opens your own messaging app with the number and text filled in; on a computer without one, nothing happens, so Copy is always beside it. Pressing either is your approval: it records who and when, writes the text to Messages sent with the note "Sent from your own phone", and marks that week's text sent. Platinum cannot know whether you then pressed send on your phone.
+- **Students have no language setting yet**, so the text is in English.
 
 ### Who can call the AI endpoint
 
@@ -131,7 +143,7 @@ Row level security is on for every table. Each has the same four policies: the r
 
 ### The student link
 
-A student opens `/s/<token>` on their own phone, with no login. The token is 32 random bytes; the database stores only its SHA-256 hash, so a link is shown once when created and cannot be read back. Tables are **not** opened to anonymous users for this. Instead `api/student.ts` looks the token up with the service role key and returns only what the page needs: first name, upcoming meetings, open and recently finished tasks, application deadlines, the latest approved recap and approved essay feedback. No parent details, no counselor notes, no drafts, no transcripts, no other students.
+A student opens `/s/<token>` on their own phone, with no login. The token is 32 random bytes. The server finds a link by the token's SHA-256 hash. Since the weekly text, the token itself is also kept, readable by the firm's members under the same row level security as the rest of that student's data, so the link can be put in each week's text and copied again. A link made before that has no stored copy: it works, and can be revoked, but cannot be shown again. Tables are **not** opened to anonymous users for this. Instead `api/student.ts` looks the token up with the service role key and returns only what the page needs: first name, upcoming meetings, open and recently finished tasks, application deadlines, the latest approved recap and approved essay feedback. No parent details, no counselor notes, no drafts, no transcripts, no other students.
 
 It accepts three writes, each checked against the token's student and limited to tasks that student owns: mark a task done or not done, leave a progress note, attach a link. Each is recorded in the activity log as done by the student. Requests are rate limited by token and by address (in memory, like the AI endpoint). An unknown token and a revoked one get the same 404.
 
@@ -143,7 +155,7 @@ It accepts three writes, each checked against the token's student and limited to
 api/ai.ts                 Server function: AI drafts for signed-in members of a firm
 api/student.ts            Server function: the student link (read the page, three writes)
 server/claude.ts          The Claude call (SDK, structured output, error mapping)
-server/prompts.ts         Instructions for each AI feature
+server/prompts.ts         Instructions for each AI feature (seven)
 server/supabase.ts        Server-side Supabase: verify a session, the service role client
 server/studentLink.ts     What a student link may read and change. The boundary for students
 server/rateLimit.ts       The in-memory rate limit both functions use
@@ -167,7 +179,7 @@ src/store/migrate.ts      Reads data saved by versions before accounts, for the 
 src/lib/derive.ts         Derived facts: late, progress, deadlines, waiting on, status,
                           essay groups, document categories, meeting buckets, approvals
 src/lib/facts.ts          Facts sent to the AI and shown beside drafts
-src/lib/reminders.ts      Reminder queue and fixed wording (three languages)
+src/lib/reminders.ts      Reminder queue and fixed wording (three languages); weekly text facts and template
 src/services/ai.ts        The AI module. Real endpoint, labelled placeholder fallback
 src/services/studentLink.ts  The browser side of the student link
 src/services/workflows.ts Draft a meeting / prepare a brief and store the result
@@ -183,7 +195,7 @@ src/components/StudentTable.tsx, TaskRows.tsx, ReminderComposer.tsx, Bilingual.t
 src/components/meeting/   MeetingReview (numbered sections), MeetingReport, BriefCard
 
 src/screens/counselor/    CommandCenter, Students, StudentPage (+ student/ tabs),
-                          Meetings (by student, calendar), Messages, SignIn (+ firm setup, reset)
+                          Meetings (by student, calendar), Messages, WeeklyTexts, SignIn (+ firm setup, reset)
 src/screens/student/      The student's phone-width view, and its layout for the secret link
 src/App.tsx               All routes, and redirects from the old URLs
 ```
@@ -214,7 +226,10 @@ Rules of thumb:
 - **No backups of your own, no export.** The data is in your Supabase project; backups are whatever your Supabase plan provides.
 - **Rate limits are in memory** on both server functions. See above.
 - **Last save wins.** No realtime and no conflict handling between two devices editing the same thing.
-- **A student link cannot be shown again** after it is created, and it does not expire on its own. Revoke and recreate.
+- **A student link does not expire on its own**, and anyone in the firm can read it. Revoke it if it leaks.
+- **Weekly texts are English only** and one caseload draft is up to one AI request per student: more than 30 students in five minutes will hit the rate limit, and the rows that failed say so and can be drafted again.
+- **A sent weekly text means "handed to you"**, not "delivered".
+- **Leaving the page in the instant a change is being saved** makes the browser ask first; if you leave anyway, that change is lost.
 - **The activity list shows the latest 300 entries.** Older ones stay in the database.
 - **Placeholder drafts recognise sample students by name**, since their ids are new each time the sample is loaded.
 - **No privacy setup for real students.** See limit 2.

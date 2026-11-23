@@ -124,7 +124,7 @@ export async function studentPage(link: Link): Promise<AppData> {
   })
 
   return {
-    firm: { name: firm.data!.name, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
+    firm: { name: firm.data!.name, weeklyTextDay: 0, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
     students: [
       {
         id: s.id,
@@ -153,6 +153,7 @@ export async function studentPage(link: Link): Promise<AppData> {
     outbox: [],
     reminderRules: [],
     activity: [],
+    weeklyTexts: [],
   }
 }
 

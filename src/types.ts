@@ -96,6 +96,8 @@ export interface Student {
   onboardedOn: ISODate
   parents: Parent[]
   reportSettings: ReportSettings
+  /** False leaves this student out of the weekly texts. Absent means included. */
+  weeklyText?: boolean
   /** Archived students keep their history but leave every list. */
   archived?: boolean
 }
@@ -346,7 +348,7 @@ export interface ParentReport {
   approval?: Approval
 }
 
-export type OutboxKind = 'parent_report' | 'reminder_upcoming' | 'reminder_late' | 'meeting_recap' | 'essay_feedback'
+export type OutboxKind = 'parent_report' | 'reminder_upcoming' | 'reminder_late' | 'meeting_recap' | 'essay_feedback' | 'weekly_text'
 
 /** One entry in the "Messages sent" log. Nothing is ever really delivered in v0. */
 export interface OutboxMessage {
@@ -365,6 +367,8 @@ export interface OutboxMessage {
   /** 'automatic' = sent by a rule the counselor switched on. 'approved' = counselor pressed the button. */
   trigger: 'automatic' | 'approved'
   taskId?: ID
+  /** How it went out, when that is worth saying: "Sent from your own phone". */
+  note?: string
   /** Lets the reminder queue know this reminder has already gone out. */
   dedupeKey?: string
 }
@@ -388,10 +392,31 @@ export interface ActivityEvent {
   text: string
 }
 
-/** A secret link that opens one student's page without a login. The secret itself is never stored. */
+/**
+ * The weekly text for one student for one week: the draft, then whether the
+ * counselor sent it (from their own phone) or skipped it.
+ */
+export interface WeeklyText {
+  id: ID
+  studentId: ID
+  /** The first day of the week it belongs to: the firm's weekly text day. */
+  weekStart: ISODate
+  status: 'draft' | 'sent' | 'skipped'
+  body: string
+  /** Fact lines computed by our code that the text was built from. Shown beside the draft. */
+  facts?: string[]
+  source?: AiSource
+  /** Set when the counselor pressed Copy or Open in Messages. */
+  approval?: Approval
+  sentVia?: 'copy' | 'sms'
+}
+
+/** A secret link that opens one student's page without a login. */
 export interface StudentLink {
   id: ID
   studentId: ID
+  /** The secret. Absent on links made before tokens were kept: those work but cannot be shown again. */
+  token?: string
   createdAt: string
   revokedAt?: string
 }
@@ -400,6 +425,8 @@ export interface StudentLink {
 
 export interface Firm {
   name: string
+  /** The day each week's texts to students start: 0 = Sunday … 6 = Saturday. */
+  weeklyTextDay: number
   counselorName: string
   counselorFirstName: string
 }
@@ -416,4 +443,5 @@ export interface AppData {
   outbox: OutboxMessage[]
   reminderRules: ReminderRule[]
   activity: ActivityEvent[]
+  weeklyTexts: WeeklyText[]
 }

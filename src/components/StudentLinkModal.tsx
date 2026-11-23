@@ -1,6 +1,7 @@
 // Create, copy and revoke the secret link that opens a student's own page on
-// their phone without a login. The link is shown once, when it is made: only a
-// hash of it is stored, so nobody (including us) can read it back later.
+// their phone without a login. Links are kept so they can go into the weekly
+// text and be copied again; a link made before that was the case has no stored
+// copy and can only be revoked.
 
 import { useState } from 'react'
 import { formatTimestamp } from '../lib/dates'
@@ -32,9 +33,9 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
       setFresh(`${window.location.origin}/s/${token}`)
     })
 
-  const copy = () =>
+  const copy = (url: string) =>
     attempt(async () => {
-      await navigator.clipboard.writeText(fresh)
+      await navigator.clipboard.writeText(url)
       toast('Link copied. Send it to the student yourself.')
     })
 
@@ -48,10 +49,10 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
 
         {fresh ? (
           <div className="flex flex-col gap-2 rounded-lg border border-accent-line bg-accent-soft p-3">
-            <SectionLabel>New link. Copy it now: it cannot be shown again.</SectionLabel>
+            <SectionLabel>New link</SectionLabel>
             <input className={inputClass} readOnly value={fresh} aria-label="Student link" onFocus={(e) => e.target.select()} />
             <div>
-              <Button variant="primary" onClick={() => void copy()} disabled={busy}>
+              <Button variant="primary" onClick={() => void copy(fresh)} disabled={busy}>
                 Copy link
               </Button>
             </div>
@@ -73,6 +74,11 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
               {links.map((link) => (
                 <li key={link.id} className="flex items-center justify-between gap-3 border-t border-line py-2 text-sm first:border-t-0">
                   <span>Created {formatTimestamp(link.createdAt)}</span>
+                  {link.token && (
+                    <Button disabled={busy} onClick={() => void copy(`${window.location.origin}/s/${link.token}`)}>
+                      Copy
+                    </Button>
+                  )}
                   <Button
                     variant="danger"
                     disabled={busy}

@@ -266,18 +266,21 @@ export type Database = {
           id: string
           name: string
           updated_at: string
+          weekly_text_day: number
         }
         Insert: {
           created_at?: string
           id?: string
           name: string
           updated_at?: string
+          weekly_text_day?: number
         }
         Update: {
           created_at?: string
           id?: string
           name?: string
           updated_at?: string
+          weekly_text_day?: number
         }
         Relationships: []
       }
@@ -367,6 +370,7 @@ export type Database = {
           id: string
           kind: string
           language: string
+          note: string | null
           parent_id: string | null
           sent_at: string
           seq: number
@@ -387,6 +391,7 @@ export type Database = {
           id?: string
           kind: string
           language: string
+          note?: string | null
           parent_id?: string | null
           sent_at?: string
           seq?: number
@@ -407,6 +412,7 @@ export type Database = {
           id?: string
           kind?: string
           language?: string
+          note?: string | null
           parent_id?: string | null
           sent_at?: string
           seq?: number
@@ -643,6 +649,7 @@ export type Database = {
           id: string
           revoked_at: string | null
           student_id: string
+          token: string | null
           token_hash: string
           updated_at: string
         }
@@ -653,6 +660,7 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id: string
+          token?: string | null
           token_hash: string
           updated_at?: string
         }
@@ -663,6 +671,7 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id?: string
+          token?: string | null
           token_hash?: string
           updated_at?: string
         }
@@ -709,6 +718,7 @@ export type Database = {
           seq: number
           tests: Json
           updated_at: string
+          weekly_text: boolean
         }
         Insert: {
           activities?: Json
@@ -735,6 +745,7 @@ export type Database = {
           seq?: number
           tests?: Json
           updated_at?: string
+          weekly_text?: boolean
         }
         Update: {
           activities?: Json
@@ -761,6 +772,7 @@ export type Database = {
           seq?: number
           tests?: Json
           updated_at?: string
+          weekly_text?: boolean
         }
         Relationships: [
           {
@@ -873,6 +885,69 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "parents"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      weekly_texts: {
+        Row: {
+          approval: Json | null
+          body: string
+          created_at: string
+          facts: Json | null
+          firm_id: string
+          id: string
+          sent_via: string | null
+          seq: number
+          source: Json | null
+          status: string
+          student_id: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          approval?: Json | null
+          body?: string
+          created_at?: string
+          facts?: Json | null
+          firm_id: string
+          id?: string
+          sent_via?: string | null
+          seq?: number
+          source?: Json | null
+          status: string
+          student_id: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          approval?: Json | null
+          body?: string
+          created_at?: string
+          facts?: Json | null
+          firm_id?: string
+          id?: string
+          sent_via?: string | null
+          seq?: number
+          source?: Json | null
+          status?: string
+          student_id?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_texts_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weekly_texts_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
           },
         ]
       }

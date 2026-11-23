@@ -14,8 +14,9 @@ import type {
   Student,
   StudentDocument,
   Task,
+  WeeklyText,
 } from '../types'
-import { daysBetween, daysFromToday, todayISO, type ISODate } from './dates'
+import { addDays, daysBetween, daysFromToday, parseISODate, todayISO, type ISODate } from './dates'
 
 // ── People ──────────────────────────────────────────────────────────────────
 
@@ -474,4 +475,74 @@ export function summarizeAll(data: AppData): StudentSummary[] {
 export function statusText(s: Pick<StudentSummary, 'status' | 'progress'>): string {
   const label = { behind: 'Behind', slipping: 'Slipping', on_track: 'On track', new: 'Just onboarded' }[s.status]
   return s.progress.late > 0 ? `${label} · ${s.progress.late} late` : label
+}
+
+// ── Weekly texts ────────────────────────────────────────────────────────────
+
+/** How far ahead a weekly text looks, in days. */
+export const WEEKLY_TEXT_LOOKAHEAD_DAYS = 7
+
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/**
+ * The first day of the current weekly-text week: the firm's chosen weekday, on
+ * or before today. A week runs from that day until the day before the next
+ * one, so each student is texted (or skipped) at most once per week.
+ */
+export function weeklyTextWeek(day: number, today: ISODate = todayISO()): ISODate {
+  return addDays(today, -((parseISODate(today).getDay() - day + 7) % 7))
+}
+
+/** What a student's weekly text is about. */
+export interface WeeklyTextItems {
+  /** The student's next meeting, if it is within the lookahead. */
+  meeting?: Meeting
+  /** The student's own late tasks, most overdue first. */
+  late: Task[]
+  /** The student's own open tasks due within the lookahead, soonest first. */
+  due: Task[]
+}
+
+/** The meeting and tasks a weekly text would mention, or undefined when there is nothing to say. */
+export function weeklyTextItems(data: AppData, studentId: ID, today: ISODate = todayISO()): WeeklyTextItems | undefined {
+  const horizon = addDays(today, WEEKLY_TEXT_LOOKAHEAD_DAYS)
+  const mine = tasksFor(data, studentId)
+    .filter((t) => isOpen(t) && t.owner === 'student')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  const late = mine.filter((t) => isLate(t, today))
+  const due = mine.filter((t) => !isLate(t, today) && t.dueDate <= horizon)
+  const meeting = meetingsFor(data, studentId)
+    .filter((m) => m.status === 'scheduled' && m.date >= today && m.date <= horizon)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0]
+  return meeting || late.length || due.length ? { meeting, late, due } : undefined
+}
+
+export interface WeeklyTextRow {
+  student: Student
+  weekStart: ISODate
+  items: WeeklyTextItems
+  /** This week's draft, if one has been prepared. */
+  draft?: WeeklyText
+}
+
+/**
+ * The weekly texts still to send this week: every included student with a late
+ * task, a task due soon or a meeting coming up, whose text for this week has
+ * not been sent or skipped.
+ */
+export function weeklyTextRows(data: AppData, today: ISODate = todayISO()): WeeklyTextRow[] {
+  const weekStart = weeklyTextWeek(data.firm.weeklyTextDay, today)
+  return activeStudents(data).flatMap((student) => {
+    if (student.weeklyText === false) return []
+    const record = data.weeklyTexts.find((w) => w.studentId === student.id && w.weekStart === weekStart)
+    if (record && record.status !== 'draft') return []
+    const items = weeklyTextItems(data, student.id, today)
+    return items ? [{ student, weekStart, items, draft: record }] : []
+  })
+}
+
+/** This week's texts that were sent or skipped, latest first. */
+export function weeklyTextsDone(data: AppData, today: ISODate = todayISO()): WeeklyText[] {
+  const weekStart = weeklyTextWeek(data.firm.weeklyTextDay, today)
+  return data.weeklyTexts.filter((w) => w.weekStart === weekStart && w.status !== 'draft').reverse()
 }
