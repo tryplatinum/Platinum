@@ -17,6 +17,8 @@ const useStudent = () => useOutletContext<Student>()
 export function StudentHome() {
   const data = useData()
   const student = useStudent()
+  // The profile form is part of the counselor's preview only; the student link allows three writes, all on tasks.
+  const onLink = useStore((s) => s.mode === 'student_link')
   const [showDone, setShowDone] = useState(false)
   const all = tasksFor(data, student.id)
   const mine = sortByUrgency(all.filter((t) => t.owner === 'student'))
@@ -162,9 +164,9 @@ export function StudentHome() {
         </Card>
       )}
 
-      <Link to="profile" className="flex min-h-11 items-center justify-center rounded-lg border border-line-strong bg-surface text-sm font-semibold text-accent hover:bg-canvas">
+      {!onLink && <Link to="profile" className="flex min-h-11 items-center justify-center rounded-lg border border-line-strong bg-surface text-sm font-semibold text-accent hover:bg-canvas">
         Update my scores and activities
-      </Link>
+      </Link>}
     </>
   )
 }
