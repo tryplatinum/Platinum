@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { FAVICON, PRODUCT_NAME } from './src/brand'
 
 // The app is a static single-page site plus four server functions: api/ai.ts
 // (AI drafts), api/documents.ts (stored files), api/colleges.ts (the college
@@ -53,8 +54,16 @@ function devApi(): Plugin {
   }
 }
 
+/** index.html takes the product name and favicon from src/brand.ts, like everything else. */
+function brandHtml(): Plugin {
+  return {
+    name: 'brand-html',
+    transformIndexHtml: (html) => html.replaceAll('%PRODUCT_NAME%', PRODUCT_NAME).replaceAll('%FAVICON%', FAVICON),
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   for (const key of SERVER_ENV) if (env[key] && !process.env[key]) process.env[key] = env[key]
-  return { plugins: [react(), tailwindcss(), devApi()] }
+  return { plugins: [react(), tailwindcss(), devApi(), brandHtml()] }
 })

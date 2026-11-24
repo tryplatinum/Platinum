@@ -1,53 +1,110 @@
 @import 'tailwindcss';
 
-/* Design tokens: the approved v2 palette. Screens use these names (bg-surface,
-   text-ink, bg-accent-soft…) and never raw hex values, so the look is tuned in
-   one place. Every text/background pair used here meets 4.5:1 contrast. */
+/* Design tokens: the brand palette from design/brand/. Screens use these names
+   (bg-surface, text-ink, bg-accent-soft…) and never raw hex values, so the look
+   is tuned in one place. Every text/background pair used meets 4.5:1 contrast,
+   and every edge that is the only way to see a control meets 3:1. The README's
+   "Design system" section lists what each token is for. */
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'PingFang TC',
+  /* Inter for body and UI, Manrope for headings. Both keep the CJK fallbacks so
+     Chinese text renders in the system's font. */
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'PingFang TC',
     'Microsoft YaHei', 'Microsoft JhengHei', 'Noto Sans CJK SC', sans-serif;
+  --font-display: 'Manrope Variable', 'Manrope', 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    'PingFang SC', 'PingFang TC', 'Microsoft YaHei', 'Microsoft JhengHei', 'Noto Sans CJK SC', sans-serif;
 
-  --color-canvas: #f4f5f7;
-  --color-surface: #ffffff;
-  --color-line: #e1e4ea;
-  --color-line-strong: #cdd2dc; /* inputs and secondary buttons */
-  --color-track: #e6e9ef; /* the empty part of a progress bar */
-  --color-ink: #14181f;
-  --color-ink-soft: #33415f;
-  --color-muted: #5a6272;
+  --color-canvas: #f9f8f6; /* page background */
+  --color-surface: #ffffff; /* cards, modals */
+  --color-surface-2: #f1f3f6; /* table headers, hover rows, disabled inputs */
+  --color-line: #e6ebf1; /* card borders, dividers: decorative */
+  --color-line-strong: #7f8ca0; /* inputs, checkboxes, secondary buttons: the edge is the only way to see them */
+  --color-track: #e6ebf1; /* the empty part of a progress bar */
+  --color-chip: #e6ebf1; /* neutral chip background; text is ink-soft */
+  --color-heading: #11284b; /* h1 to h3, card titles */
+  --color-ink: #151e2d; /* body text */
+  --color-ink-soft: #23436b; /* emphasised secondary text, chip text */
+  --color-muted: #53647a; /* secondary text */
+  --color-silver: #adb7c7; /* decoration only, never text */
 
-  --color-accent: #1d3fd1;
-  --color-accent-hover: #142c94;
-  --color-accent-soft: #eef1fe;
-  --color-accent-soft-2: #e4e9fd;
-  --color-accent-line: #c9d2fa;
+  /* Filled buttons only. */
+  --color-primary: #11284b;
+  --color-primary-hover: #23436b;
+
+  /* Links, the selected tab, the focus ring, AI. */
+  --color-accent: #355e91;
+  --color-accent-hover: #23436b;
+  --color-accent-soft: #e8eff8;
+  --color-accent-soft-2: #d7e2ef;
+  --color-accent-line: #d7e2ef;
 
   /* AI drafts are marked by an "AI draft" tag and the soft blue panel, not by
      their own colour. These aliases keep the meaning searchable in the code. */
   --color-ai: var(--color-accent);
   --color-ai-soft: var(--color-accent-soft);
 
-  /* behind, late */
-  --color-bad: #8f2507;
-  --color-bad-soft: #fde8df;
-  --color-bad-bar: #b93a0f;
-  --color-bad-line: #f3c4b2;
-  --color-bad-tint: #fff8f5;
-  /* slipping */
-  --color-warn: #6b4700;
-  --color-warn-soft: #fbefc9;
-  --color-warn-bar: #a8770a;
-  /* on track, done */
-  --color-good: #0a5645;
-  --color-good-soft: #ddf1ec;
-  --color-good-bar: #0f7a63;
+  /* behind, late, errors */
+  --color-bad: #b64343;
+  --color-bad-soft: #fbe9e9;
+  --color-bad-bar: #b64343;
+  --color-bad-line: #ecc4c4;
+  --color-bad-tint: #fdf6f6;
+  /* slipping, check these, placeholder */
+  --color-warn: #986319;
+  --color-warn-soft: #fff3dc;
+  --color-warn-bar: #986319;
+  /* on track, done, approved */
+  --color-good: #28765d;
+  --color-good-soft: #e6f3ec;
+  --color-good-bar: #28765d;
 
-  --color-chip: #eef0f4; /* neutral chip background; text is ink-soft */
+  /* The sidebar is light: it sits on the canvas so the logo's own porcelain
+     background disappears into it. */
+  --color-sidebar: var(--color-canvas);
+  --color-sidebar-ink: var(--color-ink-soft);
+  --color-sidebar-active: var(--color-accent-soft);
+  --color-sidebar-muted: var(--color-muted);
 
-  --color-sidebar: #10141c;
-  --color-sidebar-ink: #c9ceda;
-  --color-sidebar-active: #263049;
-  --color-sidebar-muted: #9aa2b4;
+  --radius-control: 8px; /* buttons, inputs, chips */
+  --radius-card: 12px;
+  --radius-modal: 16px;
+
+  /* Shadows are for things that float: modals, menus, toasts. */
+  --shadow-float-sm: 0 2px 8px rgb(17 40 75 / 0.04);
+  --shadow-float: 0 8px 24px rgb(17 40 75 / 0.07);
+
+  --ease-brand: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-hover: 150ms;
+  --duration-enter: 180ms;
+  --duration-progress: 400ms;
+  --duration-spark: 600ms;
+
+  /* `transition-colors` and friends pick these up. */
+  --default-transition-duration: var(--duration-hover);
+  --default-transition-timing-function: var(--ease-brand);
+}
+
+@layer base {
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--color-heading);
+  }
+
+  /* Hover and focus change colour over 150 ms on anything that can be pressed. */
+  a,
+  button,
+  summary,
+  select,
+  input,
+  textarea,
+  [role='tab'],
+  [role='radio'] {
+    transition-property: color, background-color, border-color, outline-color;
+    transition-duration: var(--duration-hover);
+    transition-timing-function: var(--ease-brand);
+  }
 }
 
 html,
@@ -78,11 +135,149 @@ select {
   outline-offset: 2px;
 }
 
-/* On the dark sidebar the accent ring is too dim. */
-.on-dark :focus-visible {
-  outline-color: #ffffff;
+dialog::backdrop {
+  background: rgb(17 40 75 / 0.4);
 }
 
-dialog::backdrop {
-  background: rgb(16 20 28 / 0.45);
+/* ── Type ────────────────────────────────────────────────────────────────── */
+
+/* Counts, dates and table figures line up in columns. */
+@utility nums {
+  font-variant-numeric: tabular-nums;
+}
+
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The student's own page is read on a phone: body 16, secondary 14. The
+   counselor screens stay at 14 and 13. Inside this scope the two small sizes
+   used for body and secondary text step up; nothing else changes. */
+.student-scale {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.student-scale .text-sm {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.student-scale .text-\[13px\] {
+  font-size: 14px;
+  line-height: 1.45;
+}
+/* Card titles and task titles stay a step above the body. */
+.student-scale .text-\[15px\] {
+  font-size: 17px;
+  line-height: 1.4;
+}
+/* Buttons and inputs are at least 48px tall for thumbs. */
+.student-scale .min-h-11 {
+  min-height: 48px;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────
+   All motion lives here. Nothing delays a click, nothing plays on every page
+   load, and nothing runs longer than 600 ms. Only the Thinking pulse loops. */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes spark-turn {
+  from {
+    transform: rotate(-90deg);
+  }
+}
+@keyframes spark-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
+}
+@keyframes logo-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Modal and menus: fade and a 4 px rise on open. Closing is immediate. */
+@utility motion-rise {
+  animation: rise-in var(--duration-enter) var(--ease-brand);
+}
+dialog[open] {
+  animation: rise-in var(--duration-enter) var(--ease-brand);
+}
+dialog[open]::backdrop {
+  animation: fade-in var(--duration-enter) var(--ease-brand);
+}
+
+/* Toast: slides up 8 px and fades in. */
+@utility motion-toast {
+  animation: toast-in var(--duration-enter) var(--ease-brand);
+}
+
+/* An AI draft arriving, or a tag such as "Approved" appearing. */
+@utility motion-fade {
+  animation: fade-in var(--duration-enter) var(--ease-brand);
+}
+
+/* Progress bars ease when the value changes. A transition does not run on the
+   first render, so a page of bars does not animate on load. */
+@utility motion-progress {
+  transition: width var(--duration-progress) var(--ease-brand);
+}
+
+/* The task check mark draws when ticked. It is a transition for the same
+   reason: tasks already done when the page opens are simply shown. */
+@utility motion-check {
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+  &[data-done='true'] {
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset var(--duration-enter) var(--ease-brand);
+  }
+}
+
+/* The spark turns once when a draft arrives, and pulses slowly while the AI works. */
+@utility motion-spark-turn {
+  animation: spark-turn var(--duration-spark) var(--ease-brand);
+}
+@utility motion-spark-pulse {
+  animation: spark-pulse 1.6s ease-in-out infinite;
+}
+
+/* Sign-in only: the logo fades and rises once. */
+@utility motion-logo {
+  animation: logo-reveal var(--duration-spark) var(--ease-brand);
+}
+
+/* Reduced motion: every animation and transition above becomes an instant change. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+  }
 }
