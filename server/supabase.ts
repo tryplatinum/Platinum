@@ -4,8 +4,10 @@
 //     so it can only see what that person can. identify() returns it to the
 //     server functions, which do their reading and writing with it.
 //   * serviceClient(): the service role, which bypasses row level security.
-//     Used ONLY where there is no signed-in person (the student link), always
-//     filtered by the link's firm and student, and by scripts run by hand.
+//     Used for the student link (no signed-in person), and by the dispatcher
+//     for outbox status updates after identify() has checked the caller. Always
+//     filtered by firm (and by student on the link path). Also used by scripts
+//     run by hand.
 //
 // The service role key is read from the environment, never logged, and never
 // sent to the browser.

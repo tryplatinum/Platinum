@@ -1,10 +1,23 @@
-// Offline checks for the outbox queue. Run with:
+// Offline checks for the outbox queue and the send path. Run with:
 //
 //   npm run test:outbox
 //
 // No keys and no network. This checks the payload rules in shared/outbox.ts
+// and the allowlist / address / placeholder / expiry helpers in shared/dispatch.ts.
 // It does not run the SQL in queue_message or cancel_message.
 
+import {
+  STUDENT_LINK_PLACEHOLDER,
+  STUDENT_LINK_PREVIEW,
+  allowlistAllows,
+  fillStudentLink,
+  linkIsExpired,
+  normalizeEmail,
+  normalizePhone,
+  parseAllowlist,
+  previewStudentLink,
+  resolveAddress,
+} from '../shared/dispatch.js'
 import { UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
 
 let failed = 0
@@ -45,10 +58,67 @@ check('the payload cannot choose its own status', !('status' in (parsed.ok ? par
 const sendAfter = new Date(Date.now() + 30_000).toISOString()
 check('a queued message inside the window counts down', outboxStatusLabel({ status: 'queued', sendAfter }, Date.now()).startsWith('Queued, sends in '))
 check('a cancelled message says Cancelled', outboxStatusLabel({ status: 'cancelled', sendAfter }) === 'Cancelled')
+check('a sent message says Sent', outboxStatusLabel({ status: 'sent', sendAfter }) === 'Sent')
+check('a failed message shows the error', outboxStatusLabel({ status: 'failed', sendAfter, error: 'recipient not on allowlist' }) === 'Failed: recipient not on allowlist')
 check(
-  'a queued message past the window is not delivered yet',
-  outboxStatusLabel({ status: 'queued', sendAfter: new Date(Date.now() - 1000).toISOString() }) === 'Not delivered yet (delivery arrives in M1)',
+  'a queued message past the window is waiting to send',
+  outboxStatusLabel({ status: 'queued', sendAfter: new Date(Date.now() - 1000).toISOString() }) === 'Queued, sending soon',
 )
+
+// ── Allowlist ───────────────────────────────────────────────────────────────
+
+check('an empty allowlist allows nothing', !allowlistAllows(parseAllowlist(''), 'text', '+15551234567'))
+check('an unset allowlist allows nothing', !allowlistAllows(parseAllowlist(undefined), 'email', 'a@example.com'))
+check('phone normalization matches E.164', normalizePhone('(555) 123-4567') === '+15551234567')
+check('phone with + is kept', normalizePhone('+44 7700 900123') === '+447700900123')
+{
+  const list = parseAllowlist('+1 (555) 123-4567, Ada@Example.COM')
+  check('allowlist matches a formatted US phone', allowlistAllows(list, 'text', '5551234567'))
+  check('allowlist matches email case-insensitively', allowlistAllows(list, 'email', 'ada@example.com'))
+  check('allowlist rejects an off-list phone', !allowlistAllows(list, 'text', '+15559999999'))
+  check('allowlist rejects an off-list email', !allowlistAllows(list, 'email', 'other@example.com'))
+}
+check('normalizeEmail lowercases', normalizeEmail('Ada@Example.COM') === 'ada@example.com')
+
+// ── Address by channel ──────────────────────────────────────────────────────
+
+check('text uses phone', resolveAddress('text', { phone: '+15551234567' }).ok === true)
+check('email uses email', resolveAddress('email', { email: 'a@example.com' }).ok === true)
+check('text without phone fails clearly', (() => {
+  const r = resolveAddress('text', { email: 'a@example.com' })
+  return !r.ok && r.error === 'no phone number on the recipient'
+})())
+check('email without address fails clearly', (() => {
+  const r = resolveAddress('email', { phone: '+15551234567' })
+  return !r.ok && r.error === 'no email address on the recipient'
+})())
+check('line is not connected', (() => {
+  const r = resolveAddress('line', { phone: '+15551234567' })
+  return !r.ok && r.error === 'channel not connected yet.'
+})())
+check('wechat is not connected', (() => {
+  const r = resolveAddress('wechat', { email: 'a@example.com' })
+  return !r.ok && r.error === 'channel not connected yet.'
+})())
+
+// ── Placeholder ─────────────────────────────────────────────────────────────
+
+check('placeholder constant is {{student_link}}', STUDENT_LINK_PLACEHOLDER === '{{student_link}}')
+check(
+  'fillStudentLink replaces the placeholder',
+  fillStudentLink(`Your tasks: ${STUDENT_LINK_PLACEHOLDER}`, 'http://localhost:5173/s/abc') === 'Your tasks: http://localhost:5173/s/abc',
+)
+check(
+  'preview shows the counselor label',
+  previewStudentLink(`Your tasks: ${STUDENT_LINK_PLACEHOLDER}`) === `Your tasks: ${STUDENT_LINK_PREVIEW}`,
+)
+
+// ── Link expiry ─────────────────────────────────────────────────────────────
+
+check('a null expiry never expires', !linkIsExpired(null))
+check('an undefined expiry never expires', !linkIsExpired(undefined))
+check('a future expiry is still valid', !linkIsExpired(new Date(Date.now() + 60_000).toISOString()))
+check('a past expiry is rejected', linkIsExpired(new Date(Date.now() - 1000).toISOString()))
 
 if (failed > 0) {
   console.error(`${failed} failed`)

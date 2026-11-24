@@ -17,6 +17,7 @@ import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, LinkButton, Pill, 
 import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
+import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../../shared/dispatch'
 import { WEEKLY_TEXT_MAX, weeklyTextFactLines, weeklyTextFacts } from '../../lib/reminders'
 import { draftWeeklyParentCopy, draftWeeklyText, type WeeklyDraftOptions } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
@@ -125,7 +126,7 @@ export default function WeeklyTexts() {
         <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
           Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]}. A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
           texted automatically. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well, for you to approve on its own.
-          {' The student link is not included. Copy it from their page right after you generate it. A new link stops the old one.'}
+          {' The student link is added when the text is sent (shown as “[student link added when sent]” in the draft).'}
         </p>
         {rows.length === 0 ? (
           <div className="border-t border-line">
@@ -176,11 +177,12 @@ function Row({
   // A new or redrafted text replaces what is in the box.
   useEffect(() => setText(draft?.body ?? ''), [draft?.id, draft?.body])
 
-  // Before a draft exists, show the facts it would be built from (without creating a link yet).
-  const facts = draft?.facts ?? weeklyTextFactLines(weeklyTextFacts(student, firm.counselorFirstName, row.items)).slice(0, -1)
+  // Before a draft exists, show the facts it would be built from (link filled at send).
+  const facts = draft?.facts ?? weeklyTextFactLines(weeklyTextFacts(student, firm.counselorFirstName, row.items, STUDENT_LINK_PLACEHOLDER))
   const phone = student.phone?.trim()
   const ready = Boolean(draft && text.trim())
-  const over = text.length > WEEKLY_TEXT_MAX
+  const shown = previewStudentLink(text)
+  const over = shown.length > WEEKLY_TEXT_MAX
 
   /** Pressing Copy or Open in Messages is the counselor's approval of the text as it stands in the box. */
   const approve = (via: 'copy' | 'sms') => {
@@ -222,12 +224,12 @@ function Row({
               <textarea
                 className={cx(textareaClass, 'min-h-32')}
                 aria-label={`Text to ${student.firstName}`}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
+                value={previewStudentLink(text)}
+                onChange={(e) => setText(e.target.value.split(STUDENT_LINK_PREVIEW).join(STUDENT_LINK_PLACEHOLDER))}
                 onBlur={() => updateWeeklyText(draft.id, text)}
               />
               <p className={cx('text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
-                {text.length} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
+                {shown.length} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
               </p>
               {draft.lead && (
                 <p className="text-[13px] text-ink-soft">

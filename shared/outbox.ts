@@ -79,12 +79,16 @@ export function validateQueuePayload(input: unknown): QueueResult {
   return { ok: true, value }
 }
 
-/** The line shown beside a queued, cancelled, or not-yet-delivered message. */
-export function outboxStatusLabel(message: { status: QueueStatus; sendAfter: string }, now = Date.now()): string {
+/** The line shown beside a queued, cancelled, sent, or failed message. */
+export function outboxStatusLabel(message: { status: QueueStatus; sendAfter: string; error?: string }, now = Date.now()): string {
   if (message.status === 'cancelled') return 'Cancelled'
+  if (message.status === 'sending') return 'Sending'
+  if (message.status === 'sent') return 'Sent'
+  if (message.status === 'failed') return message.error ? `Failed: ${message.error}` : 'Failed'
   if (message.status === 'queued') {
     const left = Math.ceil((Date.parse(message.sendAfter) - now) / 1000)
     if (left > 0) return `Queued, sends in ${left}s`
+    return 'Queued, sending soon'
   }
-  return 'Not delivered yet (delivery arrives in M1)'
+  return 'Unknown'
 }

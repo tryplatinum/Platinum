@@ -16,9 +16,20 @@ import { FAVICON, PRODUCT_NAME } from './src/brand'
 // index.html: see vercel.json and public/_redirects.
 
 /** Server-side settings read from .env.local in dev. None of these reach the browser. */
-const SERVER_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_SORT_MODEL', 'AI_REFUSAL_FALLBACK', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']
+const SERVER_ENV = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_SORT_MODEL',
+  'AI_REFUSAL_FALLBACK',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_ANON_KEY',
+  'SEND_ALLOWLIST',
+  'TRANSPORT',
+  'PUBLIC_APP_URL',
+]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch']
 
 function devApi(): Plugin {
   return {
