@@ -42,6 +42,7 @@ import type { DocumentAction, FileSuggestion } from '../src/types.js'
 import { AiError, hasAnthropicKey, runWithFile, type FileContent } from './claude.js'
 import { firstPages, officeText, reducedPhoto } from './fileText.js'
 import { SORT_PROMPT, type SortPromptInput } from './prompts.js'
+import { rememberRemovedHere } from './google/removedHere.js'
 import { serviceClient, serviceConfigured, type Caller } from './supabase.js'
 
 type Db = SupabaseClient<Database>
@@ -85,7 +86,7 @@ export async function backgroundIdle(): Promise<void> {
 
 // ── Storage ─────────────────────────────────────────────────────────────────
 
-const bucket = (db: Db) => db.storage.from(DOCUMENTS_BUCKET)
+export const bucket = (db: Db) => db.storage.from(DOCUMENTS_BUCKET)
 
 async function download(db: Db, path: string): Promise<Uint8Array | undefined> {
   const { data, error } = await bucket(db).download(path)
@@ -94,7 +95,7 @@ async function download(db: Db, path: string): Promise<Uint8Array | undefined> {
 }
 
 /** Removes objects by their exact paths. Throws if storage refuses, so the caller keeps the rows. */
-async function removeObjects(db: Db, paths: string[]): Promise<void> {
+export async function removeObjects(db: Db, paths: string[]): Promise<void> {
   for (let i = 0; i < paths.length; i += 100) {
     const { error } = await bucket(db).remove(paths.slice(i, i + 100))
     if (error) throw failed('removing stored files failed', error)
@@ -103,7 +104,7 @@ async function removeObjects(db: Db, paths: string[]): Promise<void> {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-async function logEvent(db: Db, row: Pick<DocumentRow, 'id' | 'firm_id'>, actor: { kind: 'counselor' | 'student_link' | 'system'; user?: string }, action: DocumentAction, detail: Record<string, unknown> = {}): Promise<void> {
+export async function logEvent(db: Db, row: Pick<DocumentRow, 'id' | 'firm_id'>, actor: { kind: 'counselor' | 'student_link' | 'system'; user?: string }, action: DocumentAction, detail: Record<string, unknown> = {}): Promise<void> {
   const { error } = await db.from('document_events').insert({ firm_id: row.firm_id, document_id: row.id, actor_kind: actor.kind, actor_user: actor.user ?? null, action, detail: detail as Json })
   // The log never blocks the work it describes.
   if (error) console.error('[documents] event not written:', action, error.message)
@@ -139,7 +140,7 @@ function catchAll(folders: Folder[]): Folder {
 
 // ── Checking an upload ──────────────────────────────────────────────────────
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 /** A row that is waiting for its file, as inserted. */
 export function uploadingRow(input: { firmId: string; studentId?: string; filename: string; size: number; mime: string; by: 'counselor' | 'student_link'; userId?: string; today: string }) {
@@ -176,7 +177,7 @@ export function checkDeclared(filename: unknown, size: unknown, type: unknown): 
   return { filename: filename.trim(), size, mime }
 }
 
-const plausibleDay = (value: unknown): string => {
+export const plausibleDay = (value: unknown): string => {
   const now = Date.now()
   const days = [-1, 0, 1].map((d) => new Date(now + d * 86_400_000).toISOString().slice(0, 10))
   return typeof value === 'string' && days.includes(value) ? value : days[1]
@@ -187,15 +188,17 @@ const plausibleDay = (value: unknown): string => {
  * it exists, it is within the size limit, and its first bytes are the declared
  * type. If any check fails the object and the row are removed and a FileError
  * says why. Returns the bytes so the caller need not download them again.
+ * `given` is for a caller that put the object there itself a moment ago (a file
+ * copied from Google Drive) and so already holds the bytes: the checks are the same.
  */
-export async function confirmUpload(db: Db, row: DocumentRow): Promise<{ bytes: Uint8Array; hash: string }> {
+export async function confirmUpload(db: Db, row: DocumentRow, given?: Uint8Array): Promise<{ bytes: Uint8Array; hash: string }> {
   const path = row.storage_path!
   const reject = async (message: string, status = 400): Promise<never> => {
     await removeObjects(db, [path]).catch(() => undefined)
     await db.from('documents').delete().eq('id', row.id).eq('firm_id', row.firm_id)
     throw new FileError(message, status)
   }
-  const bytes = await download(db, path)
+  const bytes = given ?? (await download(db, path))
   if (!bytes) return reject('The file did not arrive. Please add it again.', 409)
   if (bytes.length === 0) return reject('That file is empty.')
   if (bytes.length > MAX_FILE_BYTES) return reject('That file is larger than 25 MB.', 413)
@@ -313,7 +316,7 @@ export async function contentFor(bytes: Uint8Array, mime: string | null): Promis
  * descriptions, and the firm's last 20 corrections. Throws when the model
  * cannot be asked or does not answer; the callers below decide what happens then.
  */
-export async function classifyDocument(db: Db, row: DocumentRow, given?: Uint8Array): Promise<FileSuggestion> {
+export async function classifyDocument(db: Db, row: DocumentRow, given?: Uint8Array, driveFolder?: string): Promise<FileSuggestion> {
   const bytes = given ?? (await download(db, row.storage_path!))
   if (!bytes) throw new FileError('The file could not be read from storage.', 409)
   const folders = await foldersOf(db, row.firm_id)
@@ -331,6 +334,7 @@ export async function classifyDocument(db: Db, row: DocumentRow, given?: Uint8Ar
       corrections,
       extractedText: content.text,
       hasFile: Boolean(content.file),
+      driveFolder,
     },
     content.file,
     ids,
@@ -448,8 +452,12 @@ async function retrySuggestion(db: Db, row: DocumentRow, other: string): Promise
  * model fails, it goes under the catch-all folder marked to check, and a
  * failure is retried once. There is no signed-in person here, so this uses the
  * service role, filtered by the link's firm.
+ *
+ * A file synced from a Drive folder linked to a student is filed the same way
+ * (the person who linked the folder chose the student). `driveFolder` is the
+ * Drive subfolder it sat in, given to the model as a hint.
  */
-export async function sortStudentDrop(firmId: string, documentId: string, bytes?: Uint8Array): Promise<void> {
+export async function sortStudentDrop(firmId: string, documentId: string, bytes?: Uint8Array, driveFolder?: string): Promise<void> {
   const db = serviceClient()
   const found = await db.from('documents').select('*').eq('id', documentId).eq('firm_id', firmId).maybeSingle()
   if (found.error) throw failed('reading the document failed', found.error)
@@ -466,12 +474,12 @@ export async function sortStudentDrop(firmId: string, documentId: string, bytes?
 
   if (!(await sortsAutomatically(db, firmId))) return file({ type_id: other, needs_check: true }, { typeId: other, sortingOff: true })
   try {
-    const suggestion = await classifyDocument(db, row, bytes)
+    const suggestion = await classifyDocument(db, row, bytes, driveFolder)
     await file(fromModel(suggestion), { typeId: suggestion.typeId, sure: suggestion.sure, model: suggestion.model })
   } catch (error) {
     await file({ type_id: other, needs_check: true }, { typeId: other, failed: true })
     if (!worthRetrying(error)) return
-    const suggestion = await classifyDocument(db, row, bytes)
+    const suggestion = await classifyDocument(db, row, bytes, driveFolder)
     // Only if nobody has touched it since: still auto-sorted, still where the failure put it, same title.
     const retried = await db
       .from('documents')
@@ -525,6 +533,8 @@ export async function fileDocument(caller: SignedIn, input: { documentId?: unkno
     action: approved ? 'approved' : 'typed',
   })
   // The function's own messages are written for people ("Choose a student first.").
+  // The student this file is being given to already holds a copy of the same Drive file.
+  if (error?.code === '23505') throw new FileError('That student already has this file from Google Drive.', 409)
   if (error) throw ['22023', '42501'].includes(error.code) ? new FileError(error.message, error.code === '42501' ? 404 : 400) : failed('filing failed', error)
 
   const after = await caller.client.from('documents').select('*').eq('id', row.id).maybeSingle()
@@ -602,7 +612,7 @@ export async function deleteStoredFiles(caller: SignedIn, scope: DeleteScope): P
   const removed: string[] = []
 
   for (;;) {
-    let query = db.from('documents').select('id, firm_id, storage_path, type_id, title, original_filename, file_status').eq('firm_id', caller.firmId).not('storage_path', 'is', null).order('seq').limit(200)
+    let query = db.from('documents').select('id, firm_id, storage_path, type_id, title, original_filename, file_status, student_id, drive_file_id').eq('firm_id', caller.firmId).not('storage_path', 'is', null).order('seq').limit(200)
     if (one) query = query.eq('id', scope.documentId)
     else if ('studentId' in scope) query = query.eq('student_id', scope.studentId)
     const { data, error } = await query
@@ -616,6 +626,8 @@ export async function deleteStoredFiles(caller: SignedIn, scope: DeleteScope): P
     const gone = await db.from('documents').delete().eq('firm_id', caller.firmId).in('id', data.map((d) => d.id)).select('id')
     if (gone.error) throw failed('deleting the document rows failed', gone.error)
     if (gone.data.length === 0) throw new FileError('Those files could not be deleted.', 403)
+    // A file that came from a linked Drive folder is not brought back by the next sync.
+    if (one) await rememberRemovedHere(caller.firmId, data.filter((x) => gone.data.some((g) => g.id === x.id)))
     for (const d of data.filter((x) => gone.data.some((g) => g.id === x.id))) {
       removed.push(d.id)
       // Once the row is gone every member can read its events, so a file from a folder only the owner could open leaves no title behind.

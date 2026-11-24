@@ -324,6 +324,12 @@ export interface StudentDocument {
   uploadedByUser?: ID
   /** The student link a file was dropped through. Absent on counselor uploads and on older drops. */
   studentLinkId?: ID
+  /** Where a stored file came from. Absent means an upload. */
+  source?: 'upload' | 'google_drive'
+  /** Set on a file copied from Google Drive: which Drive file, a link that opens it there, and Drive's modified time when the copy was taken. */
+  driveFileId?: string
+  driveUrl?: string
+  driveModifiedAt?: string
   fileStatus?: FileStatus
   sortedBy?: 'person' | 'auto'
   needsCheck?: boolean

@@ -3,10 +3,10 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { FAVICON, PRODUCT_NAME } from './src/brand'
 
-// The app is a static single-page site plus four server functions: api/ai.ts
+// The app is a static single-page site plus its server functions: api/ai.ts
 // (AI drafts), api/documents.ts (stored files), api/colleges.ts (the college
-// directory and list drafts), all for signed-in counselors, and api/student.ts
-// (the student link).
+// directory and list drafts), api/google.ts (the Google connection and Drive),
+// all for signed-in counselors, and api/student.ts (the student link).
 // On Vercel those files deploy as functions. In `npm run dev` the plugin below
 // mounts the very same files under /api/, so the checks they
 // make are the ones production makes, and there is nothing else to run locally.
@@ -27,15 +27,24 @@ const SERVER_ENV = [
   'SEND_ALLOWLIST',
   'TRANSPORT',
   'PUBLIC_APP_URL',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+  'GOOGLE_TOKEN_KEY',
+  'GOOGLE_REDIRECT_URI',
+  'GOOGLE_FAKE',
+  'GOOGLE_FAKE_STATE',
+  'GOOGLE_SYNC_BATCH',
 ]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google']
 
 function devApi(): Plugin {
   return {
     name: 'platinum-dev-api',
     apply: 'serve',
     configureServer(server) {
+      // Tells the server code it is running under `npm run dev`. GOOGLE_FAKE=1 is refused without it.
+      process.env.PLATINUM_DEV_SERVER = '1'
       for (const name of FUNCTIONS) server.middlewares.use(`/api/${name}`, async (req, res) => {
         try {
           const handlers = (await server.ssrLoadModule(`/api/${name}.ts`)) as Record<string, ((request: Request) => Response | Promise<Response>) | undefined>
@@ -44,7 +53,10 @@ function devApi(): Plugin {
           const headers = new Headers()
           for (const [key, value] of Object.entries(req.headers)) if (typeof value === 'string') headers.set(key, value)
           const method = req.method ?? 'GET'
-          const request = new Request(`http://localhost/api/${name}`, {
+          // The real host and the query string are kept: Google's redirect arrives as a GET with ?code=&state=,
+          // and the address it came to must be the one registered with Google.
+          const query = req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+          const request = new Request(`http://${req.headers.host ?? 'localhost'}/api/${name}${query}`, {
             method,
             headers,
             body: method === 'GET' || method === 'HEAD' ? undefined : Buffer.concat(chunks),
@@ -53,7 +65,7 @@ function devApi(): Plugin {
           const response = handler ? await handler(request) : new Response('Method not allowed', { status: 405 })
           res.statusCode = response.status
           response.headers.forEach((value, key) => res.setHeader(key, value))
-          res.end(await response.text())
+          res.end(response.body ? await response.text() : undefined)
         } catch (error) {
           console.error('[dev api]', error)
           res.statusCode = 500
@@ -73,8 +85,12 @@ function brandHtml(): Plugin {
   }
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  // The invented Google Drive is for `npm run dev` only. A build, or anything on Vercel, refuses to start with it.
+  if ((env.GOOGLE_FAKE ?? process.env.GOOGLE_FAKE) === '1' && (command !== 'serve' || process.env.VERCEL)) {
+    throw new Error('GOOGLE_FAKE=1 is only for `npm run dev`. Remove it before building or deploying.')
+  }
   for (const key of SERVER_ENV) if (env[key] && !process.env[key]) process.env[key] = env[key]
   return { plugins: [react(), tailwindcss(), devApi(), brandHtml()] }
 })
