@@ -2,14 +2,14 @@
 
 ## Product
 
-Platinum is a web workspace for a college-counseling firm. A counselor signs in on a laptop and keeps that firm's students, families, tasks, colleges, meetings, and essays in the firm's own database. An assistant drafts the follow-through (meeting notes, tasks, parent updates, briefs, reminders), and a person approves every outbound message before it can leave. Students and parents are reached by SMS, email, LINE, and WeChat, plus a thin page opened from a secret link. Approved messages wait 60 seconds, then the dispatcher sends them through a Transport (log-only until M1) and only to an allowlist of the founders' own numbers and accounts. Until a privacy review, the only people in the product are invented.
+Platinum is a web workspace for a college-counseling firm. A counselor signs in on a laptop and keeps that firm's students, families, tasks, colleges, meetings, and essays in the firm's own database. An assistant drafts the follow-through (meeting notes, tasks, parent updates, briefs, reminders), and a person approves every outbound message before it can leave. Students and parents are reached by SMS, email, LINE, and WeChat, plus a thin page opened from a secret link. Approved messages wait 60 seconds, then the dispatcher sends them through a Transport and only to an allowlist of the founders' own numbers and accounts. The default Transport only logs. Email goes out through the approving counselor's Gmail when `TRANSPORT_EMAIL=gmail`. Text goes to the approving counselor's own iPhone when `TRANSPORT_TEXT=phone`: the dispatcher makes a job, the phone's Shortcut claims it from `/api/phone`, sends it with Messages, and reports back. Until a privacy review, the only people in the product are invented.
 
 ## Stack and layout
 
 React, Vite, TypeScript, Tailwind, Zustand, and Zod in the browser. Supabase (Postgres, Auth, row level security) is the backend. Anthropic is called from the server only. `typescript` is TypeScript 6 (needed by ESLint’s type-aware rules); `@typescript/native` is TypeScript 7, and `npm run typecheck` uses that one.
 
 - `src/` — the counselor and student screens, the Zustand store, and the browser Supabase client
-- `api/` — the Vercel functions, `/api/ai`, `/api/student`, `/api/dispatch`, and related
+- `api/` — the Vercel functions, `/api/ai`, `/api/student`, `/api/dispatch`, `/api/phone`, and related
 - `server/` — the Claude call, prompts, transport, dispatcher, server Supabase clients, and the student-link read
 - `shared/` — Zod contracts used by the browser and the server
 - `supabase/migrations/` — SQL migrations
@@ -38,7 +38,7 @@ React, Vite, TypeScript, Tailwind, Zustand, and Zod in the browser. Supabase (Po
 - Only one person or agent pushes migrations at a time.
 - No new state libraries, UI kits, or ORMs without approval.
 - Don't touch files outside the current task's scope.
-- Nothing calls a transport except the dispatcher. Nothing bypasses the allowlist.
+- Nothing calls a transport except the dispatcher. Nothing bypasses the allowlist. The one exception is the fixed wake email in `server/phoneGateway/wake.ts`, which goes only to the counselor's own allowlisted Gmail address and says only "Wake."
 - Never pass `--yes` or any confirmation-skipping flag to a command that targets the production database. If the CLI asks for confirmation, stop and report.
 
 ## Workflow

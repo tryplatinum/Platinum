@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, LinkButton, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
+import { OpenInMessages } from '../../components/OpenInMessages'
 import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -24,9 +25,6 @@ import { useData, useStore } from '../../store/store'
 import type { Student, WeeklyText } from '../../types'
 
 const SENT_FROM_PHONE = 'You can undo the queued message for 60 seconds.'
-
-/** What the sms: link needs: digits, with a leading + kept. */
-const smsNumber = (phone: string) => phone.trim().replace(/(?!^\+)\D/g, '')
 
 export default function WeeklyTexts() {
   const data = useData()
@@ -282,20 +280,15 @@ function Row({
                 >
                   Copy
                 </Button>
-                <a
-                  href={ready && !over ? `sms:${smsNumber(phone)}?&body=${encodeURIComponent(text)}` : undefined}
-                  aria-disabled={!ready || over}
-                  className={cx(
-                    'inline-flex min-h-11 items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-surface-2',
-                    (!ready || over) && 'pointer-events-none opacity-50',
-                  )}
-                  onClick={() => {
+                <OpenInMessages
+                  phone={phone}
+                  text={text}
+                  disabled={!ready || over}
+                  onOpen={() => {
                     approve('sms')
                     toast(`Opening your Messages app. ${SENT_FROM_PHONE}`)
                   }}
-                >
-                  Open in Messages
-                </a>
+                />
                 <Button variant="quiet" onClick={() => onDraft()} disabled={busy}>
                   {busy ? 'Drafting…' : 'Draft again'}
                 </Button>

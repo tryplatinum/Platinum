@@ -27,6 +27,8 @@ const SERVER_ENV = [
   'SEND_ALLOWLIST',
   'TRANSPORT',
   'TRANSPORT_EMAIL',
+  'TRANSPORT_TEXT',
+  'PHONE_WAKE_FAKE',
   'PUBLIC_APP_URL',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
@@ -39,7 +41,7 @@ const SERVER_ENV = [
   'AGENT_MAX_ROUNDS',
 ]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent', 'phone']
 
 function devApi(): Plugin {
   return {
@@ -93,6 +95,10 @@ export default defineConfig(({ mode, command }) => {
   // The invented Google Drive is for `npm run dev` only. A build, or anything on Vercel, refuses to start with it.
   if ((env.GOOGLE_FAKE ?? process.env.GOOGLE_FAKE) === '1' && (command !== 'serve' || process.env.VERCEL)) {
     throw new Error('GOOGLE_FAKE=1 is only for `npm run dev`. Remove it before building or deploying.')
+  }
+  // The same for recorded wake emails.
+  if ((env.PHONE_WAKE_FAKE ?? process.env.PHONE_WAKE_FAKE) === '1' && (command !== 'serve' || process.env.VERCEL)) {
+    throw new Error('PHONE_WAKE_FAKE=1 is only for `npm run dev`. Remove it before building or deploying.')
   }
   for (const key of SERVER_ENV) if (env[key] && !process.env[key]) process.env[key] = env[key]
   return { plugins: [react(), tailwindcss(), devApi(), brandHtml()] }

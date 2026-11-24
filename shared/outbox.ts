@@ -1,6 +1,8 @@
 // Rules for a message that is about to be queued. The database repeats these
 // checks in queue_message. This copy is what the offline test can run.
 
+import { phoneStatusLabel } from './phoneGateway.js'
+
 export const UNDO_SECONDS = 60
 
 export const QUEUE_CHANNELS = ['email', 'wechat', 'line', 'text'] as const
@@ -80,7 +82,10 @@ export function validateQueuePayload(input: unknown): QueueResult {
 }
 
 /** The line shown beside a queued, cancelled, sent, or failed message. */
-export function outboxStatusLabel(message: { status: QueueStatus; sendAfter: string; error?: string }, now = Date.now()): string {
+export function outboxStatusLabel(message: { status: QueueStatus; sendAfter: string; error?: string; detail?: string }, now = Date.now()): string {
+  // A text handed to the counselor's own phone has its own wording. Every other message is unchanged.
+  const viaPhone = phoneStatusLabel(message)
+  if (viaPhone) return viaPhone
   if (message.status === 'cancelled') return 'Cancelled'
   if (message.status === 'sending') return 'Sending'
   if (message.status === 'sent') return 'Sent'

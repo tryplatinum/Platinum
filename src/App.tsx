@@ -3,6 +3,7 @@
 //   /app/styleguide   every shared component in each state; not in the navigation
 //   /student/:id      the counselor's preview of a student's page, also behind sign-in
 //   /s/:token         the student's own page, opened from their secret link, no login
+//   /phone-setup      opened on the counselor's own phone from the QR code in Firm settings, no login
 
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
@@ -13,6 +14,7 @@ import CommandCenter from './screens/counselor/CommandCenter'
 import Documents from './screens/counselor/Documents'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
+import PhoneSetup from './screens/PhoneSetup'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
@@ -46,6 +48,8 @@ export default function App() {
       <Route path="/signin" element={<SignIn />} />
       <Route path="/setup" element={<FirmSetup />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+
+      <Route path="/phone-setup" element={<PhoneSetup />} />
 
       <Route path="/s/:token" element={<StudentLinkLayout />}>
         <Route index element={<StudentHome />} />
