@@ -183,6 +183,70 @@ if (!only || (only as string) === 'sortFile') {
   await adminClient().storage.from(DOCUMENTS_BUCKET).remove(paths)
 }
 
+// ── Drafting a college list (not an /api/ai feature: the server builds the request from the database) ──
+// One real draft for the sample student Kevin: his majors, interests, activities and approved meeting
+// records are saved to the throwaway firm, then POST /api/colleges `draft` runs the whole thing against
+// the real directory. One model call, or two if the server's check threw something away.
+// Run alone with:  npm run test:ai -- collegeList
+if (!only || (only as string) === 'collegeList') {
+  const { POST: collegesPost } = await import('../api/colleges.js')
+  const { defaultPreferences, reasonProblem } = await import('../src/lib/collegeListDraft.js')
+  const refusedByAi = await POST(new Request('http://localhost/api/ai', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${account.token}` }, body: JSON.stringify({ feature: 'collegeList', input: {} }) }))
+  console.log(`\n/api/ai refuses collegeList from the browser: HTTP ${refusedByAi.status}`)
+  if (refusedByAi.status !== 400) failed += 1
+
+  const studentId = crypto.randomUUID()
+  const made = await account.client.from('students').insert({
+    id: studentId,
+    firm_id: account.firmId,
+    first_name: kevin.firstName,
+    last_name: 'Invented',
+    grad_year: kevin.gradYear,
+    gpa: kevin.gpa,
+    gpa_weighted: kevin.gpaWeighted,
+    tests: kevin.tests as never,
+    majors: kevin.majors,
+    interests: kevin.interests,
+    activities: kevin.activities as never,
+  })
+  if (made.error) throw new Error(`could not create the test student: ${made.error.message}`)
+  const held = data.meetings.filter((m) => m.studentId === kevin.id && m.status === 'completed')
+  if (held.length) {
+    const saved = await account.client.from('meetings').insert(held.map((m) => ({ firm_id: account.firmId, student_id: studentId, title: m.title, date: m.date, time: m.time, duration_min: m.durationMin, status: m.status, transcript: m.transcript ?? null, ai: (m.ai ?? null) as never, recap: (m.recap ?? null) as never })))
+    if (saved.error) throw new Error(`could not save the test meetings: ${saved.error.message}`)
+  }
+
+  const preferences = { ...defaultPreferences(kevin), states: ['CA'], regions: ['New England', 'Mid East'], mustInclude: [{ unitid: 166683, name: 'Massachusetts Institute of Technology' }] }
+  const started = Date.now()
+  const response = await collegesPost(new Request('http://localhost/api/colleges', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${account.token}` }, body: JSON.stringify({ action: 'draft', studentId, preferences }) }))
+  const body = (await response.json()) as { ok: boolean; message?: string; data?: { draftId: string; items: number; byModel: boolean } }
+  console.log(`\n━━ collegeList · HTTP ${response.status} · ${((Date.now() - started) / 1000).toFixed(1)}s ${'━'.repeat(40)}`)
+  console.log(`preferences: ${JSON.stringify(preferences)}`)
+  if (!body.ok || !body.data) {
+    console.log(JSON.stringify(body, null, 2))
+    failed += 1
+  } else {
+    const draft = (await account.client.from('college_list_drafts').select('*').eq('id', body.data.draftId).single()).data!
+    const items = (await account.client.from('college_list_draft_items').select('*, college_directory(name, state)').eq('draft_id', body.data.draftId).order('position')).data ?? []
+    console.log(`how it was made: ${JSON.stringify(draft.source)}`)
+    console.log(`overall note: ${draft.note}`)
+    for (const item of items) {
+      const college = item.college_directory as unknown as { name: string; state: string | null }
+      const basis = item.fit_basis as { summary?: string; limitedData?: boolean }
+      console.log(`\n${item.fit.padEnd(6)} ${college.name} (${college.state ?? '—'})${item.kept ? '' : '  [not kept]'}${item.ai_explained ? '' : '  [stock reason, not AI-explained]'}${basis.limitedData ? '  [limited data]' : ''}`)
+      console.log(`       reason: ${item.reason}`)
+      console.log(`       why this band: ${basis.summary}`)
+    }
+    const source = draft.source as { kind?: string; rejectedReasons?: number; filled?: number; askedTwice?: boolean }
+    const count = (band: string) => items.filter((i) => i.fit === band).length
+    console.log(`\ncollegeList: ${items.length} colleges (Reach ${count('Reach')}, Target ${count('Target')}, Likely ${count('Likely')}); reasons rejected by the check: ${source.rejectedReasons ?? 'n/a'}; filled with the stock reason: ${source.filled ?? 'n/a'}; asked twice: ${source.askedTwice ?? 'n/a'}`)
+    const leaked = items.filter((i) => i.ai_explained && reasonProblem(i.reason))
+    const onList = (await account.client.from('colleges').select('id').eq('student_id', studentId)).data ?? []
+    console.log(`collegeList: saved reasons that fail the check: ${leaked.length}; colleges written to the student's list: ${onList.length}; MIT (must include) is in: ${items.some((i) => i.unitid === 166683)}`)
+    if (source.kind !== 'claude' || !body.data.byModel || items.length === 0 || leaked.length || onList.length || !items.some((i) => i.unitid === 166683) || (draft.note !== null && reasonProblem(draft.note))) failed += 1
+  }
+}
+
 await removeAccount(account)
 
 if (failed > 0) {

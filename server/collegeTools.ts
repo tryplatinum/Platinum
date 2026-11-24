@@ -26,12 +26,12 @@ import {
 } from '../shared/colleges.js'
 import type { Database } from '../src/lib/database.types.js'
 import type { CollegeApp, CollegeFit, DataSource, ID, TestPolicy } from '../src/types.js'
-import { bandForStudent, ListDraftError, type BandedCollege } from './collegeListDrafts.js'
+import { bandForStudent, draftCollegeList as draftList, listPreferencesInput, ListDraftError, type BandedCollege, type DraftedList } from './collegeListDrafts.js'
 
 type Client = SupabaseClient<Database>
 type DirectoryRow = Database['public']['Tables']['college_directory']['Row']
 
-export type CollegeToolErrorCode = 'bad_input' | 'not_found' | 'not_built' | 'database'
+export type CollegeToolErrorCode = 'bad_input' | 'not_found' | 'not_built' | 'database' | 'rate_limited'
 
 /** A failure a caller can act on. `message` is safe to show. */
 export class CollegeToolError extends Error {
@@ -85,6 +85,8 @@ export const getCollegeInput = z
 export const bandCollegesForStudentInput = z.object({ studentId: z.string().uuid(), unitids: z.array(unitid).min(1).max(MAX_LIMIT) }).strict()
 
 export const getStudentCollegeListInput = z.object({ studentId: z.string().uuid() }).strict()
+
+export const draftCollegeListInput = z.object({ studentId: z.string().uuid(), preferences: listPreferencesInput }).strict()
 
 function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
   const result = schema.safeParse(input)
@@ -382,6 +384,19 @@ export async function getStudentCollegeList(client: Client, studentId: ID): Prom
   }
 }
 
+/**
+ * Drafts a college list for one student from the counselor's preferences and
+ * saves it as a draft for the counselor to review. Returns the draft's id.
+ * The work is in server/collegeListDrafts.ts: candidates and bands by our code,
+ * the choice and a short reason each by the model, checked before saving.
+ *
+ * It never writes to the student's college list. Only a counselor pressing
+ * "Add to list" on the draft does that.
+ */
+export async function draftCollegeList(client: Client, studentId: ID, preferences: unknown, options: { userId?: ID } = {}): Promise<DraftedList> {
+  return asTool(draftList(client, studentId, preferences, options))
+}
+
 // ── What the central AI is told about them ──────────────────────────────────
 
 export interface CollegeToolDefinition {
@@ -418,6 +433,12 @@ export const collegeToolDefinitions: CollegeToolDefinition[] = [
       'The colleges on one student\'s list: name, application plan and deadline when set, status, band (Reach, Target or Likely) and who set it, and the directory figures for each row that is linked to the directory.',
     inputSchema: jsonSchema(getStudentCollegeListInput),
   },
+  {
+    name: 'draftCollegeList',
+    description:
+      'Drafts a college list for one student and saves it as a draft for the counselor to review; returns the draft\'s id. Our code filters the directory by the preferences, sets each band by fixed rules and supplies every figure; a model chooses among the candidates and writes a short reason for each, which is checked before saving. It never adds anything to the student\'s college list: a counselor does that from the draft. Makes one or two model calls and can take a minute.',
+    inputSchema: jsonSchema(draftCollegeListInput),
+  },
 ]
 
 /** Runs a tool by its name in collegeToolDefinitions, with unchecked input. Throws CollegeToolError. */
@@ -433,6 +454,10 @@ export async function runCollegeTool(client: Client, name: string, input: unknow
     }
     case 'getStudentCollegeList':
       return getStudentCollegeList(client, parse(getStudentCollegeListInput, input).studentId)
+    case 'draftCollegeList': {
+      const { studentId, preferences } = parse(draftCollegeListInput, input)
+      return draftCollegeList(client, studentId, preferences)
+    }
     default:
       throw new CollegeToolError('bad_input', 'There is no such college tool.')
   }

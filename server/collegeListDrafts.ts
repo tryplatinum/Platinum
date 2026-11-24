@@ -20,12 +20,28 @@
 // role, so row level security decides what it can read and write.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { CONTROLS, REGIONS } from '../shared/colleges.js'
-import { bandCollege, capCandidates, CANDIDATE_CAP, MAX_PER_BAND, SIZE_BANDS, SIZES, type BandCollege, type BandStudent, type Candidate } from '../src/lib/collegeBands.js'
-import { MAX_EXCLUDE, MAX_MUST_INCLUDE, MAX_PROGRAMS, normalizePreferences } from '../src/lib/collegeListDraft.js'
-import type { Database } from '../src/lib/database.types.js'
-import type { CollegeFit, CollegeListPreferences, DataSource, FitBasis, ID, TestScores } from '../src/types.js'
+import type { FeatureInput, FeatureOutput } from '../shared/contract.js'
+import { bandCollege, capCandidates, CANDIDATE_CAP, MAX_PER_BAND, SIZE_BANDS, SIZES, sizeBandOf, type BandCollege, type BandStudent, type Candidate } from '../src/lib/collegeBands.js'
+import {
+  MAX_EXCLUDE,
+  MAX_MUST_INCLUDE,
+  MAX_PROGRAMS,
+  assembleDraft,
+  checkPicks,
+  handPickRows,
+  normalizePreferences,
+  notesForListDraft,
+  reasonProblem,
+  stillNeeded,
+  type DraftRow,
+  type NoteForList,
+} from '../src/lib/collegeListDraft.js'
+import type { Database, Json } from '../src/lib/database.types.js'
+import type { AiSource, CollegeFit, CollegeListPreferences, DataSource, FitBasis, ID, ListDraftRun, ListMix, Meeting, TestScores } from '../src/types.js'
+import { AiError, hasAnthropicKey, runFeature } from './claude.js'
 
 type Client = SupabaseClient<Database>
 
@@ -272,4 +288,219 @@ export async function candidatePool(client: Client, studentId: ID, preferences: 
   const codes = new Set(prefs.programs.map((p) => p.cipCode))
   const all = [...must.map((r) => candidateFrom(r, student, codes, true)), ...found.rows.map((r) => candidateFrom(r, student, codes, false))]
   return { student, preferences: prefs, candidates: capCandidates(all, prefs.mix, CANDIDATE_CAP), matched: found.total }
+}
+
+// ── The AI step ─────────────────────────────────────────────────────────────
+
+/**
+ * The model call, in one place so a test can stand in for it
+ * (scripts/test-isolation.ts does). server/claude.ts is still the only file
+ * that calls Claude.
+ */
+export const listModel = {
+  available: (): boolean => hasAnthropicKey(),
+  run: (input: FeatureInput<'collegeList'>): Promise<{ draft: FeatureOutput<'collegeList'>; model: string }> => runFeature('collegeList', input),
+}
+
+/** The function has 120 seconds (api/colleges.ts). The model gets this much of it in all. */
+const AI_BUDGET_MS = 100_000
+/** A second ask is only made with at least this much of the budget left. */
+const SECOND_ASK_NEEDS_MS = 35_000
+
+class TimedOut extends Error {}
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimedOut()), Math.max(ms, 0))
+  })
+  return Promise.race([work, late]).finally(() => clearTimeout(timer))
+}
+
+/** What the model is given about the request. No figure of any kind: see INPUTS.collegeList in shared/contract.ts. */
+export function modelInput(pool: CandidatePool, notes: NoteForList[], candidates: Candidate[] = pool.candidates, mix: ListMix = pool.preferences.mix, problems?: string[]): FeatureInput<'collegeList'> {
+  const { student, preferences: p } = pool
+  return {
+    student: { gradYear: student.gradYear, majors: student.majors.slice(0, 10), interests: student.interests.slice(0, 20), activities: student.activities.slice(0, 30) },
+    recentNotes: notes,
+    preferences: { majors: p.majors, programs: p.programs.map((x) => x.cipTitle), states: p.states, regions: p.regions, control: p.control, sizes: p.sizes, netPriceCeiling: p.maxNetPrice !== undefined },
+    mix,
+    candidates: candidates.map((c) => {
+      const size = sizeBandOf(c.undergradSize)
+      return {
+        unitid: c.unitid,
+        name: c.name,
+        ...(c.state ? { state: c.state } : {}),
+        band: c.fit,
+        ...(size ? { size } : {}),
+        ...(c.control ? { control: c.control } : {}),
+        programs: c.programs,
+        ...(c.mustInclude ? { mustInclude: true } : {}),
+      }
+    }),
+    ...(problems?.length ? { problems: problems.slice(0, 40) } : {}),
+  }
+}
+
+export interface Explained {
+  rows: DraftRow[]
+  /** The model's one overall note, when it passed the check. */
+  note?: string
+  /** How the draft was made: the model and counts, or why the AI step did not run. */
+  source: AiSource & ListDraftRun
+  /** False when the rows are the banded candidates to pick from by hand. */
+  byModel: boolean
+}
+
+/**
+ * Asks the model which candidates to put on the list and why, and checks the
+ * answer: a unitid that is not a candidate is dropped, a duplicate is dropped,
+ * and a reason (or the note) that states a percentage or a four-digit number
+ * is thrown away. If anything was thrown away or a band came back short, the
+ * model is asked once more for just what is missing. Whatever is still short
+ * is filled from the top candidates of that band with the stock reason.
+ *
+ * Never throws for a model failure: with no key, an error, a refusal or no
+ * answer in time, it returns the top banded candidates for the counselor to
+ * pick from by hand, and says why.
+ */
+export async function explainCandidates(pool: CandidatePool, notes: NoteForList[]): Promise<Explained> {
+  const { candidates, preferences } = pool
+  const mix = preferences.mix
+  const byHand = (reason: string): Explained => ({
+    rows: handPickRows(candidates, mix),
+    source: { kind: 'placeholder', reason, at: new Date().toISOString(), matched: pool.matched, considered: candidates.length },
+    byModel: false,
+  })
+  if (!listModel.available()) return byHand('The server has no Anthropic API key, so no colleges were chosen or explained by the AI.')
+
+  const started = Date.now()
+  const left = () => AI_BUDGET_MS - (Date.now() - started)
+  const nameOf = new Map(candidates.map((c) => [c.unitid, c.name]))
+  const usableNote = (text: string) => (reasonProblem(text) ? undefined : text.trim())
+  try {
+    const first = await within(listModel.run(modelInput(pool, notes)), left())
+    const checked = checkPicks(first.draft.picks, candidates)
+    let accepted = checked.accepted
+    let rejected = checked.rejected.map((r) => r.unitid)
+    let rejectedReasons = checked.rejected.length
+    let note = usableNote(first.draft.note)
+    let model = first.model
+    let askedTwice = false
+
+    const need = stillNeeded(candidates, mix, accepted)
+    const short = need.Reach + need.Target + need.Likely > 0
+    const chosen = new Set(accepted.map((p) => p.unitid))
+    const remaining = candidates.filter((c) => !chosen.has(c.unitid))
+    if ((checked.rejected.length > 0 || short || note === undefined) && remaining.length > 0 && left() > SECOND_ASK_NEEDS_MS) {
+      askedTwice = true
+      const problems = [
+        ...checked.rejected.map((r) => `Your reason for ${nameOf.get(r.unitid)} (${r.unitid}) was discarded because ${r.problem}. A reason may not contain a percentage or a four-digit number.`),
+        ...(checked.dropped ? [`${checked.dropped} of your picks were not among the candidates, or were named twice, and were dropped.`] : []),
+        ...(note === undefined ? ['Your overall note was discarded because it was empty, too long or stated a figure.'] : []),
+        `Still needed: Reach ${need.Reach}, Target ${need.Target}, Likely ${need.Likely}.`,
+      ]
+      try {
+        const second = await within(listModel.run(modelInput(pool, notes, remaining, need, problems)), left())
+        const again = checkPicks(second.draft.picks, remaining, chosen)
+        accepted = [...accepted, ...again.accepted]
+        rejected = [...rejected, ...again.rejected.map((r) => r.unitid)]
+        rejectedReasons += again.rejected.length
+        note ??= usableNote(second.draft.note)
+        model = second.model
+      } catch {
+        // The first answer stands; whatever is short is filled below.
+      }
+    }
+
+    const rows = assembleDraft(candidates, mix, accepted, rejected)
+    return {
+      rows,
+      note,
+      source: { kind: 'claude', model, at: new Date().toISOString(), matched: pool.matched, considered: candidates.length, rejectedReasons, filled: rows.filter((r) => !r.aiExplained).length, askedTwice },
+      byModel: true,
+    }
+  } catch (error) {
+    if (error instanceof TimedOut) return byHand('The AI did not answer in time, so no colleges were chosen or explained by it.')
+    // An AiError's message is written for the counselor. Anything else is not shown.
+    return byHand(`The AI step failed, so no colleges were chosen or explained by it. ${error instanceof AiError ? error.message : 'Something went wrong while drafting.'}`)
+  }
+}
+
+// ── The draft ───────────────────────────────────────────────────────────────
+
+const MEETINGS_READ = 12
+
+/** The approved meeting records the model reads for this student. See notesForListDraft for what is and is not included. */
+export async function readNotesForList(client: Client, studentId: ID): Promise<NoteForList[]> {
+  // The transcript column is not selected: a transcript is never sent for this.
+  const found = await client.from('meetings').select('title, date, status, ai, recap').eq('student_id', studentId).eq('status', 'completed').order('date', { ascending: false }).limit(MEETINGS_READ)
+  if (found.error) throw new ListDraftError('database', 'The meeting notes could not be read.')
+  return notesForListDraft(
+    found.data.map((m) => ({
+      title: m.title,
+      date: m.date,
+      status: m.status as Meeting['status'],
+      ai: (m.ai ?? undefined) as unknown as Meeting['ai'],
+      recap: (m.recap ?? undefined) as unknown as Meeting['recap'],
+    })),
+  )
+}
+
+export interface DraftedList {
+  draftId: ID
+  /** How many colleges the draft holds. */
+  items: number
+  /** False when the AI step did not run and the draft is the banded candidates to pick from. */
+  byModel: boolean
+}
+
+/**
+ * Drafts a college list for one student and saves it as a draft for review:
+ * candidates by the hard preferences, bands by the rules, the model's choice
+ * and reasons (checked), all in `college_list_drafts` and
+ * `college_list_draft_items`. Returns the new draft's id.
+ *
+ * It NEVER writes to `colleges`. Only a counselor's "Add to list" does that
+ * (the database function add_draft_to_college_list).
+ */
+export async function draftCollegeList(client: Client, studentId: ID, preferences: unknown, options: { userId?: ID } = {}): Promise<DraftedList> {
+  const pool = await candidatePool(client, studentId, preferences)
+  if (pool.candidates.length === 0) throw new ListDraftError('bad_input', 'No college in the directory matches these preferences that is not already on the list. Loosen a filter and try again.')
+  const notes = await readNotesForList(client, studentId)
+  const explained = await explainCandidates(pool, notes)
+
+  const draftId = randomUUID()
+  const firmId = pool.student.firmId
+  const draft = await client.from('college_list_drafts').insert({
+    id: draftId,
+    firm_id: firmId,
+    student_id: pool.student.id,
+    created_by: options.userId ?? null,
+    preferences: pool.preferences as unknown as Json,
+    note: explained.note ?? null,
+    source: explained.source as unknown as Json,
+    status: 'draft',
+  })
+  if (draft.error) throw new ListDraftError('database', 'The draft could not be saved.')
+
+  const items = explained.rows.map((row, position) => ({
+    firm_id: firmId,
+    draft_id: draftId,
+    unitid: row.candidate.unitid,
+    fit: row.candidate.fit,
+    fit_basis: row.candidate.basis as unknown as Json,
+    fit_set_by: 'rule',
+    reason: row.reason.slice(0, 600),
+    ai_explained: row.aiExplained,
+    // Chosen by the model, or asked for by the counselor: kept. Offered to pick from by hand: not kept until picked.
+    kept: explained.byModel || Boolean(row.candidate.mustInclude),
+    position,
+  }))
+  const saved = await client.from('college_list_draft_items').insert(items)
+  if (saved.error) {
+    // Nothing half-made is left behind.
+    await client.from('college_list_drafts').delete().eq('id', draftId)
+    throw new ListDraftError('database', 'The draft could not be saved.')
+  }
+  return { draftId, items: items.length, byModel: explained.byModel }
 }

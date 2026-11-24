@@ -7,7 +7,7 @@
 // which is verified with Supabase on every call. Everything is then done as
 // that person, so row level security applies. The service role is never used here.
 
-import { CollegeToolError, getCollege, searchColleges, type CollegeToolErrorCode } from '../server/collegeTools.js'
+import { bandCollegesForStudent, CollegeToolError, draftCollegeList, getCollege, searchColleges, type CollegeToolErrorCode } from '../server/collegeTools.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, type Caller } from '../server/supabase.js'
 
@@ -19,6 +19,8 @@ const MAX_PER_USER = 300
 /** Requests per address per five minutes, counted before sign-in is checked. */
 const MAX_PER_ADDRESS = 600
 const MAX_BODY_BYTES = 20_000
+/** List drafts per person per five minutes. */
+const MAX_DRAFTS_PER_USER = 10
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
@@ -33,9 +35,17 @@ const ACTIONS: Record<string, (caller: SignedIn, body: Record<string, unknown>) 
   search: (caller, body) => searchColleges(caller.client, (body.filters ?? {}) as Parameters<typeof searchColleges>[1]),
   /** { action: 'get', college: unitid or name } → { found, college } or { found: false, candidates } */
   get: (caller, body) => getCollege(caller.client, body.college as number | string),
+  /** { action: 'band', studentId, unitids } → [{ unitid, name, fit, basis, reason }]: bands by the rules, no model. */
+  band: (caller, body) => bandCollegesForStudent(caller.client, body.studentId as string, body.unitids as number[]),
+  /** { action: 'draft', studentId, preferences } → { draftId, items, byModel }. Saves a draft; never writes to the college list. */
+  draft: (caller, body) => {
+    // Each draft is one or two model calls, so it is counted apart from the type-ahead searches.
+    if (rateLimited(`list-draft:${caller.userId}`, MAX_DRAFTS_PER_USER)) throw new CollegeToolError('rate_limited', 'Too many list drafts. Wait a few minutes and try again.')
+    return draftCollegeList(caller.client, body.studentId as string, body.preferences, { userId: caller.userId })
+  },
 }
 
-const STATUS: Record<CollegeToolErrorCode, number> = { bad_input: 400, not_found: 404, not_built: 501, database: 502 }
+const STATUS: Record<CollegeToolErrorCode, number> = { bad_input: 400, not_found: 404, not_built: 501, database: 502, rate_limited: 429 }
 
 export async function POST(request: Request): Promise<Response> {
   // Fail closed: if sign-ins cannot be checked, the endpoint does nothing.

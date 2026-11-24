@@ -8,7 +8,9 @@
 // student link and parent reports, and fails if either starts reading drafts.
 
 import { readFileSync } from 'node:fs'
+import { PROMPTS } from '../server/prompts.js'
 import { CIP_PROGRAMS } from '../shared/cipPrograms.js'
+import { INPUTS, OUTPUTS, SERVER_ONLY_FEATURES } from '../shared/contract.js'
 import { BAND_RULES, CANDIDATE_CAP, DEFAULT_MIX, bandCollege, bestTest, capCandidates, counselorBasis, sizeBandOf, type BandCollege, type Candidate } from '../src/lib/collegeBands.js'
 import {
   MAJOR_ALIASES,
@@ -217,6 +219,26 @@ const noteText = JSON.stringify(notes)
 check('the model reads the three most recent approved meeting records, newest first', notes.map((n) => n.date).join() === '2026-11-10,2026-10-15,2026-10-01')
 check('approved meeting notes are used; an approved recap stands in when the notes are not approved', noteText.includes('OCT15') && noteText.includes('recap NOV10') && !noteText.includes('IGNORED'))
 check('never a transcript, never anything unapproved, never a meeting that has not happened', !noteText.includes('RAW TRANSCRIPT') && !noteText.includes('UNAPPROVED') && !noteText.includes('FUTURE'))
+
+// ── What the model is sent, and what it may send back ──
+{
+  const forced = {
+    student: { gradYear: 2027, majors: ['Computer Science'], interests: [], activities: [], gpa: 3.91, sat: 1480, firstName: 'ZZNAME', parents: [{ name: 'ZZPARENT' }], personalNotes: ['ZZREMEMBER'] },
+    recentNotes: [],
+    preferences: { majors: [], programs: [], states: [], regions: [], control: [], sizes: [], netPriceCeiling: true, maxNetPrice: 41234 },
+    mix: DEFAULT_MIX,
+    candidates: [{ unitid: 166683, name: 'Example Institute', state: 'MA', band: 'Reach', size: 'small', programs: ['Computer Science'], admitRate: 0.0455, satMath75: 800, avgNetPrice: 19876, undergradSize: 4576, basis: { summary: 'ZZBASIS 4.5%' } }],
+  }
+  const parsed = INPUTS.collegeList.safeParse(forced)
+  const sent = parsed.success ? JSON.stringify(parsed.data) + PROMPTS.collegeList.user(parsed.data) : ''
+  check('the request to the model has no field for a figure: scores, GPA, admit rate, prices and sizes are dropped', parsed.success && !/3\.91|1480|0\.0455|800|19876|4576|41234|ZZBASIS/.test(sent))
+  check('…nor for the student’s name, parents or things to remember', parsed.success && !/ZZNAME|ZZPARENT|ZZREMEMBER/.test(sent))
+  check('the model’s answer has a unitid and a reason per college and one note, and nowhere to put a band or a figure', Object.keys(OUTPUTS.collegeList.shape).join() === 'picks,note' && Object.keys(OUTPUTS.collegeList.shape.picks.element.shape).join() === 'unitid,reason')
+  check('the browser cannot ask /api/ai for a list draft', SERVER_ONLY_FEATURES.includes('collegeList'))
+  const system = PROMPTS.collegeList.system
+  check('the prompt tells the model to state no figures and no chances', /State no number/.test(system) && /how likely the student is to be admitted/.test(system))
+  check('the prompt itself states no admit rate or test score', !/\d\s*%/.test(system) && !/(?<!\d)1[0-6]\d{2}(?!\d)/.test(system))
+}
 
 // ── Privacy: a draft is the counselor's alone ──
 // Nothing in a draft may reach the student link or a parent report. Neither

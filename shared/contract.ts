@@ -186,6 +186,56 @@ export const INPUTS = {
     personalNotes: z.array(NoteFact).max(3).optional(),
     maxChars: z.number().int().min(100).max(1000),
   }),
+  // Drafting a college list. SERVER ONLY (see SERVER_ONLY_FEATURES below): the candidates come
+  // from the database and the answer is checked in server/collegeListDrafts.ts, so /api/ai refuses it.
+  //
+  // GUARDRAIL: there is no field here for a figure. No admit rate, no test score or range, no GPA,
+  // no price, no enrolment number. Bands are set by our code and passed in as a word; size is a
+  // word. Unknown fields are dropped when the input is parsed. Do not add a number to a candidate.
+  // Also absent on purpose: the student's name, parents, documents and "things to remember".
+  collegeList: z.object({
+    student: z.object({
+      gradYear: z.number().int(),
+      majors: z.array(text(80)).max(10),
+      interests: z.array(text(80)).max(20),
+      activities: z.array(z.object({ name: text(120), role: text(120), detail: text().optional() })).max(30),
+    }),
+    /** The three most recent meeting records a counselor approved (notesForListDraft). Never a transcript. */
+    recentNotes: z.array(z.object({ date: isoDate, title: text(), text: text(1600) })).max(3),
+    /** What the counselor asked for. The filters have already been applied by our code. */
+    preferences: z.object({
+      majors: z.array(text(80)).max(10),
+      programs: z.array(text(200)).max(40),
+      states: z.array(text(2)).max(60),
+      regions: z.array(text(40)).max(10),
+      control: z.array(z.enum(['public', 'private_nonprofit', 'private_for_profit'])).max(3),
+      sizes: z.array(z.enum(['small', 'medium', 'large'])).max(3),
+      /** Whether a net price ceiling was applied. The amount is not sent. */
+      netPriceCeiling: z.boolean(),
+    }),
+    /** How many colleges to choose in each band. */
+    mix: z.object({ Reach: z.number().int().min(0).max(10), Target: z.number().int().min(0).max(10), Likely: z.number().int().min(0).max(10) }),
+    candidates: z
+      .array(
+        z.object({
+          unitid: z.number().int(),
+          name: text(200),
+          state: text(2).optional(),
+          /** Set by our code (src/lib/collegeBands.ts). The model does not decide or change it. */
+          band: z.enum(['Reach', 'Target', 'Likely']),
+          size: z.enum(['small', 'medium', 'large']).optional(),
+          control: z.enum(['public', 'private_nonprofit', 'private_for_profit']).optional(),
+          /** Titles of its programs that match the counselor's program filter. */
+          programs: z.array(text(200)).max(40),
+          /** The counselor wants this one on the list whatever else is chosen. */
+          mustInclude: z.boolean().optional(),
+        }),
+      )
+      .min(1)
+      .max(300),
+    /** On the second ask only: what was wrong with the first answer. */
+    problems: z.array(text()).max(40).optional(),
+  }),
 } as const
 
 export type Feature = keyof typeof INPUTS
@@ -312,6 +362,21 @@ export const OUTPUTS = {
     /** One short sentence for the counselor on why that task comes first, or null. Not sent to the student. */
     leadReason: z.string().nullable(),
   }),
+  // GUARDRAIL: a college is named by its unitid and explained in words. There is no field for a
+  // band, a figure or a chance of admission, so there is nowhere to put one. The server drops any
+  // unitid that was not a candidate and any reason that states a percentage or a four-digit number.
+  collegeList: z.object({
+    picks: z.array(
+      z.object({
+        /** One of the candidates' unitids, exactly as given. */
+        unitid: z.number(),
+        /** Why this college for this student: two sentences at most, no figures. */
+        reason: z.string(),
+      }),
+    ),
+    /** One short paragraph for the counselor about the list as a whole. */
+    note: z.string(),
+  }),
 } as const
 
 export type FeatureOutput<F extends Feature> = z.infer<(typeof OUTPUTS)[F]>
@@ -371,3 +436,11 @@ export const fileClassification = (typeIds: [string, ...string[]]) =>
   })
 
 export type FileClassification = z.infer<ReturnType<typeof fileClassification>>
+
+// ── Features the browser may not ask for ────────────────────────────────────
+
+/**
+ * Features that only the server runs. /api/ai refuses them: their input is
+ * built from the database on the server, and their output is checked there.
+ */
+export const SERVER_ONLY_FEATURES: readonly Feature[] = ['collegeList']
