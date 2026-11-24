@@ -14,6 +14,8 @@ import { GET as studentGet, POST as studentPost } from '../api/student.js'
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
 import type { Json } from '../src/lib/database.types.js'
 import { adminClient, anonClient, createAccount, createMember, removeAccount, requireSettings, type TestAccount } from './testAccounts.js'
+import { POST as collegesPost } from '../api/colleges.js'
+import { CollegeToolError, getStudentCollegeList } from '../server/collegeTools.js'
 
 requireSettings()
 
@@ -325,6 +327,26 @@ try {
     check(`…but cannot delete from ${table}`, Boolean((await a.client.from(table).delete().gte('unitid', 0)).error))
   }
   check('a signed-in person cannot insert into or update the directory', Boolean((await a.client.from('college_directory').insert({ unitid: 999999999, name: 'Invented' })).error) && Boolean((await a.client.from('college_directory').update({ name: 'x' }).gte('unitid', 0)).error))
+  check('…nor insert into or update its programs', Boolean((await a.client.from('college_programs').insert({ unitid: 999999999, cip_code: '1107', cip_title: 'Invented' })).error) && Boolean((await a.client.from('college_programs').update({ cip_title: 'x' }).gte('unitid', 0)).error))
+  check('anon cannot write either table', Boolean((await anon.from('college_directory').insert({ unitid: 999999998, name: 'Invented' })).error) && Boolean((await anon.from('college_directory').update({ name: 'x' }).gte('unitid', 0)).error) && Boolean((await anon.from('college_directory').delete().gte('unitid', 0)).error) && Boolean((await anon.from('college_programs').insert({ unitid: 999999998, cip_code: '1107', cip_title: 'Invented' })).error) && Boolean((await anon.from('college_programs').delete().gte('unitid', 0)).error))
+  const directoryAfter = await adminClient().from('college_directory').select('unitid, name').or('unitid.gte.999999998,name.in.(x,Invented)')
+  check('none of those attempts changed the directory', !directoryAfter.error && (directoryAfter.data ?? []).length === 0)
+
+  // The endpoint the screens use, and the functions behind it.
+  const colleges = (token: string | undefined, body: unknown) => collegesPost(new Request('http://localhost/api/colleges', { method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {}, body: JSON.stringify(body) }))
+  check('the college endpoint refuses a request with no sign-in', (await colleges(undefined, { action: 'search', filters: {} })).status === 401)
+  check('…and the anon key as a token', (await colleges(process.env.VITE_SUPABASE_ANON_KEY, { action: 'search', filters: {} })).status === 401)
+  const searched = await colleges(a.token, { action: 'search', filters: { limit: 1 } })
+  const searchedBody = (await searched.json()) as { ok: boolean; data?: { colleges: unknown[]; total: number } }
+  check('a signed-in member can search the directory through it', searched.status === 200 && searchedBody.ok && Array.isArray(searchedBody.data?.colleges))
+  check('…and a request it does not understand is refused, not run', (await colleges(a.token, { action: 'search', filters: { limit: 5000 } })).status === 400 && (await colleges(a.token, { action: 'delete' })).status === 400)
+  const ownList = await getStudentCollegeList(a.client, seeded.A.studentId)
+  check('the college tools read a student list as the caller: A reads its own', ownList.colleges.length === 1 && ownList.colleges[0].name === 'Test University')
+  const othersList = await getStudentCollegeList(b.client, seeded.A.studentId).then(
+    () => 'read',
+    (error: unknown) => (error instanceof CollegeToolError ? error.code : 'crashed'),
+  )
+  check("…and B cannot read A's", othersList === 'not_found', othersList)
 } catch (error) {
   failed++
   console.error('\nThe run stopped early:', error instanceof Error ? error.message : error)

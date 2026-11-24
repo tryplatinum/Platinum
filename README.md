@@ -31,6 +31,7 @@ npm run dev                    # http://localhost:5173
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
 | `npm run test:notes` | Check, with no keys or network, that a student's "things to remember" cannot reach a parent report, a parent reminder or the student link's code |
 | `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls) |
+| `npm run import:colleges` | Fill the college directory from the College Scorecard, by hand (`-- --dry-run` reports without writing). See "The college directory" |
 
 ### Environment variables
 
@@ -45,6 +46,7 @@ In `.env.local` (git-ignored) for local work, and in the host's settings for a d
 | `VITE_PUBLIC_URL` | browser, optional | The address students reach the app at, used for the link in weekly texts. Only needed when you open the app at a different address from the one students use. |
 | `ANTHROPIC_MODEL` | server only, optional | Model for every AI feature. Default `claude-sonnet-5-5`. |
 | `AI_REFUSAL_FALLBACK` | server only, optional | `off` stops the API re-running a declined request on a fallback model. |
+| `SCORECARD_API_KEY` | `npm run import:colleges` only | A free api.data.gov key for the College Scorecard. Never used by the browser or a server function. |
 
 Only the two `VITE_` values reach the browser. The other keys are read from the environment by the server functions and are never logged.
 
@@ -89,7 +91,8 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | Sign-in and accounts | **Real.** Supabase Auth with email and password: sign up, sign in, sign out, reset password |
 | The student's own page | **Real.** A secret link per student opens it on their phone with no login. You create and revoke links from the student page |
 | Sharing between counselors, invitations, switching firms | Not built. One account, one firm |
-| Payments, college database | Not built |
+| Payments | Not built |
+| College directory | **Real** public figures for about 1,900 U.S. colleges from the U.S. Department of Education College Scorecard, imported by hand and shown with the year each describes. No deadlines, fees, essay prompts or requirements, and no estimate of any student's chance of admission |
 
 ## How the AI part works
 
@@ -197,6 +200,10 @@ shared/student.ts         Zod schema for the student link's three writes
 supabase/migrations/      The database: tables, policies, functions
 scripts/test-isolation.ts Two firms, anon, the student link and the AI endpoint, on the real project
 scripts/test-ai.ts        Calls every AI feature for real and prints the drafts
+api/colleges.ts           Server function: search and look up the college directory
+server/collegeTools.ts    The college tools: search, get, a student's list (and the central AI's tool definitions)
+shared/colleges.ts        The directory's shapes, labels and which figure has which data year
+scripts/import-colleges.ts  Fills the college directory from the College Scorecard, by hand
 design/reference/         The nine approved HTML mockups (visual reference only)
 
 src/types.ts              Every data shape
@@ -219,6 +226,7 @@ src/services/ai.ts        The AI module. Real endpoint, labelled placeholder fal
 src/services/studentLink.ts  The browser side of the student link
 src/services/workflows.ts Draft a meeting / prepare a brief and store the result
 src/services/outbox.ts    Simulated sending
+src/services/colleges.ts  The browser side of the college directory: search, figures for linked rows
 
 src/components/ui.tsx     Card, Button, Pill, Tabs, SegmentedControl, FilterChips, DateChip,
                           ProgressWithCount, CheckCircle, Toast, Modal, AI tags
@@ -228,6 +236,7 @@ src/components/StudentLinkModal.tsx  Create, copy and revoke a student's link
 src/components/forms.tsx  Add student, add/edit parent, schedule meeting, log a meeting
 src/components/StudentTable.tsx, TaskRows.tsx, ReminderComposer.tsx, Bilingual.tsx
 src/components/meeting/   MeetingReview (numbered sections), MeetingReport, BriefCard
+src/components/colleges.tsx  College type-ahead, and the figures for a linked list row
 
 src/screens/counselor/    CommandCenter, Students, StudentPage (+ student/ tabs),
                           Meetings (by student, calendar), Messages, WeeklyTexts, SignIn (+ firm setup, reset)
@@ -241,6 +250,63 @@ Rules of thumb:
 - Anything computed goes in `lib/derive.ts`, so every screen agrees.
 - Colours are tokens in `src/index.css`. No raw hex in screens.
 - Every send goes through the store's `sendMessage` (or an approve action) and the confirmation includes `SENT_NOTE`.
+
+## The college directory
+
+A shared, read-only table of U.S. colleges (`college_directory`, with each one's bachelor's programs in `college_programs`), filled from the **U.S. Department of Education College Scorecard**. It is the same for every firm: any signed-in person can read it, nobody but the import script can write it, and it is not part of a firm's data.
+
+- **Where it shows.** On a student's Overview, "Add college" searches the directory as you type ("MIT" finds Massachusetts Institute of Technology through its alias). Picking a result links the list row to the directory; "Add it anyway" keeps a typed name for a college the directory does not have. A row from before the directory is offered a possible match by name, and is linked only when you press Link. There is no separate college search screen.
+- **What a linked row shows.** The institution's published admit rate, the SAT and ACT middle ranges (25th to 75th percentile of enrolled students), and the average net price, each with the year it describes, and "Source: U.S. Department of Education College Scorecard". A figure the college did not report is a dash, never zero. The figures are read from the directory when the list is shown; they are not copied onto the student's row.
+- **What it is not.** The admit rate is the college's own figure for everyone who applied. Nothing in the code, the prompts or the screens estimates one student's chance of admission. The directory has no deadlines, fees, essay prompts or requirements: a college added from it has no plan or deadline until you set them on its row, and shows "Not set" until then.
+- **The tools.** `server/collegeTools.ts` has plain functions (`searchColleges`, `getCollege`, `getStudentCollegeList`, and `bandCollegesForStudent`, which is not built yet), each with a JSON schema in `collegeToolDefinitions`. They take the caller's own Supabase client, so row level security applies, and the central AI can call the same functions. `POST /api/colleges` exposes `search` and `get` to signed-in members of a firm, with the same in-memory rate limit as the other functions.
+
+### Importing it
+
+1. **Get a key.** Sign up at https://api.data.gov/signup/ (free; the key arrives by email) and put it in `.env.local` as `SCORECARD_API_KEY=…`. The script also needs `VITE_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It is never run by the browser or by a server function, and it stops with a clear message when the key is missing.
+2. **Look first:** `npm run import:colleges -- --dry-run` fetches everything and prints the summary without writing.
+3. **Import:** `npm run import:colleges`. About twenty requests to the Scorecard (the limit is 1,000 an hour; the script waits and retries on a 429).
+
+It keeps institutions that are **currently operating and predominantly grant bachelor's degrees**: 1,935 on 2026-11-23. Rows are upserted by UNITID, the federal id. An institution that is no longer in the source is marked `is_active = false` and never deleted, so links from student lists keep working. If a run would deactivate more than a fifth of the directory it stops and writes nothing, since that is more likely a fault in the source than a wave of closures (`--force` overrides). A missing figure is stored as null, never 0; a figure the table would refuse (a rate outside 0 to 1, an impossible score) is stored as null and counted. The summary prints how many rows were inserted, updated and deactivated, the null count for every column, and the test policy of six well-known schools to compare with what you know. `-- --only=166027,110635` imports just those UNITIDs and deactivates nothing.
+
+**When to re-run it:** after each Scorecard release, two or three times a year (https://collegescorecard.ed.gov/data/ lists them). **Before you do**, open the new data dictionary's "Most_Recent_Inst_Cohort_Map" tab and update `DICTIONARY_RELEASED` and `DATA_YEARS` at the top of `scripts/import-colleges.ts`. The API does not say which year a field describes, so those constants are the only source for the years printed beside every figure. They are written into each row's `sources` column, per group of fields.
+
+### Where each column comes from
+
+Data dictionary released October 15, 2026 (https://collegescorecard.ed.gov/files/CollegeScorecardDataDictionary.xlsx). API: `https://api.data.gov/ed/collegescorecard/v1/schools`, filtered with `school.operating=1` and `school.degrees_awarded.predominant=3`.
+
+| Our column | Scorecard variable | API field | Data year |
+| --- | --- | --- | --- |
+| unitid | UNITID | id | 2025-26 |
+| name | INSTNM | school.name | 2025-26 |
+| aliases | ALIAS | school.alias (one string; split on commas, semicolons and bars) | 2025-26 |
+| city, state | CITY, STABBR | school.city, school.state | 2025-26 |
+| region | REGION | school.region_id | 2025-26 |
+| lat, lon | LATITUDE, LONGITUDE | location.lat, location.lon | 2025-26 |
+| url | INSTURL | school.school_url | 2025-26 |
+| control | CONTROL | school.ownership | 2025-26 |
+| level | ICLEVEL | school.institutional_characteristics.level | 2025-26 |
+| locale | LOCALE | school.locale | 2025-26 |
+| undergrad_size | UGDS | latest.student.size | Fall 2024 |
+| admit_rate | ADM_RATE | latest.admissions.admission_rate.overall | Fall 2024 |
+| sat_ebrw_25/50/75 | SATVR25, SATVR50, SATVR75 | latest.admissions.sat_scores.{25th,50th,75th}_percentile.critical_reading | Fall 2024 |
+| sat_math_25/50/75 | SATMT25, SATMT50, SATMT75 | latest.admissions.sat_scores.{25th,50th,75th}_percentile.math | Fall 2024 |
+| act_25/50/75 | ACTCM25, ACTCM50, ACTCM75 | latest.admissions.act_scores.{25th,50th,75th}_percentile.cumulative | Fall 2024 |
+| test_policy, test_policy_code | ADMCON7 | latest.admissions.test_requirements | Fall 2024 |
+| open_admissions | OPENADMP (1 yes, 2 no, 3 does not enroll first-time students → null) | latest.school.open_admissions_policy | Fall 2024 |
+| tuition_in_state, tuition_out_of_state | TUITIONFEE_IN, TUITIONFEE_OUT | latest.cost.tuition.in_state, latest.cost.tuition.out_of_state | 2025-26 |
+| avg_net_price | NPT4_PUB for public, NPT4_PRIV for private | latest.cost.avg_net_price.public, latest.cost.avg_net_price.private | 2024-25 |
+| completion_rate | C150_4 | latest.completion.completion_rate_4yr_150nt | Fall 2019 cohort |
+| median_earnings | MD_EARN_WNE_P10 | latest.earnings.10_yrs_after_entry.median | measured 2022 and 2023, in 2024 dollars |
+| is_active | CURROPER | school.operating | August 2026 |
+| college_programs | CIPCODE, CIPDESC, CREDLEV = 3 | latest.programs.cip_4_digit | 2023-24 |
+| search_text | none (ours) | the name, the name with punctuation as spaces, and the alias string, lower-cased | |
+| pct_submitting_sat, pct_submitting_act | none | none: left null, not filled from another source | |
+
+- **Test policy** comes from the ADMCON7 code, and the raw code is always kept in `test_policy_code`: 1 Required → `required`; 2 Recommended → `optional`; 5 Considered but not required → `optional`; 3 Neither required nor recommended → `not_required` (shown as "Not required or recommended"); 4 Do not know → `unknown`; missing → null. `blind` is never set: the Scorecard does not say whether scores are ignored.
+- **SAT and ACT** use the 25th, 50th and 75th percentiles. The Scorecard's "midpoint" variables are not used: their latest data is Fall 2021.
+- **Programs** are bachelor's level only (credential level 3), one row per four-digit CIP code. The API lists each code once per credential level and sometimes twice; the import keeps one. The full stop the Scorecard puts at the end of each title is dropped.
+- **Net price** can be negative (grants above the cost of attendance) and is stored as reported.
+- **`sources` groups:** `identity`, `size`, `admissions`, `tests`, `cost` (tuition), `net_price`, `outcomes` (completion rate), `earnings`, `programs`, each `{ "source": "U.S. Department of Education College Scorecard", "year": "…" }`. Which figure belongs to which group is in `shared/colleges.ts`.
 
 ## How to add a feature
 
@@ -286,3 +352,7 @@ Rules of thumb:
 - **The sample caseload's dates are fixed on the day it is loaded.** After a few days it drifts out of date; Reset demo refreshes it. Its texts name an invented counselor, not you.
 - **Few automated tests.** `npm run test:isolation` covers access rules and `npm run test:notes` covers where things to remember may go. The screens were checked with a browser script that is not committed.
 - Drafts vary between runs. The code drops a proposed task only when its title exactly matches an open one.
+- **A suggested college match is the closest name, not a certainty.** "Michigan" may offer Michigan State. Nothing is linked until you press Link; "Not this one" is remembered in that browser only.
+- **Directory figures are fetched when a list is shown** and kept until the page is reloaded. They are as current as the last import.
+- **Aliases are split on commas**, so an alias that itself contains a comma is stored as two. Search is unaffected: it reads the whole alias string.
+- **A college is on a list once per link, not once per name.** The same college can be added twice as free text.
