@@ -13,7 +13,9 @@
     "test:isolation": "node --env-file-if-exists=.env.local --import tsx scripts/test-isolation.ts",
     "db:push": "supabase db push --remote",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
-    "import:colleges": "node --env-file-if-exists=.env.local --import tsx scripts/import-colleges.ts"
+    "import:colleges": "node --env-file-if-exists=.env.local --import tsx scripts/import-colleges.ts",
+    "test:bands": "node --import tsx scripts/test-bands.ts",
+    "build:programs": "node --env-file-if-exists=.env.local --import tsx scripts/build-cip-programs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

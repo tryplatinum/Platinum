@@ -429,11 +429,90 @@ export interface DirectoryCollege {
   sources: Record<string, DataSource>
 }
 
-/** What the counselor asked for in a draft list. Brief C defines its fields. */
-export type CollegeListPreferences = Record<string, unknown>
+/** Undergraduates: small is under 5,000, medium 5,000 to 14,999, large 15,000 or more (SIZE_BANDS in lib/collegeBands.ts). */
+export type SizeBand = 'small' | 'medium' | 'large'
 
-/** The figures and the rule behind a band, computed in code. `summary` is the "why this band" line. Brief C defines the rest. */
-export type FitBasis = { summary?: string; limitedData?: boolean } & Record<string, unknown>
+/** How many colleges a draft aims for in each band. */
+export type ListMix = Record<CollegeFit, number>
+
+/** A directory college named in a draft's preferences. The name is kept so the form can show it without a lookup. */
+export interface CollegeRef {
+  unitid: number
+  name: string
+}
+
+/**
+ * What the counselor asked for in a draft list. Every field is optional: an
+ * empty filter means "any". normalizePreferences in lib/collegeListDraft.ts
+ * fills in the defaults.
+ */
+export interface CollegeListPreferences {
+  /** Intended majors as typed, for the AI to read. The filter itself is `programs`. */
+  majors?: string[]
+  /** Bachelor's programs a college must offer at least one of, by four-digit CIP code. */
+  programs?: { cipCode: string; cipTitle: string }[]
+  /** Two-letter state codes. A college passes when it is in one of these states or one of `regions`. */
+  states?: string[]
+  regions?: string[]
+  control?: ('public' | 'private_nonprofit' | 'private_for_profit')[]
+  sizes?: SizeBand[]
+  /** Highest average net price, in dollars. Colleges with none on record are left out when set. */
+  maxNetPrice?: number
+  /** Open-admission colleges are left out unless this is true. */
+  includeOpenAdmission?: boolean
+  mix?: ListMix
+  /** Always in the draft, banded by the same rules, even when they fail a filter. */
+  mustInclude?: CollegeRef[]
+  exclude?: CollegeRef[]
+}
+
+/** Which rule in lib/collegeBands.ts placed a college in its band. */
+export type BandRule = 'admit_rate_under_reach' | 'at_or_above_75th' | 'below_25th' | 'between' | 'admit_rate_alone' | 'open_admission' | 'no_figures'
+
+/**
+ * The figures and the rule behind a band, computed in code (bandCollege in
+ * lib/collegeBands.ts), never by the model. `summary` is the "why this band"
+ * line; it is copied to the list row as its fit reason when the draft is added.
+ */
+export interface FitBasis {
+  summary?: string
+  /** True when the band rests on less than the full rule: no test score on file, or figures the college did not report. */
+  limitedData?: boolean
+  /** What was missing, in words. */
+  limitedReason?: string
+  rule?: BandRule
+  /** The band the rule gave. Differs from the item's band once a counselor has changed it. */
+  ruleFit?: CollegeFit
+  /** The rule's own "why" line, kept when a counselor changes the band. */
+  ruleSummary?: string
+  /** The student's figures the rule read. The GPA is recorded for context only: no rule uses it. */
+  student?: { test?: 'SAT' | 'ACT'; score?: number; gpa?: number; gpaWeighted?: number }
+  /** The college's figures the rule read. test25 and test75 are for the same test as the student's score. */
+  college?: { admitRate?: number; openAdmissions?: boolean; test25?: number; test75?: number }
+  /** The data year of each figure above. */
+  years?: { admissions?: string; tests?: string }
+  /** The thresholds in force when the band was set. */
+  thresholds?: Record<string, number>
+  /** Titles of the college's programs that matched the draft's program filter. */
+  programs?: string[]
+  /** Set on a college the counselor added to the draft from the directory. */
+  addedBy?: 'counselor'
+}
+
+/** What a draft's `source` also records about how it was made. All counts are ours, not the model's. */
+export interface ListDraftRun {
+  at?: ISODateTime
+  /** Colleges that passed the filters. */
+  matched?: number
+  /** Of those, how many were banded and shown to the model (at most 300). */
+  considered?: number
+  /** Model reasons thrown away by the server's check. */
+  rejectedReasons?: number
+  /** Colleges added with the stock reason because too few of the model's picks survived. */
+  filled?: number
+  /** True when the model was asked a second time. */
+  askedTwice?: boolean
+}
 
 export interface CollegeListDraft {
   id: ID

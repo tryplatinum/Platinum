@@ -26,6 +26,7 @@ import {
 } from '../shared/colleges.js'
 import type { Database } from '../src/lib/database.types.js'
 import type { CollegeApp, CollegeFit, DataSource, ID, TestPolicy } from '../src/types.js'
+import { bandForStudent, ListDraftError, type BandedCollege } from './collegeListDrafts.js'
 
 type Client = SupabaseClient<Database>
 type DirectoryRow = Database['public']['Tables']['college_directory']['Row']
@@ -311,21 +312,29 @@ export async function getCollege(client: Client, unitidOrName: number | string):
   return { found: true, college: recordFrom(college.data, programs.data.map((p) => ({ cipCode: p.cip_code, cipTitle: p.cip_title }))) }
 }
 
-/** One college banded for one student. The list-drafting work defines the fields. */
-export interface CollegeBand {
-  unitid: number
-  fit: CollegeFit
-  reason: string
+/** One college banded for one student: the band, the figures and rule behind it (`basis`), and the "why this band" line (`reason`). */
+export type CollegeBand = BandedCollege
+
+/** List drafting has its own error type (server/collegeListDrafts.ts); the tools speak CollegeToolError. */
+async function asTool<T>(work: Promise<T>): Promise<T> {
+  try {
+    return await work
+  } catch (error) {
+    if (error instanceof ListDraftError) throw new CollegeToolError(error.code, error.message)
+    throw error
+  }
 }
 
 /**
- * Not built yet: sorting colleges into Reach, Target and Likely for a student
- * belongs to the list-drafting work. Until then this always throws a
- * CollegeToolError with the code 'not_built'.
+ * Reach, Target or Likely for one student at each of the given colleges. The
+ * band is set by the rules in src/lib/collegeBands.ts from the student's best
+ * test score and the college's published figures; no model is involved and
+ * nothing here estimates a chance of admission. Throws 'not_found' when the
+ * caller's firm has no such student.
  */
-export async function bandCollegesForStudent(_client: Client, studentId: ID, unitids: number[]): Promise<CollegeBand[]> {
+export async function bandCollegesForStudent(client: Client, studentId: ID, unitids: number[]): Promise<CollegeBand[]> {
   parse(bandCollegesForStudentInput, { studentId, unitids })
-  throw new CollegeToolError('not_built', 'Banding colleges for a student is not built yet.')
+  return asTool(bandForStudent(client, studentId, unitids))
 }
 
 export interface StudentCollegeListRow extends CollegeApp {
@@ -399,7 +408,8 @@ export const collegeToolDefinitions: CollegeToolDefinition[] = [
   },
   {
     name: 'bandCollegesForStudent',
-    description: 'Not built yet. Will sort the given colleges into Reach, Target and Likely for one student, with the reason for each. Calling it now fails with the code "not_built".',
+    description:
+      'Sorts the given colleges into Reach, Target and Likely for one student, by fixed rules in code: the student\'s best test score against the college\'s 25th and 75th percentiles, and the college\'s published admit rate. Each answer carries `basis` (the figures used, the rule, the data years, and `limitedData` when a score or a figure was missing) and `reason`, the same thing in one sentence. A band is a starting point from public data, not a prediction, and never a chance of admission.',
     inputSchema: jsonSchema(bandCollegesForStudentInput),
   },
   {
