@@ -362,6 +362,9 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
   const kept = items.filter((i) => i.kept)
   const out = items.filter((i) => !i.kept)
   const years = admissionsYears(items, directory)
+  // The year the test score ranges describe, as recorded with each band when it was worked out.
+  const testYears = [...new Set(items.map((i) => i.fitBasis.years?.tests).filter((y): y is string => Boolean(y)))]
+  const dated = (list: string[]) => (list.length ? ` (${list.join(' or ')})` : '')
   const nameOf = (i: CollegeListDraftItem) => directory.college(i.unitid)?.name ?? `College ${i.unitid}`
 
   const addCollege = async (college: CollegeSummary) => {
@@ -396,9 +399,13 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
         <p className="text-base font-semibold">
           Bands are a starting point from public data for the class that entered in {years.length ? years.join(' or ') : 'the year shown beside each figure'}. They are not a prediction.
         </p>
+        <p className="text-sm text-ink-soft">
+          What the bands use: each college’s admit rate{dated(years)} and the 25th and 75th percentiles of its enrolled students’ SAT and ACT scores{dated(testYears)}, both from the U.S. Department of Education
+          College Scorecard, set against {student.firstName}’s best test score on file. GPA is not used, because the directory has no GPA figures for colleges.
+        </p>
         <p className="text-[13px] text-ink-soft">
           Each band is set by a fixed rule in our code, never by the AI: an admit rate under {formatRate(BAND_RULES.reachAdmitRateBelow)} is a Reach; a best test score at or above the college’s 75th percentile with an admit rate of{' '}
-          {formatRate(BAND_RULES.likelyAdmitRateAtLeast)} or more is Likely; a score below the 25th percentile is a Reach; anything else is a Target. GPA is not used, because the directory has no GPA figures for colleges. “Limited data” marks a band
+          {formatRate(BAND_RULES.likelyAdmitRateAtLeast)} or more is Likely; a score below the 25th percentile is a Reach; anything else is a Target. “Limited data” marks a band
           that rests on the admit rate alone. The admit rate is the college’s own published figure for everyone who applied.
         </p>
       </Card>
