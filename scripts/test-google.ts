@@ -293,8 +293,7 @@ const cookieOf = (setCookie: string) => setCookie.split(';')[0]
   check('a shared drive opens like a folder', (await browseDrive(USER, { parent: 'team-drive' })).entries.some((e) => e.label === 'Google Sheet'))
   const search = await browseDrive(USER, { parent: 'root', query: "SAT's" }).then(() => browseDrive(USER, { parent: 'root', query: 'transcript' }))
   check('search finds files by name across the Drive', search.entries.filter((e) => /transcript/i.test(e.name)).length >= 3)
-  const last = googleCalls.findLast((c) => c.url.searchParams.get('q')?.includes("SAT\\'s"))
-  check('…and a quote in the search text is escaped', Boolean(last))
+  check('…and a quote in the search text is escaped', googleCalls.some((c) => c.url.searchParams.get('q')?.includes("SAT\\'s")))
 }
 
 // ── 9. Importing picked files ───────────────────────────────────────────────
