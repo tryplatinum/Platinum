@@ -13,7 +13,7 @@ import { POST as aiPost } from '../api/ai.js'
 import { GET as studentGet, POST as studentPost } from '../api/student.js'
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
 import type { Json } from '../src/lib/database.types.js'
-import { adminClient, anonClient, createAccount, removeAccount, requireSettings, type TestAccount } from './testAccounts.js'
+import { adminClient, anonClient, createAccount, createMember, removeAccount, requireSettings, type TestAccount } from './testAccounts.js'
 
 requireSettings()
 
@@ -23,7 +23,7 @@ function check(name: string, pass: boolean, detail = ''): void {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`)
 }
 
-const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'weekly_texts', 'personal_notes', 'student_links'] as const
+const TABLES = ['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'outbox', 'reminder_rules', 'activity', 'weekly_texts', 'personal_notes', 'student_links', 'document_types'] as const
 const ALL_TABLES = ['firms', 'firm_members', ...TABLES] as const
 
 /** A thing to remember, worded so it would stand out anywhere it leaked. */
@@ -102,6 +102,12 @@ const student = (token: string, body?: unknown) => {
   })
   return body ? studentPost(request) : studentGet(request)
 }
+
+const BUCKET = 'documents'
+/** A tiny, harmless PDF. */
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
+/** Every object the run puts in the bucket, removed at the end with the service role. */
+const objects: string[] = []
 
 const accounts: TestAccount[] = []
 try {
@@ -241,11 +247,92 @@ try {
   } else {
     console.log('SKIP  the AI endpoint refuses a parent reminder that carries personal notes  (no ANTHROPIC_API_KEY: the endpoint stops earlier)')
   }
+
+  // ── The documents bucket (real storage) ──
+  const c = await createMember(a, 'C')
+  accounts.push(c)
+  const folders = (await a.client.from('document_types').select('id, name')).data ?? []
+  const folder = (name: string) => folders.find((f) => f.name === name)!.id
+  check('a new firm starts with the eleven folders', folders.length === 11)
+  const fileRow = (id: string) => ({
+    id, student_id: seeded.A.studentId, name: 'upload.pdf', kind: 'other', category: 'other', added_on: '2026-11-01', added_by: 'counselor',
+    storage_path: `${a.firmId}/${seeded.A.studentId}/${id}/upload.pdf`, original_filename: 'upload.pdf', size_bytes: PDF.length, mime_type: 'application/pdf',
+    uploaded_by_kind: 'counselor', uploaded_by_user: a.userId, file_status: 'uploading',
+  })
+  const [open, restricted, waiting] = [fileRow(randomUUID()), fileRow(randomUUID()), fileRow(randomUUID())]
+  const rowsMade = await a.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { documents: [open, restricted, waiting] } } as unknown as Json })
+  if (rowsMade.error) throw new Error(`creating upload rows failed: ${rowsMade.error.message}`)
+  type Who = { client: ReturnType<typeof anonClient> }
+  const bucket = (who: Who) => who.client.storage.from(BUCKET)
+  const put = (who: Who, path: string) => bucket(who).upload(path, PDF, { contentType: 'application/pdf' })
+  const stranger: Who = { client: anon }
+
+  check('A cannot upload to a path with no document row', Boolean((await put(a, `${a.firmId}/${seeded.A.studentId}/${randomUUID()}/x.pdf`)).error))
+  check('A cannot upload under another name beside an uploading row', Boolean((await put(a, `${a.firmId}/${seeded.A.studentId}/${open.id}/other.pdf`)).error))
+  for (const row of [open, restricted]) {
+    objects.push(row.storage_path)
+    const up = await put(a, row.storage_path)
+    check('A uploads to the exact path of its own uploading row', !up.error, up.error?.message)
+  }
+  objects.push(waiting.storage_path)
+  check('the bucket refuses a file type that is not allowed', Boolean((await bucket(a).upload(waiting.storage_path, Buffer.from('<html></html>'), { contentType: 'text/html' })).error))
+  const filedOpen = await a.client.rpc('file_document', { document: open.id, type: folder('Test scores'), title: 'SAT score report' })
+  check('A files one under Test scores', !filedOpen.error, filedOpen.error?.message)
+  const filedAid = await a.client.rpc('file_document', { document: restricted.id, type: folder('Financial aid'), title: 'Aid offer' })
+  check('A files the other under Financial aid (restricted)', !filedAid.error, filedAid.error?.message)
+  check('A cannot upload again once the row is no longer uploading', Boolean((await put(a, `${a.firmId}/${seeded.A.studentId}/${open.id}/again.pdf`)).error))
+  const mine = await bucket(a).download(open.storage_path)
+  check('A downloads its own object', !mine.error && mine.data?.size === PDF.length, mine.error?.message)
+  check('A (the owner) downloads the restricted object', !(await bucket(a).download(restricted.storage_path)).error)
+
+  for (const [name, who] of [['B', b], ['anon', stranger]] as const) {
+    check(`${name} cannot download A's object`, Boolean((await bucket(who).download(open.storage_path)).error))
+    check(`${name} cannot get a signed URL for A's object`, Boolean((await bucket(who).createSignedUrl(open.storage_path, 60)).error))
+    const listed = await bucket(who).list(`${a.firmId}/${seeded.A.studentId}/${open.id}`)
+    const top = await bucket(who).list(a.firmId)
+    check(`${name} cannot list A's objects`, (listed.data ?? []).length === 0 && (top.data ?? []).length === 0)
+    check(`${name} cannot upload to A's uploading row`, Boolean((await put(who, waiting.storage_path)).error))
+    check(`${name} cannot upload anywhere under A's firm`, Boolean((await put(who, `${a.firmId}/${seeded.A.studentId}/${randomUUID()}/x.pdf`)).error))
+    const removed = await bucket(who).remove([open.storage_path, restricted.storage_path])
+    check(`${name} cannot delete A's objects`, (removed.data ?? []).length === 0)
+    check(`${name} cannot overwrite A's object`, Boolean((await bucket(who).update(open.storage_path, PDF, { contentType: 'application/pdf' })).error))
+    check(`${name} cannot move A's object`, Boolean((await bucket(who).move(open.storage_path, `${b.firmId}/x/${randomUUID()}/x.pdf`)).error))
+    check(`${name} cannot file A's document`, Boolean((await who.client.rpc('file_document', { document: open.id, type: folder('Other'), title: 'x' })).error))
+  }
+  const publicUrl = await fetch(bucket(stranger).getPublicUrl(open.storage_path).data.publicUrl)
+  check('there is no public URL for an object', publicUrl.status >= 400, `HTTP ${publicUrl.status}`)
+  const still = await adminClient().storage.from(BUCKET).list(`${a.firmId}/${seeded.A.studentId}/${open.id}`)
+  check("A's objects are still there after all of that", (still.data ?? []).some((o) => o.name === 'upload.pdf') && !(await adminClient().storage.from(BUCKET).download(restricted.storage_path)).error)
+  check("…and nothing was put under A's uploading row", ((await adminClient().storage.from(BUCKET).list(`${a.firmId}/${seeded.A.studentId}/${waiting.id}`)).data ?? []).length === 0)
+
+  // A counselor in firm A who is not its owner.
+  check('a counselor who is not the owner reads the standard file and its object', ((await c.client.from('documents').select('id').eq('id', open.id)).data ?? []).length === 1 && !(await bucket(c).download(open.storage_path)).error)
+  check('…but not the restricted row', ((await c.client.from('documents').select('id').eq('id', restricted.id)).data ?? []).length === 0)
+  check('…nor its object', Boolean((await bucket(c).download(restricted.storage_path)).error) && Boolean((await bucket(c).createSignedUrl(restricted.storage_path, 60)).error))
+  check('…nor its events', ((await c.client.from('document_events').select('id').eq('document_id', restricted.id)).data ?? []).length === 0)
+  check('…and cannot delete or re-file it', ((await bucket(c).remove([restricted.storage_path])).data ?? []).length === 0 && ((await c.client.from('documents').delete().eq('id', restricted.id).select('id')).data ?? []).length === 0 && Boolean((await c.client.rpc('file_document', { document: restricted.id, type: folder('Other'), title: 'x' })).error))
+  check('…and cannot change the folders', Boolean((await c.client.from('document_types').insert({ firm_id: a.firmId, name: 'Mine' })).error))
+  check('the owner still reads the restricted row, its events and its object', ((await a.client.from('documents').select('id').eq('id', restricted.id)).data ?? []).length === 1 && ((await a.client.from('document_events').select('id').eq('document_id', restricted.id)).data ?? []).length === 1 && !(await bucket(a).download(restricted.storage_path)).error)
+  check('document events cannot be changed or deleted', ((await a.client.from('document_events').update({ action: 'deleted' }).eq('firm_id', a.firmId).select('id')).data ?? []).length === 0 && ((await a.client.from('document_events').delete().eq('firm_id', a.firmId).select('id')).data ?? []).length === 0)
+  check("B and anon read none of A's document events", ((await b.client.from('document_events').select('id').eq('firm_id', a.firmId)).data ?? []).length === 0 && ((await anon.from('document_events').select('id')).data ?? []).length === 0)
+  const gone = await bucket(a).remove([open.storage_path])
+  check('A deletes its own object', (gone.data ?? []).length === 1, gone.error?.message)
+
+  // ── The college directory ──
+  for (const table of ['college_directory', 'college_programs'] as const) {
+    check(`anon reads nothing from ${table}`, ((await anon.from(table).select('*').limit(1)).data ?? []).length === 0)
+    check(`a signed-in person can read ${table}`, !(await a.client.from(table).select('*').limit(1)).error)
+    check(`…but cannot delete from ${table}`, Boolean((await a.client.from(table).delete().gte('unitid', 0)).error))
+  }
+  check('a signed-in person cannot insert into or update the directory', Boolean((await a.client.from('college_directory').insert({ unitid: 999999999, name: 'Invented' })).error) && Boolean((await a.client.from('college_directory').update({ name: 'x' }).gte('unitid', 0)).error))
 } catch (error) {
   failed++
   console.error('\nThe run stopped early:', error instanceof Error ? error.message : error)
 } finally {
-  for (const account of accounts) await removeAccount(account)
+  if (objects.length) await adminClient().storage.from(BUCKET).remove(objects)
+  // A member is only a user; the firm goes with its owner's account.
+  for (const account of accounts.filter((x) => x.label === 'C')) await adminClient().auth.admin.deleteUser(account.userId)
+  for (const account of accounts.filter((x) => x.label !== 'C')) await removeAccount(account)
   console.log(`\nRemoved ${accounts.length} test account(s) and their firms.`)
 }
 

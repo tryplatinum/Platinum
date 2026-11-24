@@ -65,16 +65,304 @@ export type Database = {
           },
         ]
       }
+      college_directory: {
+        Row: {
+          act_25: number | null
+          act_50: number | null
+          act_75: number | null
+          admit_rate: number | null
+          aliases: string[]
+          avg_net_price: number | null
+          city: string | null
+          completion_rate: number | null
+          control: string | null
+          imported_at: string
+          is_active: boolean
+          lat: number | null
+          level: string | null
+          locale: string | null
+          lon: number | null
+          median_earnings: number | null
+          name: string
+          open_admissions: boolean | null
+          pct_submitting_act: number | null
+          pct_submitting_sat: number | null
+          region: string | null
+          sat_ebrw_25: number | null
+          sat_ebrw_50: number | null
+          sat_ebrw_75: number | null
+          sat_math_25: number | null
+          sat_math_50: number | null
+          sat_math_75: number | null
+          search_text: string
+          sources: Json
+          state: string | null
+          test_policy: string | null
+          test_policy_code: number | null
+          tuition_in_state: number | null
+          tuition_out_of_state: number | null
+          undergrad_size: number | null
+          unitid: number
+          url: string | null
+        }
+        Insert: {
+          act_25?: number | null
+          act_50?: number | null
+          act_75?: number | null
+          admit_rate?: number | null
+          aliases?: string[]
+          avg_net_price?: number | null
+          city?: string | null
+          completion_rate?: number | null
+          control?: string | null
+          imported_at?: string
+          is_active?: boolean
+          lat?: number | null
+          level?: string | null
+          locale?: string | null
+          lon?: number | null
+          median_earnings?: number | null
+          name: string
+          open_admissions?: boolean | null
+          pct_submitting_act?: number | null
+          pct_submitting_sat?: number | null
+          region?: string | null
+          sat_ebrw_25?: number | null
+          sat_ebrw_50?: number | null
+          sat_ebrw_75?: number | null
+          sat_math_25?: number | null
+          sat_math_50?: number | null
+          sat_math_75?: number | null
+          search_text?: string
+          sources?: Json
+          state?: string | null
+          test_policy?: string | null
+          test_policy_code?: number | null
+          tuition_in_state?: number | null
+          tuition_out_of_state?: number | null
+          undergrad_size?: number | null
+          unitid: number
+          url?: string | null
+        }
+        Update: {
+          act_25?: number | null
+          act_50?: number | null
+          act_75?: number | null
+          admit_rate?: number | null
+          aliases?: string[]
+          avg_net_price?: number | null
+          city?: string | null
+          completion_rate?: number | null
+          control?: string | null
+          imported_at?: string
+          is_active?: boolean
+          lat?: number | null
+          level?: string | null
+          locale?: string | null
+          lon?: number | null
+          median_earnings?: number | null
+          name?: string
+          open_admissions?: boolean | null
+          pct_submitting_act?: number | null
+          pct_submitting_sat?: number | null
+          region?: string | null
+          sat_ebrw_25?: number | null
+          sat_ebrw_50?: number | null
+          sat_ebrw_75?: number | null
+          sat_math_25?: number | null
+          sat_math_50?: number | null
+          sat_math_75?: number | null
+          search_text?: string
+          sources?: Json
+          state?: string | null
+          test_policy?: string | null
+          test_policy_code?: number | null
+          tuition_in_state?: number | null
+          tuition_out_of_state?: number | null
+          undergrad_size?: number | null
+          unitid?: number
+          url?: string | null
+        }
+        Relationships: []
+      }
+      college_list_draft_items: {
+        Row: {
+          ai_explained: boolean
+          created_at: string
+          draft_id: string
+          firm_id: string
+          fit: string
+          fit_basis: Json
+          fit_set_by: string
+          id: string
+          kept: boolean
+          position: number
+          reason: string
+          unitid: number
+          updated_at: string
+        }
+        Insert: {
+          ai_explained?: boolean
+          created_at?: string
+          draft_id: string
+          firm_id: string
+          fit: string
+          fit_basis?: Json
+          fit_set_by?: string
+          id?: string
+          kept?: boolean
+          position?: number
+          reason?: string
+          unitid: number
+          updated_at?: string
+        }
+        Update: {
+          ai_explained?: boolean
+          created_at?: string
+          draft_id?: string
+          firm_id?: string
+          fit?: string
+          fit_basis?: Json
+          fit_set_by?: string
+          id?: string
+          kept?: boolean
+          position?: number
+          reason?: string
+          unitid?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "college_list_draft_items_firm_id_draft_id_fkey"
+            columns: ["firm_id", "draft_id"]
+            isOneToOne: false
+            referencedRelation: "college_list_drafts"
+            referencedColumns: ["firm_id", "id"]
+          },
+          {
+            foreignKeyName: "college_list_draft_items_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "college_list_draft_items_unitid_fkey"
+            columns: ["unitid"]
+            isOneToOne: false
+            referencedRelation: "college_directory"
+            referencedColumns: ["unitid"]
+          },
+        ]
+      }
+      college_list_drafts: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          approved_by_name: string | null
+          created_at: string
+          created_by: string | null
+          firm_id: string
+          id: string
+          note: string | null
+          preferences: Json
+          seq: number
+          source: Json | null
+          status: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_by_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          firm_id: string
+          id?: string
+          note?: string | null
+          preferences?: Json
+          seq?: number
+          source?: Json | null
+          status?: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_by_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          firm_id?: string
+          id?: string
+          note?: string | null
+          preferences?: Json
+          seq?: number
+          source?: Json | null
+          status?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "college_list_drafts_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "college_list_drafts_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+        ]
+      }
+      college_programs: {
+        Row: {
+          cip_code: string
+          cip_title: string
+          credential_level: number
+          unitid: number
+        }
+        Insert: {
+          cip_code: string
+          cip_title: string
+          credential_level?: number
+          unitid: number
+        }
+        Update: {
+          cip_code?: string
+          cip_title?: string
+          credential_level?: number
+          unitid?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "college_programs_unitid_fkey"
+            columns: ["unitid"]
+            isOneToOne: false
+            referencedRelation: "college_directory"
+            referencedColumns: ["unitid"]
+          },
+        ]
+      }
       colleges: {
         Row: {
           created_at: string
-          deadline: string
+          deadline: string | null
+          directory_unitid: number | null
           firm_id: string
           fit: string
+          fit_reason: string | null
+          fit_set_by: string | null
           id: string
           name: string
           note: string | null
-          plan: string
+          plan: string | null
           seq: number
           status: string
           student_id: string
@@ -82,13 +370,16 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          deadline: string
+          deadline?: string | null
+          directory_unitid?: number | null
           firm_id: string
           fit: string
+          fit_reason?: string | null
+          fit_set_by?: string | null
           id?: string
           name: string
           note?: string | null
-          plan: string
+          plan?: string | null
           seq?: number
           status: string
           student_id: string
@@ -96,19 +387,29 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          deadline?: string
+          deadline?: string | null
+          directory_unitid?: number | null
           firm_id?: string
           fit?: string
+          fit_reason?: string | null
+          fit_set_by?: string | null
           id?: string
           name?: string
           note?: string | null
-          plan?: string
+          plan?: string | null
           seq?: number
           status?: string
           student_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "colleges_directory_unitid_fkey"
+            columns: ["directory_unitid"]
+            isOneToOne: false
+            referencedRelation: "college_directory"
+            referencedColumns: ["unitid"]
+          },
           {
             foreignKeyName: "colleges_firm_id_fkey"
             columns: ["firm_id"]
@@ -125,80 +426,220 @@ export type Database = {
           },
         ]
       }
+      document_events: {
+        Row: {
+          action: string
+          actor_kind: string
+          actor_user: string | null
+          created_at: string
+          detail: Json
+          document_id: string
+          firm_id: string
+          id: string
+        }
+        Insert: {
+          action: string
+          actor_kind: string
+          actor_user?: string | null
+          created_at?: string
+          detail?: Json
+          document_id: string
+          firm_id: string
+          id?: string
+        }
+        Update: {
+          action?: string
+          actor_kind?: string
+          actor_user?: string | null
+          created_at?: string
+          detail?: Json
+          document_id?: string
+          firm_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_events_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_types: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          description: string
+          firm_id: string
+          id: string
+          name: string
+          position: number
+          sensitivity: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          description?: string
+          firm_id: string
+          id?: string
+          name: string
+          position?: number
+          sensitivity?: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          description?: string
+          firm_id?: string
+          id?: string
+          name?: string
+          position?: number
+          sensitivity?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_types_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           added_by: string
           added_on: string
+          ai_suggestion: Json | null
           category: string
+          college_id: string | null
+          content_hash: string | null
           created_at: string
           drafts: Json | null
           essay_group: string | null
           essay_prompt: string | null
           feedback: Json | null
+          file_status: string | null
           firm_id: string
           id: string
           kind: string
+          mime_type: string | null
           name: string
+          needs_check: boolean
           note: string | null
+          opened_at: string | null
+          original_filename: string | null
+          school_year: string | null
           seq: number
+          size_bytes: number | null
+          sorted_by: string | null
           status: string | null
-          student_id: string
+          storage_path: string | null
+          student_id: string | null
           target: string | null
           task_id: string | null
+          title: string | null
           topic: string | null
+          type_id: string | null
           updated_at: string
+          uploaded_by_kind: string | null
+          uploaded_by_user: string | null
           url: string | null
           word_limit: number | null
         }
         Insert: {
           added_by: string
           added_on?: string
+          ai_suggestion?: Json | null
           category: string
+          college_id?: string | null
+          content_hash?: string | null
           created_at?: string
           drafts?: Json | null
           essay_group?: string | null
           essay_prompt?: string | null
           feedback?: Json | null
+          file_status?: string | null
           firm_id: string
           id?: string
           kind: string
+          mime_type?: string | null
           name: string
+          needs_check?: boolean
           note?: string | null
+          opened_at?: string | null
+          original_filename?: string | null
+          school_year?: string | null
           seq?: number
+          size_bytes?: number | null
+          sorted_by?: string | null
           status?: string | null
-          student_id: string
+          storage_path?: string | null
+          student_id?: string | null
           target?: string | null
           task_id?: string | null
+          title?: string | null
           topic?: string | null
+          type_id?: string | null
           updated_at?: string
+          uploaded_by_kind?: string | null
+          uploaded_by_user?: string | null
           url?: string | null
           word_limit?: number | null
         }
         Update: {
           added_by?: string
           added_on?: string
+          ai_suggestion?: Json | null
           category?: string
+          college_id?: string | null
+          content_hash?: string | null
           created_at?: string
           drafts?: Json | null
           essay_group?: string | null
           essay_prompt?: string | null
           feedback?: Json | null
+          file_status?: string | null
           firm_id?: string
           id?: string
           kind?: string
+          mime_type?: string | null
           name?: string
+          needs_check?: boolean
           note?: string | null
+          opened_at?: string | null
+          original_filename?: string | null
+          school_year?: string | null
           seq?: number
+          size_bytes?: number | null
+          sorted_by?: string | null
           status?: string | null
-          student_id?: string
+          storage_path?: string | null
+          student_id?: string | null
           target?: string | null
           task_id?: string | null
+          title?: string | null
           topic?: string | null
+          type_id?: string | null
           updated_at?: string
+          uploaded_by_kind?: string | null
+          uploaded_by_user?: string | null
           url?: string | null
           word_limit?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "documents_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "documents_firm_id_fkey"
             columns: ["firm_id"]
@@ -219,6 +660,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tasks"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_type_fkey"
+            columns: ["firm_id", "type_id"]
+            isOneToOne: false
+            referencedRelation: "document_types"
+            referencedColumns: ["firm_id", "id"]
           },
         ]
       }
@@ -265,6 +713,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          sort_files_automatically: boolean
           updated_at: string
           weekly_text_day: number
         }
@@ -272,6 +721,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          sort_files_automatically?: boolean
           updated_at?: string
           weekly_text_day?: number
         }
@@ -279,6 +729,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          sort_files_automatically?: boolean
           updated_at?: string
           weekly_text_day?: number
         }
@@ -524,7 +975,6 @@ export type Database = {
           created_at: string
           event_date: string | null
           event_date_approx: boolean
-          uses: Json
           firm_id: string
           id: string
           meeting_id: string | null
@@ -533,13 +983,13 @@ export type Database = {
           student_id: string
           text: string
           updated_at: string
+          uses: Json
         }
         Insert: {
           approval: Json
           created_at?: string
           event_date?: string | null
           event_date_approx?: boolean
-          uses?: Json
           firm_id: string
           id?: string
           meeting_id?: string | null
@@ -548,13 +998,13 @@ export type Database = {
           student_id: string
           text: string
           updated_at?: string
+          uses?: Json
         }
         Update: {
           approval?: Json
           created_at?: string
           event_date?: string | null
           event_date_approx?: boolean
-          uses?: Json
           firm_id?: string
           id?: string
           meeting_id?: string | null
@@ -563,6 +1013,7 @@ export type Database = {
           student_id?: string
           text?: string
           updated_at?: string
+          uses?: Json
         }
         Relationships: [
           {
@@ -1041,6 +1492,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_draft_to_college_list: { Args: { draft: string }; Returns: number }
       apply_changes: {
         Args: { changes: Json; firm: string }
         Returns: undefined
@@ -1049,8 +1501,23 @@ export type Database = {
         Args: { display_name: string; name: string }
         Returns: string
       }
+      document_is_readable: { Args: { document: string }; Returns: boolean }
+      document_type_is_open: { Args: { type: string }; Returns: boolean }
+      file_document: {
+        Args: {
+          action?: string
+          document: string
+          school_year?: string
+          student?: string
+          title: string
+          type: string
+        }
+        Returns: undefined
+      }
       is_firm_member: { Args: { firm: string }; Returns: boolean }
       is_firm_owner: { Args: { firm: string }; Returns: boolean }
+      path_uuid: { Args: { path: string; segment: number }; Returns: string }
+      seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {
         Args: {
           p_activity: string

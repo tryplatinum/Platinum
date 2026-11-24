@@ -50,6 +50,20 @@ export async function createAccount(label: string): Promise<TestAccount> {
   return { label, userId: created.data.user.id, firmId: firm.data, token: signedIn.data.session.access_token, client }
 }
 
+/** A second person in an existing test firm, as a counselor who is not its owner. */
+export async function createMember(firm: TestAccount, label: string): Promise<TestAccount> {
+  const email = `platinum-test-${randomUUID()}@example.com`
+  const password = randomBytes(18).toString('base64url')
+  const created = await admin().auth.admin.createUser({ email, password, email_confirm: true })
+  if (created.error) throw new Error(`could not create test user: ${created.error.message}`)
+  const joined = await admin().from('firm_members').insert({ firm_id: firm.firmId, user_id: created.data.user.id, role: 'counselor', display_name: `Counselor ${label}` })
+  if (joined.error) throw new Error(`could not add the test member: ${joined.error.message}`)
+  const client = anonClient()
+  const signedIn = await client.auth.signInWithPassword({ email, password })
+  if (signedIn.error || !signedIn.data.session) throw new Error(`could not sign in test user: ${signedIn.error?.message}`)
+  return { label, userId: created.data.user.id, firmId: firm.firmId, token: signedIn.data.session.access_token, client }
+}
+
 /** Removes the firm (and everything in it) and the user. */
 export async function removeAccount(account: TestAccount): Promise<void> {
   await admin().from('firms').delete().eq('id', account.firmId)
