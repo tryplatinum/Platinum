@@ -66,13 +66,14 @@ function Sent() {
   const [params, setParams] = useSearchParams()
   const student = params.get('student') ?? ''
   const kind = params.get('kind') ?? ''
+  const messageId = params.get('message') ?? ''
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
     else next.delete(key)
     setParams(next, { replace: true })
   }
-  const rows = data.outbox.filter((m) => (!student || m.studentId === student) && (!kind || m.kind === kind))
+  const rows = data.outbox.filter((m) => (!student || m.studentId === student) && (!kind || m.kind === kind) && (!messageId || m.id === messageId))
 
   return (
     <Card>
@@ -119,7 +120,7 @@ function Sent() {
       ) : (
         <ul>
           {rows.map((m) => (
-            <LogRow key={m.id} message={m} />
+            <LogRow key={m.id} message={m} startOpen={messageId === m.id} />
           ))}
         </ul>
       )}
@@ -175,8 +176,8 @@ function OutboxStatus({ message }: { message: OutboxMessage }) {
   return <span className="text-[13px] font-semibold text-ink">{outboxStatusLabel(message, now)}</span>
 }
 
-function LogRow({ message: m }: { message: OutboxMessage }) {
-  const [open, setOpen] = useState(false)
+function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen)
   const toast = useToast()
   const sendMessage = useStore((s) => s.sendMessage)
   const preview = previewStudentLink(m.body)

@@ -9,12 +9,12 @@
 
 import { create } from 'zustand'
 import { withFreshIds } from '../data/ids'
-import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, type Changes } from '../data/repo'
+import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
-import { notify, notifyQueued } from '../lib/notify'
+import { notify, notifyQueued, notifySkipUndo } from '../lib/notify'
 import { validateQueuePayload } from '../../shared/outbox'
 import { studentLinkWrite, type StudentWrite } from '../services/studentLink'
-import { nowTimestamp, todayISO } from '../lib/dates'
+import { addDays, nowTimestamp, todayISO, type ISODate } from '../lib/dates'
 import { fullName } from '../lib/derive'
 import type { MeetingDrafts } from '../services/ai'
 import type { OutgoingMessage } from '../services/outbox'
@@ -36,6 +36,7 @@ import type {
   Parent,
   ParentCopy,
   ParentReport,
+  MeetingAI,
   ProfilePatch,
   Recap,
   ReminderRule,
@@ -176,10 +177,17 @@ interface Actions {
   updateParentUpdate: (meetingId: ID, updateId: ID, patch: Partial<DraftParentUpdate>) => void
   reviewParentUpdate: (meetingId: ID, updateId: ID, decision: Decision) => void
   reviewProfileChange: (meetingId: ID, changeId: ID, decision: Decision) => void
+  /** Edits the proposed value on a pending profile change (patch + display `to`). */
+  updateProfileChange: (meetingId: ID, changeId: ID, next: { to: string; patch: ProfilePatch }) => void
+  /** Edits the meeting-notes lists before notes are approved. */
+  updateMeetingNotes: (meetingId: ID, patch: Partial<Pick<MeetingAI, 'decided' | 'progress' | 'watch' | 'notes'>>) => void
   updateDraftNote: (meetingId: ID, noteId: ID, patch: Partial<Pick<DraftPersonalNote, 'text' | 'eventDate' | 'eventDateApprox'>>) => void
   /** Approving saves the detail as a "thing to remember" for this student. Dismissing saves nothing. */
   reviewDraftNote: (meetingId: ID, noteId: ID, decision: Decision) => void
   approveAllInMeeting: (meetingId: ID) => void
+  /** Skip a reminder: 'once' until tomorrow, 'until_on' until undo. */
+  skipReminder: (dedupeKey: string, mode: 'once' | 'until_on', studentId: ID, taskTitle: string) => Promise<void>
+  undoSkipReminder: (skipId: ID) => Promise<void>
 
   // Things to remember
   /** A note the counselor types in. Writing it is the approval. */
@@ -349,6 +357,7 @@ function emptyData(firm: Firm): AppData {
     documentTypes: [],
     collegeListDrafts: [],
     collegeListDraftItems: [],
+    reminderSkips: [],
   }
 }
 
@@ -1008,11 +1017,57 @@ export const useStore = create<State & Actions>()((set, get) => {
           ai: { ...m.ai!, profileChanges: patchById(m.ai!.profileChanges, changeId, (c) => ({ ...c, review: decision, approval: stamp(data, decision) })) },
         }))
         if (decision === 'approved') {
-          next = patchStudent(next, meeting.studentId, (s) => applyProfilePatch(s, item.patch))
-          next = logActivity(next, meeting.studentId, 'counselor', `Profile updated: ${item.label} → ${item.to}`)
+          // Re-read after patch in case the counselor edited the proposed value.
+          const edited = next.meetings.find((m) => m.id === meetingId)?.ai?.profileChanges.find((c) => c.id === changeId) ?? item
+          next = patchStudent(next, meeting.studentId, (s) => applyProfilePatch(s, edited.patch))
+          next = logActivity(next, meeting.studentId, 'counselor', `Profile updated: ${edited.label} → ${edited.to}`)
         }
         return next
       }),
+
+    updateProfileChange: (meetingId, changeId, next) =>
+      change((data) =>
+        patchMeeting(data, meetingId, (m) =>
+          m.ai
+            ? {
+                ...m,
+                ai: {
+                  ...m.ai,
+                  profileChanges: patchById(m.ai.profileChanges, changeId, (c) => (c.review === 'pending' ? { ...c, to: next.to, patch: next.patch } : c)),
+                },
+              }
+            : m,
+        ),
+      ),
+
+    updateMeetingNotes: (meetingId, patch) =>
+      change((data) =>
+        patchMeeting(data, meetingId, (m) =>
+          m.ai && m.ai.notesReview === 'pending' ? { ...m, ai: { ...m.ai, ...patch } } : m,
+        ),
+      ),
+
+    skipReminder: async (dedupeKey, mode, studentId, taskTitle) => {
+      const { account } = get()
+      if (account.status !== 'ready') throw new Error('Sign in first.')
+      const until: ISODate | null = mode === 'once' ? addDays(todayISO(), 1) : null
+      const skip = await writeSkip(account.firmId, dedupeKey, account.userId, until)
+      const text =
+        mode === 'once'
+          ? `Skipped reminder about “${taskTitle}” until ${until}.`
+          : `Skipped reminder about “${taskTitle}” until turned back on.`
+      change((d) => {
+        let next = { ...d, reminderSkips: [skip, ...d.reminderSkips.filter((s) => s.dedupeKey !== dedupeKey)] }
+        next = logActivity(next, studentId, 'counselor', text)
+        return next
+      })
+      notifySkipUndo(skip.id, mode === 'once' ? 'Reminder skipped for now.' : 'Reminder skipped until you turn it back on.')
+    },
+
+    undoSkipReminder: async (skipId) => {
+      await undoReminderSkip(skipId)
+      set((s) => ({ data: { ...s.data, reminderSkips: s.data.reminderSkips.filter((x) => x.id !== skipId) } }))
+    },
 
     updateDraftNote: (meetingId, noteId, patch) =>
       change((data) =>

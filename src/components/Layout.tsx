@@ -4,10 +4,10 @@
 // The Counselor / Student switcher and the demo controls live in the sidebar
 // footer so they do not compete with the page.
 
-import { ArrowLeft, CalendarDays, ChevronDown, FolderOpen, LayoutDashboard, Menu, Send, Users, X } from 'lucide-react'
+import { ArrowLeft, CalendarDays, ChevronDown, ClipboardList, FolderOpen, Inbox, LayoutDashboard, Menu, Send, Users, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
+import { MEETING_APPROVAL_KINDS, activeStudents, allPendingApprovals, findStudent, fullName } from '../lib/derive'
 import { filesWaitingCount } from '../lib/files'
 import { reminderQueue } from '../lib/reminders'
 import { signOut } from '../store/session'
@@ -29,12 +29,16 @@ export function CounselorLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [location.pathname, location.search])
 
+  const reminders = reminderQueue(data)
+  const waiting = allPendingApprovals(data, reminders)
   const nav = [
-    { to: '/app', label: 'Command center', icon: LayoutDashboard, end: true, badge: pendingApprovalCount(data), badgeLabel: 'waiting for approval' },
+    { to: '/app', label: 'Approvals', icon: Inbox, end: true, badge: waiting.length, badgeLabel: 'waiting for approval' },
+    { to: '/app/overview', label: 'Overview', icon: LayoutDashboard, end: false, badge: 0, badgeLabel: '' },
     { to: '/app/students', label: 'Students', icon: Users, end: false, badge: 0, badgeLabel: '' },
-    { to: '/app/meetings', label: 'Meetings', icon: CalendarDays, end: false, badge: pendingApprovals(data).filter((a) => a.kind === 'meeting').length, badgeLabel: 'to review' },
-    { to: '/app/messages', label: 'Messages sent', icon: Send, end: false, badge: reminderQueue(data).filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
+    { to: '/app/meetings', label: 'Meetings', icon: CalendarDays, end: false, badge: waiting.filter((a) => MEETING_APPROVAL_KINDS.includes(a.kind)).length, badgeLabel: 'to review' },
+    { to: '/app/messages', label: 'Messages sent', icon: Send, end: false, badge: reminders.filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
     { to: '/app/documents', label: 'Documents', icon: FolderOpen, end: false, badge: filesWaitingCount(data), badgeLabel: 'files waiting or to check' },
+    { to: '/app/activity', label: 'Activity', icon: ClipboardList, end: false, badge: 0, badgeLabel: '' },
   ]
 
   return (

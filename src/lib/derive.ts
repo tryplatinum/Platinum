@@ -4,10 +4,12 @@
 
 import type {
   AppData,
+  Channel,
   CollegeApp,
   DocCategory,
   EssayStatus,
   ID,
+  Language,
   Meeting,
   OwnerType,
   Parent,
@@ -17,7 +19,7 @@ import type {
   Task,
   WeeklyText,
 } from '../types'
-import { addDays, daysBetween, daysFromToday, parseISODate, todayISO, type ISODate } from './dates'
+import { addDays, daysBetween, daysFromToday, formatDate, parseISODate, todayISO, type ISODate } from './dates'
 
 // ── People ──────────────────────────────────────────────────────────────────
 
@@ -268,32 +270,307 @@ export function reviewSections(m: Meeting): ReviewSection[] {
 /** How many AI-drafted items in a meeting still wait for the counselor. */
 export const pendingInMeeting = (m: Meeting): number => reviewSections(m).reduce((n, s) => n + s.pending, 0)
 
-export type ApprovalItem =
-  | { kind: 'meeting'; key: string; studentId: ID; meeting: Meeting; count: number; to: string }
-  | { kind: 'report'; key: string; studentId: ID; reportId: ID; count: 1; to: string }
-  | { kind: 'essay'; key: string; studentId: ID; docId: ID; count: 1; to: string }
+/** One draft or pending send waiting for the counselor on the Approvals screen. */
+export type ApprovalKind =
+  | 'notes'
+  | 'task'
+  | 'parent_update'
+  | 'recap'
+  | 'profile'
+  | 'remember'
+  | 'report'
+  | 'essay'
+  | 'weekly_text'
+  | 'weekly_parent'
+  | 'reminder'
 
-/** Everything AI-drafted that is waiting for a counselor, across the firm or for one student. */
+export const APPROVAL_TYPE_LABEL: Record<ApprovalKind, string> = {
+  notes: 'Meeting notes',
+  task: 'Task',
+  parent_update: 'Parent update',
+  recap: 'Recap',
+  profile: 'Profile change',
+  remember: 'Thing to remember',
+  report: 'Report',
+  essay: 'Essay feedback',
+  weekly_text: 'Weekly text',
+  weekly_parent: 'Parent copy',
+  reminder: 'Reminder',
+}
+
+export const MEETING_APPROVAL_KINDS: ApprovalKind[] = ['notes', 'task', 'parent_update', 'recap', 'profile', 'remember']
+
+export type ApprovalItem = {
+  key: string
+  kind: ApprovalKind
+  studentId: ID
+  /** Groups with the same key share one header (student + source). */
+  sourceKey: string
+  sourceLabel: string
+  sourceLine: string
+  preview: string
+  /** True when approving queues an outbound message. */
+  isSend: boolean
+  toName?: string
+  channel?: Channel
+  language?: Language
+  /** Due date for urgency sorting (ISO date). */
+  sortDue?: string
+  /** Recency for sorting (ISO timestamp or date). */
+  sortAt: string
+  meetingId?: ID
+  draftId?: ID
+  reportId?: ID
+  docId?: ID
+  weeklyTextId?: ID
+  /** Reminder queue key when kind is reminder. */
+  reminderKey?: string
+}
+
+/** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by the Approvals screen (see reminderApprovals). */
 export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] {
   const active = new Set(activeStudents(data).map((s) => s.id))
-  const mine = <T extends { studentId: ID }>(xs: T[]) => xs.filter((x) => active.has(x.studentId) && (!studentId || x.studentId === studentId))
+  const mine = (id: ID) => active.has(id) && (!studentId || id === studentId)
   const items: ApprovalItem[] = []
-  for (const m of mine(data.meetings)) {
-    const count = pendingInMeeting(m)
-    if (count > 0) items.push({ kind: 'meeting', key: m.id, studentId: m.studentId, meeting: m, count, to: `/app/meetings?student=${m.studentId}` })
-  }
-  for (const r of mine(data.reports)) {
-    if (r.status === 'draft') items.push({ kind: 'report', key: r.id, studentId: r.studentId, reportId: r.id, count: 1, to: `/app/students/${r.studentId}?tab=reports` })
-  }
-  for (const d of mine(data.documents)) {
-    if (d.feedback?.review === 'pending') {
-      items.push({ kind: 'essay', key: d.id, studentId: d.studentId, docId: d.id, count: 1, to: `/app/students/${d.studentId}?tab=essays&essay=${d.id}` })
+
+  for (const m of data.meetings) {
+    if (!mine(m.studentId) || pendingInMeeting(m) === 0) continue
+    const sourceKey = `meeting:${m.id}`
+    const sourceLabel = `From meeting on ${formatDate(m.date)}`
+    const sourceLine = `Drafted from meeting notes, ${formatDate(m.date)}`
+    const sortAt = `${m.date}T${m.time || '00:00'}`
+    const ai = m.ai
+    if (ai?.notesReview === 'pending') {
+      const preview = [...ai.decided, ...ai.progress, ...ai.watch].slice(0, 2).join(' · ') || ai.notes[0] || m.title
+      items.push({ key: `${m.id}:notes`, kind: 'notes', studentId: m.studentId, sourceKey, sourceLabel, sourceLine, preview, isSend: false, sortAt, meetingId: m.id })
+    }
+    for (const t of ai?.draftTasks ?? []) {
+      if (t.review !== 'pending') continue
+      items.push({
+        key: `${m.id}:task:${t.id}`,
+        kind: 'task',
+        studentId: m.studentId,
+        sourceKey,
+        sourceLabel,
+        sourceLine,
+        preview: t.detail ? `${t.title} — ${t.detail}` : t.title,
+        isSend: false,
+        sortDue: t.dueDate,
+        sortAt,
+        meetingId: m.id,
+        draftId: t.id,
+      })
+    }
+    for (const u of ai?.parentUpdates ?? []) {
+      if (u.review !== 'pending') continue
+      const parent = findStudent(data, m.studentId)?.parents.find((p) => p.id === u.parentId)
+      items.push({
+        key: `${m.id}:parent:${u.id}`,
+        kind: 'parent_update',
+        studentId: m.studentId,
+        sourceKey,
+        sourceLabel,
+        sourceLine,
+        preview: u.bodyLocal ?? u.bodyEn,
+        isSend: true,
+        toName: parent?.name,
+        channel: parent?.channel,
+        language: parent?.language,
+        sortAt,
+        meetingId: m.id,
+        draftId: u.id,
+      })
+    }
+    if (m.recap?.review === 'pending') {
+      items.push({
+        key: `${m.id}:recap`,
+        kind: 'recap',
+        studentId: m.studentId,
+        sourceKey,
+        sourceLabel,
+        sourceLine,
+        preview: m.recap.summary,
+        isSend: true,
+        toName: findStudent(data, m.studentId)?.firstName,
+        channel: 'text',
+        language: 'en',
+        sortAt,
+        meetingId: m.id,
+      })
+    }
+    for (const c of ai?.profileChanges ?? []) {
+      if (c.review !== 'pending') continue
+      items.push({
+        key: `${m.id}:profile:${c.id}`,
+        kind: 'profile',
+        studentId: m.studentId,
+        sourceKey,
+        sourceLabel,
+        sourceLine,
+        preview: `${c.label}: ${c.from} → ${c.to}`,
+        isSend: false,
+        sortAt,
+        meetingId: m.id,
+        draftId: c.id,
+      })
+    }
+    for (const n of ai?.personalNotes ?? []) {
+      if (n.review !== 'pending') continue
+      items.push({
+        key: `${m.id}:remember:${n.id}`,
+        kind: 'remember',
+        studentId: m.studentId,
+        sourceKey,
+        sourceLabel,
+        sourceLine,
+        preview: n.text,
+        isSend: false,
+        sortAt,
+        meetingId: m.id,
+        draftId: n.id,
+      })
     }
   }
+
+  for (const r of data.reports) {
+    if (!mine(r.studentId) || r.status !== 'draft') continue
+    const parent = findStudent(data, r.studentId)?.parents.find((p) => p.id === r.parentId)
+    items.push({
+      key: `report:${r.id}`,
+      kind: 'report',
+      studentId: r.studentId,
+      sourceKey: `report:${r.id}`,
+      sourceLabel: 'Report',
+      sourceLine: r.source ? 'Drafted as a parent report' : 'Parent report draft',
+      preview: r.bodyLocal ?? r.bodyEn,
+      isSend: true,
+      toName: parent?.name,
+      channel: r.channel,
+      language: r.language,
+      sortAt: r.createdOn,
+      reportId: r.id,
+    })
+  }
+
+  for (const d of data.documents) {
+    if (!mine(d.studentId) || d.feedback?.review !== 'pending') continue
+    items.push({
+      key: `essay:${d.id}`,
+      kind: 'essay',
+      studentId: d.studentId,
+      sourceKey: `essay:${d.id}`,
+      sourceLabel: 'Essay feedback',
+      sourceLine: `Feedback on “${d.name}”`,
+      preview: d.feedback.overall,
+      isSend: true,
+      toName: findStudent(data, d.studentId)?.firstName,
+      channel: 'text',
+      language: 'en',
+      sortAt: d.feedback.generatedOn ?? d.addedOn,
+      docId: d.id,
+    })
+  }
+
+  for (const w of data.weeklyTexts) {
+    if (!mine(w.studentId) || w.status !== 'draft' || !w.body.trim()) continue
+    const student = findStudent(data, w.studentId)
+    items.push({
+      key: `weekly:${w.id}`,
+      kind: 'weekly_text',
+      studentId: w.studentId,
+      sourceKey: `weekly:${w.studentId}:${w.weekStart}`,
+      sourceLabel: 'Weekly text',
+      sourceLine: `Weekly text for the week of ${formatDate(w.weekStart)}`,
+      preview: w.body,
+      isSend: true,
+      toName: student?.firstName,
+      channel: 'text',
+      language: 'en',
+      sortAt: w.weekStart,
+      weeklyTextId: w.id,
+    })
+    const copy = w.parentCopy
+    if (copy && copy.status === 'draft' && copy.body.trim()) {
+      const parent = student?.parents.find((p) => p.id === copy.parentId)
+      items.push({
+        key: `weekly-parent:${w.id}`,
+        kind: 'weekly_parent',
+        studentId: w.studentId,
+        sourceKey: `weekly:${w.studentId}:${w.weekStart}`,
+        sourceLabel: 'Weekly text',
+        sourceLine: `Parent copy for the week of ${formatDate(w.weekStart)}`,
+        preview: copy.body,
+        isSend: true,
+        toName: parent?.name,
+        channel: copy.channel,
+        language: copy.language,
+        sortAt: w.weekStart,
+        weeklyTextId: w.id,
+      })
+    }
+  }
+
   return items
 }
 
-export const pendingApprovalCount = (data: AppData, studentId?: ID) => pendingApprovals(data, studentId).reduce((n, a) => n + a.count, 0)
+/** Turn the reminder queue into approval rows (kept here-free of a cycle with reminders.ts). */
+export function reminderApprovals(data: AppData, drafts: { key: string; mode: string; studentId: ID; taskId: ID; taskTitle: string; message: { body: string; toName: string; channel: Channel; language: Language } }[], studentId?: ID): ApprovalItem[] {
+  const active = new Set(activeStudents(data).map((s) => s.id))
+  return drafts
+    .filter((r) => r.mode === 'needs_approval' && active.has(r.studentId) && (!studentId || r.studentId === studentId))
+    .map((r) => ({
+      key: `reminder:${r.key}`,
+      kind: 'reminder' as const,
+      studentId: r.studentId,
+      sourceKey: `reminder:${r.studentId}`,
+      sourceLabel: 'Reminder',
+      sourceLine: `Reminder about “${r.taskTitle}”`,
+      preview: r.message.body,
+      isSend: true,
+      toName: r.message.toName,
+      channel: r.message.channel,
+      language: r.message.language,
+      sortDue: data.tasks.find((t) => t.id === r.taskId)?.dueDate,
+      sortAt: todayISO(),
+      reminderKey: r.key,
+    }))
+}
+
+export function allPendingApprovals(data: AppData, reminderDrafts: Parameters<typeof reminderApprovals>[1], studentId?: ID): ApprovalItem[] {
+  return [...pendingApprovals(data, studentId), ...reminderApprovals(data, reminderDrafts, studentId)]
+}
+
+export const pendingApprovalCount = (data: AppData, studentId?: ID) => pendingApprovals(data, studentId).length
+
+/** Groups for the Approvals screen: by student, then by source. Urgent / soon due first, then newest. */
+export function approvalGroups(items: ApprovalItem[]): { studentId: ID; sourceKey: string; sourceLabel: string; items: ApprovalItem[] }[] {
+  const map = new Map<string, ApprovalItem[]>()
+  for (const item of items) {
+    const key = `${item.studentId}::${item.sourceKey}`
+    const list = map.get(key) ?? []
+    list.push(item)
+    map.set(key, list)
+  }
+  const groups = [...map.entries()].map(([, groupItems]) => ({
+    studentId: groupItems[0]!.studentId,
+    sourceKey: groupItems[0]!.sourceKey,
+    sourceLabel: groupItems[0]!.sourceLabel,
+    items: groupItems,
+  }))
+  const today = todayISO()
+  const urgency = (g: (typeof groups)[0]) => {
+    const dues = g.items.map((i) => i.sortDue).filter(Boolean) as string[]
+    if (dues.length === 0) return Number.POSITIVE_INFINITY
+    return Math.min(...dues.map((d) => daysBetween(today, d)))
+  }
+  const newest = (g: (typeof groups)[0]) => Math.max(...g.items.map((i) => Date.parse(i.sortAt) || 0))
+  return groups.sort((a, b) => {
+    const ua = urgency(a)
+    const ub = urgency(b)
+    if (ua !== ub) return ua - ub
+    return newest(b) - newest(a)
+  })
+}
 
 // ── Documents ───────────────────────────────────────────────────────────────
 

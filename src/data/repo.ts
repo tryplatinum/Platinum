@@ -28,6 +28,7 @@ import type {
   ReminderRule,
   Student,
   StudentDocument,
+  ReminderSkip,
   StudentLink,
   Task,
   WeeklyText,
@@ -661,6 +662,15 @@ const PAGE = 1000
 /** How much of the activity log is kept in memory. The rest stays in the database. */
 export const ACTIVITY_LIMIT = 300
 
+/** Older activity rows than the ones already loaded (for the Activity screen’s Load more). */
+export async function loadOlderActivity(firmId: ID, olderThanAt: string, limit = 50, studentId?: ID): Promise<ActivityEvent[]> {
+  let query = supabase.from('activity').select('*').eq('firm_id', firmId).lt('at', olderThanAt).order('at', { ascending: false }).limit(limit)
+  if (studentId) query = query.eq('student_id', studentId)
+  const { data, error } = await query
+  if (error) fail(error, 'Could not load older activity')
+  return data.map(activityFrom)
+}
+
 /** Every row of one table for the firm, in insertion order. Pages past the API's row cap. */
 async function all<T extends DataTable>(table: T, firmId: ID, newestFirst: boolean, limit = Infinity): Promise<Row<T>[]> {
   const rows: Row<T>[] = []
@@ -702,7 +712,7 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems] = await Promise.all([
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems, skips] = await Promise.all([
     supabase.from('firms').select('name, weekly_text_day, sort_files_automatically').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
@@ -720,12 +730,14 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     supabase.from('document_types').select('*').eq('firm_id', firmId).order('position').order('name'),
     all('college_list_drafts', firmId, false),
     supabase.from('college_list_draft_items').select('*').eq('firm_id', firmId).order('position').limit(5000),
+    supabase.from('reminder_skips').select('*').eq('firm_id', firmId).order('skipped_at', { ascending: false }),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
   if (rules.error) fail(rules.error, 'Could not load your reminder rules')
   if (documentTypes.error) fail(documentTypes.error, 'Could not load your folders')
   if (listDraftItems.error) fail(listDraftItems.error, 'Could not load your draft lists')
+  if (skips.error) fail(skips.error, 'Could not load reminder skips')
 
   const parentsOf = new Map<ID, Parent[]>()
   for (const p of parents) parentsOf.set(p.student_id, [...(parentsOf.get(p.student_id) ?? []), parentFrom(p)])
@@ -752,7 +764,34 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     documentTypes: documentTypes.data.map(documentTypeFrom),
     collegeListDrafts: listDrafts.map(listDraftFrom),
     collegeListDraftItems: listDraftItems.data.map(listDraftItemFrom),
+    reminderSkips: skips.data.map(reminderSkipFrom),
   }
+}
+
+const reminderSkipFrom = (r: { id: string; dedupe_key: string; skipped_at: string; until: string | null; skipped_by: string | null }): ReminderSkip => ({
+  id: r.id,
+  dedupeKey: r.dedupe_key,
+  skippedAt: stamp(r.skipped_at),
+  until: r.until ?? undefined,
+  skippedBy: u(r.skipped_by),
+})
+
+/** Records a skip for a reminder dedupe key. Replaces any existing skip for that key. */
+export async function skipReminder(firmId: ID, dedupeKey: string, userId: ID, until: string | null): Promise<ReminderSkip> {
+  await supabase.from('reminder_skips').delete().eq('firm_id', firmId).eq('dedupe_key', dedupeKey)
+  const { data, error } = await supabase
+    .from('reminder_skips')
+    .insert({ firm_id: firmId, dedupe_key: dedupeKey, skipped_by: userId, until })
+    .select('*')
+    .single()
+  if (error) fail(error, 'Could not skip the reminder')
+  return reminderSkipFrom(data)
+}
+
+/** Removes a skip so the reminder can appear again. */
+export async function undoReminderSkip(id: ID): Promise<void> {
+  const { error } = await supabase.from('reminder_skips').delete().eq('id', id)
+  if (error) fail(error, 'Could not undo the skip')
 }
 
 // ── Student links ───────────────────────────────────────────────────────────

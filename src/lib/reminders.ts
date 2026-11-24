@@ -8,10 +8,21 @@
 // NOTE: Chinese templates need a native-speaker review.
 
 import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW } from '../../shared/dispatch'
-import type { AppData, ID, Language, OutboxMessage, Parent, ReminderMode, ReminderRule, Student, Task } from '../types'
+import type { AppData, ID, Language, OutboxMessage, Parent, ReminderMode, ReminderRule, ReminderSkip, Student, Task } from '../types'
 import { daysBetween, formatDate, formatDateLong, formatDateZh, formatTime, todayISO, type ISODate } from './dates'
 import { activeStudents, daysLate, fullName, isLate, isOpen, primaryParent, type WeeklyTextItems } from './derive'
 import { zhGiven, zhGreeting } from './language'
+
+/** True when a skip still keeps this dedupe key out of the queue. */
+export function skipIsActive(skip: Pick<ReminderSkip, 'until'>, today: ISODate = todayISO()): boolean {
+  if (!skip.until) return true
+  return daysBetween(today, skip.until) > 0
+}
+
+/** Active skips keyed by dedupe_key. */
+export function activeSkipKeys(skips: ReminderSkip[], today: ISODate = todayISO()): Set<string> {
+  return new Set(skips.filter((s) => skipIsActive(s, today)).map((s) => s.dedupeKey))
+}
 
 export interface ReminderDraft {
   /** Identifies this reminder (rule + task + recipient) so it is not sent twice. */
@@ -72,13 +83,14 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
       .filter((o) => o.status !== 'cancelled' && o.dedupeKey && daysBetween(o.sentAt.slice(0, 10), today) < REPEAT_AFTER_DAYS)
       .map((o) => o.dedupeKey),
   )
+  const skipped = activeSkipKeys(data.reminderSkips ?? [], today)
   const queue: ReminderDraft[] = []
   const escalated = new Set<ID>()
   const students = activeStudents(data)
 
   const add = (r: ReminderRule, s: Student, t: Task, message: ReminderDraft['message']) => {
     const key = `${r.id}:${t.id}:${message.parentId ?? 'student'}`
-    if (r.mode === 'off' || recentlySent.has(key)) return
+    if (r.mode === 'off' || recentlySent.has(key) || skipped.has(key)) return
     queue.push({ key, ruleId: r.id, mode: r.mode, studentId: s.id, taskId: t.id, taskTitle: t.title, message: { ...message, dedupeKey: key } })
   }
 
