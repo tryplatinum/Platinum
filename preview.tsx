@@ -12,6 +12,7 @@ import { buildSeed } from './src/data/seed'
 import { useStore } from './src/store/store'
 
 const params = new URLSearchParams(location.search)
+document.documentElement.dataset.theme = params.get('theme') ?? 'light'
 const path = params.get('path') ?? '/app'
 const seed = buildSeed()
 
