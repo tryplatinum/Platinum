@@ -18,10 +18,10 @@ export function StudentTable({ rows }: { rows: StudentSummary[] }) {
   const [reminding, setReminding] = useState<string>()
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-b-card">
       <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead>
-          <tr className="text-left text-xs text-muted">
+          <tr className="bg-surface-2 text-left text-xs text-muted">
             <th className="px-5 py-3 font-semibold">Student</th>
             <th className="w-[220px] px-3 py-3 font-semibold">Progress</th>
             <th className="px-3 py-3 font-semibold">Next deadline</th>
@@ -37,9 +37,9 @@ export function StudentTable({ rows }: { rows: StudentSummary[] }) {
             const open = reminding === s.student.id
             return (
               <Fragment key={s.student.id}>
-                <tr className="border-t border-line align-middle">
+                <tr className="border-t border-line align-middle transition-colors hover:bg-surface-2">
                   <td className="px-5 py-4">
-                    <Link to={`/app/students/${s.student.id}`} className="font-semibold text-ink hover:text-accent hover:underline">
+                    <Link to={`/app/students/${s.student.id}`} className="font-semibold text-heading hover:text-accent hover:underline">
                       {fullName(s.student)}
                     </Link>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">

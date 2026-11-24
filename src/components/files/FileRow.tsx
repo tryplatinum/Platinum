@@ -2,6 +2,7 @@
 // being sorted, or an older name-or-link row. Used on a student's Documents tab
 // and on the firm-wide Documents screen. Also the preview panel a file opens in.
 
+import { FileText } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate } from '../../lib/dates'
@@ -9,7 +10,7 @@ import { fullName } from '../../lib/derive'
 import { canPreview, fileKind, fileTitle, folderById, folderOf, isNewFile, isSorting, isStoredFile, needsCheck, openFolders, uploadedBy } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { ID, StudentDocument } from '../../types'
-import { Button, Modal, Pill, cx, inputBase, useToast } from '../ui'
+import { Button, Modal, Pill, Thinking, cx, inputBase, useToast } from '../ui'
 import { hiddenNote } from './FilingRow'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong. Please try again.')
@@ -152,13 +153,11 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
   if (isSorting(doc)) {
     return (
       <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-5 py-3">
+        <FileText size={20} strokeWidth={1.75} className="shrink-0 text-muted" aria-hidden />
         <Pill className="w-14 justify-center rounded-md px-1 text-[11px]">{fileKind(doc)}</Pill>
         <div className="min-w-[12rem] flex-1">
           <span className="break-all text-sm font-semibold">{doc.originalFilename ?? title}</span>
-          <div role="status" className="flex items-center gap-2 text-[13px] font-medium text-accent">
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            Sorting…
-          </div>
+          <Thinking inline label="Sorting…" />
         </div>
         <div className="text-[13px] text-muted">
           {showStudent && student && `${fullName(student)} · `}
@@ -169,7 +168,8 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
   }
 
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-5 py-3">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-5 py-3 transition-colors hover:bg-surface-2 last:rounded-b-card">
+      <FileText size={20} strokeWidth={1.75} className="-mr-1 shrink-0 text-muted" aria-hidden />
       <Pill className="w-14 justify-center rounded-md px-1 text-[11px]">{fileKind(doc)}</Pill>
       <div className="min-w-[12rem] flex-1">
         {renaming !== undefined ? (

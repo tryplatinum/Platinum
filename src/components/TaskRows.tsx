@@ -143,7 +143,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
         <Button type="submit" disabled={!url.trim()}>
           Add link
         </Button>
-        {!onLink && <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-canvas">
+        {!onLink && <label className="inline-flex min-h-11 cursor-pointer items-center rounded-control border border-line-strong bg-surface px-4 text-sm font-semibold text-heading hover:bg-surface-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent">
           <input
             type="file"
             className="sr-only"

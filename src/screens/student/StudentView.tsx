@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
+import { Logo } from '../../components/Logo'
 import { TaskItem } from '../../components/TaskRows'
 import { Button, Card, Empty, Field, SectionLabel, inputClass, useToast } from '../../components/ui'
 import { formatDate, formatDateLong, formatTime } from '../../lib/dates'
@@ -35,8 +36,11 @@ export function StudentHome() {
   return (
     <>
       <header>
-        <p className="text-[13px] text-muted">{data.firm.name}</p>
-        <h1 className="text-2xl font-bold">Hi {student.firstName}</h1>
+        <p className="flex items-center gap-2 text-[13px] font-medium text-muted">
+          <Logo variant="symbol" width={40} />
+          {data.firm.name}
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold">Hi {student.firstName}</h1>
       </header>
 
       <Card className="grid grid-cols-2 divide-x divide-line">
@@ -167,7 +171,7 @@ export function StudentHome() {
         </Card>
       )}
 
-      {!onLink && <Link to="profile" className="flex min-h-11 items-center justify-center rounded-lg border border-line-strong bg-surface text-sm font-semibold text-accent hover:bg-canvas">
+      {!onLink && <Link to="profile" className="flex min-h-11 items-center justify-center rounded-lg border border-line-strong bg-surface text-sm font-semibold text-accent hover:bg-surface-2">
         Update my scores and activities
       </Link>}
     </>
@@ -223,7 +227,7 @@ export function StudentProfile() {
         <Link to=".." className="flex min-h-11 items-center text-sm font-semibold text-accent">
           ← Back to my tasks
         </Link>
-        <h1 className="text-2xl font-bold">My profile</h1>
+        <h1 className="text-2xl font-semibold">My profile</h1>
         <p className="text-[13px] text-muted">
           {student.school} · Class of {student.gradYear}
         </p>

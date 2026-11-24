@@ -4,6 +4,7 @@
 // the names of the files added in this visit. The link can never list, open or
 // download anything, so that list lives only in this page's memory.
 
+import { Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { FILE_ACCEPT, FILE_TYPES_LABEL } from '../../../shared/files'
 import { useFileDrop } from '../../components/files/UploadWindow'
@@ -55,13 +56,16 @@ export function AddFile({ counselorName }: { counselorName: string }) {
         <p className="text-sm text-muted">On their own link, the student can drop, pick or photograph a file here. It is sorted into their folders for you.</p>
       ) : (
         <>
-          <div {...drop.handlers} className={cx('flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-3 py-4 text-center', drop.over ? 'border-accent bg-accent-soft' : 'border-line-strong bg-canvas')}>
+          <div {...drop.handlers} className={cx('flex flex-col items-center gap-2 rounded-control border-2 border-dashed px-3 py-4 text-center', drop.over ? 'border-accent bg-accent-soft' : 'border-line-strong bg-surface-2')}>
+            <Upload size={20} strokeWidth={1.75} className="text-muted" aria-hidden />
             <p className="text-sm text-ink-soft">A transcript, a score report, a form: anything {counselorName} asked for.</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="primary" onClick={() => pick.current?.click()}>
+            <div className="flex w-full flex-col gap-2">
+              <Button variant="primary" className="w-full" onClick={() => pick.current?.click()}>
                 Choose a file
               </Button>
-              <Button onClick={() => camera.current?.click()}>Take a photo</Button>
+              <Button className="w-full" onClick={() => camera.current?.click()}>
+                Take a photo
+              </Button>
             </div>
             <p className="text-xs text-muted">{FILE_TYPES_LABEL}. Up to 25 MB.</p>
             <input
@@ -98,7 +102,7 @@ export function AddFile({ counselorName }: { counselorName: string }) {
                 {item.stage === 'sending' ? (
                   <>
                     <div role="progressbar" aria-label={`Sending ${item.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.progress * 100)} className="h-2 overflow-hidden rounded-full bg-track">
-                      <div className="h-2 bg-accent transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                      <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round(item.progress * 100)}%` }} />
                     </div>
                     <span className="text-[13px] text-muted">{item.progress >= 1 ? 'Almost done…' : `Sending… ${Math.round(item.progress * 100)}%`}</span>
                   </>

@@ -105,7 +105,7 @@ export function CollegePicker({
         <ul id={listId} role="listbox" aria-label="Colleges in the directory" className="mt-1 overflow-hidden rounded-lg border border-line bg-surface">
           {results.map((c, i) => (
             <li key={c.unitid} role="option" aria-selected={i === active} className="border-t border-line first:border-t-0">
-              <button type="button" className={cx('flex min-h-11 w-full flex-col items-start justify-center px-3 py-1.5 text-left text-sm hover:bg-canvas', i === active && 'bg-canvas')} onClick={() => onPick(c)}>
+              <button type="button" className={cx('flex min-h-11 w-full flex-col items-start justify-center px-3 py-1.5 text-left text-sm hover:bg-surface-2', i === active && 'bg-surface-2')} onClick={() => onPick(c)}>
                 <span className="font-semibold">{c.name}</span>
                 <span className="text-xs text-muted">
                   {[collegePlace(c), c.control && CONTROL_LABEL[c.control], c.undergradSize !== undefined && `${c.undergradSize.toLocaleString('en-US')} undergraduates`].filter(Boolean).join(' · ')}

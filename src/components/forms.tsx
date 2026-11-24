@@ -399,7 +399,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
             <textarea className={textareaClass} rows={9} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Paste or type what was discussed, decided and assigned…" />
           </Field>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong px-4 text-sm font-semibold hover:bg-canvas">
+            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2">
               <input
                 type="file"
                 accept=".txt,.md,.vtt,text/plain"
