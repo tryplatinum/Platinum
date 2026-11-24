@@ -159,7 +159,9 @@ export function briefFacts(data: AppData, meeting: Meeting, student: Student): B
     if (d.studentId !== student.id || d.addedOn < since) continue
     // A stored file counts once it is filed, and only when its folder is open to every
     // member: a brief is sent to the model and saved where the whole firm can read it.
-    if (d.storagePath && (d.fileStatus !== 'filed' || (data.documentTypes.find((t) => t.id === d.typeId)?.sensitivity ?? 'standard') !== 'standard')) continue
+    if (d.storagePath && d.fileStatus !== 'filed') continue
+    // The same goes for an older name or link kept under an owner-only folder.
+    if (d.kind !== 'essay' && (data.documentTypes.find((t) => t.id === d.typeId)?.sensitivity ?? 'standard') !== 'standard') continue
     changes.push(`New document: ${d.title ?? d.name}`)
   }
   for (const c of data.colleges) {

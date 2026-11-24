@@ -546,6 +546,28 @@ try {
   const deletedOne = await documents(c, { action: 'delete', documentId: corrected.id })
   check('deleting a document removes its object and its row together', deletedOne.status === 200 && !(await exists(corrected.path)) && !(await rowOf(corrected.id)))
   check('…and logs it with the title, since the folder was open to all', (await eventsOf(corrected.id)).some((e) => e.action === 'deleted' && (e.detail as { title?: string }).title === 'Common App confirmation'))
+  // Older "name or link" rows under an owner-only folder follow the same rule as stored files there.
+  const linkRow = (id: string, typeId: string, name: string) => ({ id, student_id: seeded.A.studentId, name, kind: 'other', category: 'financial', added_on: '2026-11-01', added_by: 'counselor', url: 'https://example.com/invented', type_id: typeId })
+  const [aidLink, scoreLink] = [randomUUID(), randomUUID()]
+  const linksMade = await a.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { documents: [linkRow(aidLink, folder('Financial aid'), 'FAFSA confirmation OLD LINK'), linkRow(scoreLink, folder('Test scores'), 'Score portal link')] } } as unknown as Json })
+  if (linksMade.error) throw new Error(`creating link rows failed: ${linksMade.error.message}`)
+  const seenBy = async (who: TestAccount, id: string) => ((await who.client.from('documents').select('id').eq('id', id)).data ?? []).length
+  check('a counselor who is not the owner cannot read an old link row under Financial aid', (await seenBy(c, aidLink)) === 0)
+  check('…nor find it in a listing of the student’s documents', !JSON.stringify((await c.client.from('documents').select('*').eq('student_id', seeded.A.studentId)).data ?? []).includes('OLD LINK'))
+  check('…nor change or delete it', ((await c.client.from('documents').update({ name: 'x' }).eq('id', aidLink).select('id')).data ?? []).length === 0 && ((await c.client.from('documents').delete().eq('id', aidLink).select('id')).data ?? []).length === 0 && (await rowOf(aidLink))?.name === 'FAFSA confirmation OLD LINK')
+  await c.client.rpc('apply_changes', { firm: a.firmId, changes: { delete: { documents: [aidLink] } } })
+  check('…nor delete it through apply_changes', Boolean(await rowOf(aidLink)))
+  check('…nor read its log', !(await c.client.rpc('document_is_readable', { document: aidLink })).data)
+  check('…but still reads an old link row in a folder open to everyone', (await seenBy(c, scoreLink)) === 1)
+  const movedIn = await c.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { documents: [linkRow(scoreLink, folder('Identity and visa'), 'Score portal link')] } } as unknown as Json })
+  check('…and cannot move one into an owner-only folder', Boolean(movedIn.error) && (await rowOf(scoreLink))?.type_id === folder('Test scores'))
+  check('the owner reads both', (await seenBy(a, aidLink)) === 1 && (await seenBy(a, scoreLink)) === 1)
+  check('firm B and anon read neither', (await seenBy(b, aidLink)) === 0 && (await seenBy(b, scoreLink)) === 0 && ((await anon.from('documents').select('id').eq('id', aidLink)).data ?? []).length === 0)
+  const countWith = (await a.client.rpc('owner_only_file_count', { firm: a.firmId, students: [seeded.A.studentId] })).data ?? 0
+  const linksGone = await a.client.rpc('apply_changes', { firm: a.firmId, changes: { delete: { documents: [aidLink, scoreLink] } } })
+  check('an old link row under an owner-only folder counts as owner-only', !linksGone.error && countWith - ((await a.client.rpc('owner_only_file_count', { firm: a.firmId, students: [seeded.A.studentId] })).data ?? 0) === 1)
+  check('essays are not affected: the counselor still reads the student’s essay', ((await c.client.from('documents').select('id').eq('student_id', seeded.A.studentId).eq('kind', 'essay')).data ?? []).length === 1)
+
   // Owner-only files cannot be removed by other members: deleting a student's files, deleting the
   // student, or clearing the caseload is refused for anyone but the owner while one is in the way.
   const storedOf = async () => ((await admin.from('documents').select('id, storage_path').eq('student_id', seeded.A.studentId).not('storage_path', 'is', null)).data ?? [])

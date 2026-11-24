@@ -91,6 +91,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
   const data = useData()
   const toast = useToast()
   const me = useStore((s) => (s.account.status === 'ready' ? s.account.userId : undefined))
+  const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
   const { fileDocument, renameFile, deleteFile, openFile, updateDocument, removeDocument } = useStore.getState()
   const [renaming, setRenaming] = useState<string>()
   const [preview, setPreview] = useState(false)
@@ -116,7 +117,13 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
   }
 
   const moveTo = (typeId: ID) => {
-    if (!stored) return updateDocument(doc.id, { typeId })
+    if (!stored) {
+      // A name or a link under an owner-only folder is the owner's alone, like a stored file there.
+      // Only a stored file can be handed over by someone else (the server does that filing).
+      const target = folderById(data, typeId)
+      if (target && target.sensitivity !== 'standard' && !owner) return toast(`Only the firm’s owner can put a link under “${target.name}”.`)
+      return updateDocument(doc.id, { typeId })
+    }
     void run(async () => {
       const filed = await fileDocument(doc.id, { typeId, title })
       toast(filed.hidden ? hiddenNote(filed.folderName) : `Moved to ${filed.folderName}.`)
