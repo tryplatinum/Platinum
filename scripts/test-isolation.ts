@@ -598,6 +598,116 @@ try {
     (error: unknown) => (error instanceof CollegeToolError ? error.code : 'crashed'),
   )
   check("…and B cannot read A's", othersList === 'not_found', othersList)
+
+  // ── Draft college lists ──
+  // A stand-in for the model, so no AI call is made. Its first answer names one college per band and
+  // misbehaves three ways: a reason that states a figure, a unitid that was never a candidate, and a
+  // college named twice. Its second answer is clean. Every reason carries a marker to look for later.
+  const { listModel } = await import('../server/collegeListDrafts.js')
+  const realModel = { ...listModel }
+  const DRAFT_MARK = 'ZZDRAFTREASON'
+  const asked: { candidates: number; problems?: string[] }[] = []
+  listModel.available = () => true
+  listModel.run = async (input) => {
+    asked.push({ candidates: input.candidates.length, problems: input.problems })
+    const first = (band: string) => input.candidates.find((c) => c.band === band)
+    if (!input.problems) {
+      const [reach, target, likely] = [first('Reach'), first('Target'), first('Likely')]
+      return {
+        model: 'stand-in',
+        draft: {
+          note: `${DRAFT_MARK} overall note.`,
+          picks: [
+            ...(reach ? [{ unitid: reach.unitid, reason: `${DRAFT_MARK} admits about 12% of applicants.` }] : []),
+            ...(target ? [{ unitid: target.unitid, reason: `${DRAFT_MARK} a good match for the program.` }, { unitid: target.unitid, reason: `${DRAFT_MARK} named twice.` }] : []),
+            ...(likely ? [{ unitid: likely.unitid, reason: `${DRAFT_MARK} a solid option nearby.` }] : []),
+            { unitid: 999_999_999, reason: `${DRAFT_MARK} not a candidate.` },
+          ],
+        },
+      }
+    }
+    const reach = first('Reach')
+    return { model: 'stand-in', draft: { note: `${DRAFT_MARK} second note.`, picks: reach ? [{ unitid: reach.unitid, reason: `${DRAFT_MARK} known for the program.` }] : [] } }
+  }
+  const preferences = { states: ['MA'], mix: { Reach: 1, Target: 1, Likely: 1 } }
+  const drafted = await colleges(a.token, { action: 'draft', studentId: seeded.A.studentId, preferences })
+  const draftedBody = (await drafted.json()) as { ok: boolean; message?: string; data?: { draftId: string; items: number; byModel: boolean } }
+  const draftId = draftedBody.data?.draftId ?? ''
+  check('a member can draft a list for their own student', drafted.status === 200 && draftedBody.ok && draftedBody.data?.byModel === true && draftedBody.data.items === 3, draftedBody.message ?? `${draftedBody.data?.items} items`)
+  const draftRow = (await a.client.from('college_list_drafts').select('*').eq('id', draftId).maybeSingle()).data
+  const itemRows = (await a.client.from('college_list_draft_items').select('*').eq('draft_id', draftId).order('position')).data ?? []
+  const madeHow = (draftRow?.source ?? {}) as { kind?: string; rejectedReasons?: number; askedTwice?: boolean; filled?: number }
+  check('the draft belongs to the firm and student, and records who made it and how', draftRow?.firm_id === a.firmId && draftRow?.student_id === seeded.A.studentId && draftRow?.created_by === a.userId && draftRow?.status === 'draft' && madeHow.kind === 'claude')
+  check('a reason that states a figure is thrown away and the model is asked once more, for what is missing only', asked.length === 2 && madeHow.rejectedReasons === 1 && madeHow.askedTwice === true && (asked[1].problems ?? []).some((p) => p.includes('percentage')) && asked[1].candidates < asked[0].candidates)
+  check('no saved reason states a percentage, and the unknown and repeated picks are gone', itemRows.length === 3 && itemRows.every((i) => !/\d\s*%/.test(i.reason) && !/named twice|not a candidate/.test(i.reason)) && new Set(itemRows.map((i) => i.unitid)).size === 3)
+  check('the overall note is the first answer’s, never the second’s', draftRow?.note === `${DRAFT_MARK} overall note.`)
+  check('every band was set by the rule and carries its basis', itemRows.every((i) => i.fit_set_by === 'rule' && typeof (i.fit_basis as { summary?: string }).summary === 'string' && (i.fit_basis as { rule?: string }).rule !== undefined))
+  check('with no test score on file, each band is flagged as limited data', itemRows.every((i) => (i.fit_basis as { limitedData?: boolean; rule?: string }).limitedData === true || (i.fit_basis as { rule?: string }).rule === 'admit_rate_under_reach'))
+  const listOf = async () => (await adminClient().from('colleges').select('name, fit, note, fit_reason, fit_set_by, directory_unitid, status, plan, deadline').eq('student_id', seeded.A.studentId).order('seq')).data ?? []
+  check('drafting writes nothing to the student’s college list', (await listOf()).length === 1)
+
+  check("B cannot read A's drafts or their colleges", ((await b.client.from('college_list_drafts').select('id').eq('id', draftId)).data ?? []).length === 0 && ((await b.client.from('college_list_draft_items').select('id').eq('draft_id', draftId)).data ?? []).length === 0 && ((await b.client.from('college_list_drafts').select('id')).data ?? []).length === 0)
+  check('anon reads neither draft table', ((await anon.from('college_list_drafts').select('id').limit(1)).data ?? []).length === 0 && ((await anon.from('college_list_draft_items').select('id').limit(1)).data ?? []).length === 0)
+  await b.client.from('college_list_drafts').update({ status: 'discarded', note: 'HACKED' }).eq('id', draftId)
+  await b.client.from('college_list_draft_items').update({ kept: false, reason: 'HACKED' }).eq('draft_id', draftId)
+  await b.client.from('college_list_draft_items').delete().eq('draft_id', draftId)
+  await b.client.from('college_list_drafts').delete().eq('id', draftId)
+  const planted = await b.client.from('college_list_draft_items').insert({ firm_id: a.firmId, draft_id: draftId, unitid: itemRows[0]?.unitid ?? 166683, fit: 'Likely', reason: 'HACKED' })
+  const plantedOwn = await b.client.from('college_list_draft_items').insert({ firm_id: b.firmId, draft_id: draftId, unitid: 166683, fit: 'Likely', reason: 'HACKED' })
+  const afterB = (await adminClient().from('college_list_draft_items').select('reason, kept').eq('draft_id', draftId)).data ?? []
+  check("B cannot change, delete or add to A's draft", Boolean(planted.error) && Boolean(plantedOwn.error) && afterB.length === 3 && afterB.every((i) => i.kept && i.reason !== 'HACKED') && (await adminClient().from('college_list_drafts').select('status, note').eq('id', draftId).single()).data?.status === 'draft')
+  check("B cannot draft a list for A's student, or band colleges for them", (await colleges(b.token, { action: 'draft', studentId: seeded.A.studentId, preferences })).status === 404 && (await colleges(b.token, { action: 'band', studentId: seeded.A.studentId, unitids: [166683] })).status === 404 && asked.length === 2)
+  const banded = await colleges(a.token, { action: 'band', studentId: seeded.A.studentId, unitids: [166683] })
+  const bandedBody = (await banded.json()) as { data?: { fit: string; basis: { rule?: string } }[] }
+  check('A can band a college for its own student, by the rule', banded.status === 200 && bandedBody.data?.[0]?.fit === 'Reach' && bandedBody.data[0].basis.rule === 'admit_rate_under_reach')
+  check('preferences the server does not understand are refused, not run', (await colleges(a.token, { action: 'draft', studentId: seeded.A.studentId, preferences: { mix: { Reach: 500, Target: 1, Likely: 1 } } })).status === 400 && (await colleges(a.token, { action: 'draft', studentId: seeded.A.studentId, preferences: { admitRateMax: 1 } })).status === 400 && asked.length === 2)
+
+  // "Add to list": only the firm's own member, only once, and only then are the colleges on the list.
+  const byB = await b.client.rpc('add_draft_to_college_list', { draft: draftId })
+  const byAnon = await anon.rpc('add_draft_to_college_list', { draft: draftId })
+  check("B cannot add A's draft to A's list, and neither can anon", Boolean(byB.error) && Boolean(byAnon.error) && (await listOf()).length === 1 && (await adminClient().from('college_list_drafts').select('status').eq('id', draftId).single()).data?.status === 'draft')
+  // A removes one college and sets one band by hand first, the way the review screen does: through apply_changes.
+  const [removedItem, changedItem] = [itemRows[0], itemRows[1]]
+  const edited = await a.client.rpc('apply_changes', {
+    firm: a.firmId,
+    changes: { upsert: { college_list_draft_items: [{ ...removedItem, kept: false }, { ...changedItem, fit: 'Reach', fit_set_by: 'counselor', fit_basis: { ...(changedItem.fit_basis as object), summary: 'Set to Reach by a counselor.' } }].map(({ firm_id: _f, created_at: _c, updated_at: _u, ...row }) => row) }, delete: {} } as unknown as Json,
+  })
+  check('review edits are saved the ordinary way', !edited.error, edited.error?.message)
+  const added = await a.client.rpc('add_draft_to_college_list', { draft: draftId })
+  const listAfter = await listOf()
+  const fromDraft = listAfter.filter((c) => c.directory_unitid !== null)
+  check('A adds its draft: the kept colleges, and only those, are now on the list', !added.error && added.data === 2 && listAfter.length === 3 && !fromDraft.some((c) => c.directory_unitid === removedItem.unitid), added.error?.message ?? `${added.data} added`)
+  check('…as Planning with no plan or deadline, with the band, who set it, the why line and the reason as the note', fromDraft.every((c) => c.status === 'considering' && c.plan === null && c.deadline === null && Boolean(c.fit_reason) && (c.note ?? '').includes(DRAFT_MARK)) && fromDraft.some((c) => c.directory_unitid === changedItem.unitid && c.fit === 'Reach' && c.fit_set_by === 'counselor' && c.fit_reason === 'Set to Reach by a counselor.'))
+  const approvedDraft = (await a.client.from('college_list_drafts').select('status, approved_by, approved_by_name, approved_at').eq('id', draftId).single()).data
+  check('the draft is approved with who and when', approvedDraft?.status === 'approved' && approvedDraft.approved_by === a.userId && approvedDraft.approved_by_name === 'Counselor A' && Boolean(approvedDraft.approved_at))
+  check('…and the activity log says so', ((await a.client.from('activity').select('text').eq('student_id', seeded.A.studentId)).data ?? []).some((e) => e.text === 'Counselor A added 2 colleges to the college list from a draft'))
+  check('a draft cannot be added twice', Boolean((await a.client.rpc('add_draft_to_college_list', { draft: draftId })).error) && (await listOf()).length === 3)
+  const again = await colleges(a.token, { action: 'draft', studentId: seeded.A.studentId, preferences })
+  const againBody = (await again.json()) as { data?: { draftId: string } }
+  const againItems = (await a.client.from('college_list_draft_items').select('unitid').eq('draft_id', againBody.data?.draftId ?? '')).data ?? []
+  check('colleges already on the list are not proposed again', again.status === 200 && againItems.length > 0 && !againItems.some((i) => fromDraft.some((c) => c.directory_unitid === i.unitid)))
+
+  // Nothing from a draft, or from what a draft put on the list, reaches the student link.
+  // A's first link was revoked above, so this uses a new one.
+  const draftLinkToken = randomBytes(32).toString('base64url')
+  await a.client.from('student_links').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, token_hash: createHash('sha256').update(draftLinkToken).digest('hex'), created_by: a.userId })
+  const draftLinkPage = await student(draftLinkToken)
+  const linkAfter = JSON.stringify(await draftLinkPage.json())
+  check('a new link for that student opens', draftLinkPage.status === 200)
+  check('the student link shows nothing from a draft: no reason, no why line, no draft rows', !linkAfter.includes(DRAFT_MARK) && !/admit rate|percentile|Set to Reach|fitBasis|fit_basis/i.test(linkAfter) && /"collegeListDrafts":\[\]/.test(linkAfter) && /"collegeListDraftItems":\[\]/.test(linkAfter))
+  check('…while the list itself now shows the added colleges by name and band', fromDraft.every((c) => linkAfter.includes(JSON.stringify(c.name))))
+
+  // When the model fails, the counselor still gets the banded candidates to pick from.
+  listModel.run = async () => {
+    throw new Error('stand-in failure')
+  }
+  const fallback = await colleges(a.token, { action: 'draft', studentId: seeded.A.studentId, preferences })
+  const fallbackBody = (await fallback.json()) as { ok: boolean; data?: { draftId: string; byModel: boolean; items: number } }
+  const fallbackDraft = (await a.client.from('college_list_drafts').select('source, note').eq('id', fallbackBody.data?.draftId ?? '').maybeSingle()).data
+  const fallbackItems = (await a.client.from('college_list_draft_items').select('kept, ai_explained, reason, fit_basis').eq('draft_id', fallbackBody.data?.draftId ?? '')).data ?? []
+  check('if the AI call fails, a draft of banded candidates is still returned, marked as not from the AI', fallback.status === 200 && fallbackBody.data?.byModel === false && (fallbackDraft?.source as { kind?: string } | null)?.kind === 'placeholder' && fallbackDraft?.note === null && fallbackItems.length > 0 && fallbackItems.every((i) => !i.kept && !i.ai_explained && i.reason === 'Matches your filters' && Boolean((i.fit_basis as { summary?: string }).summary)))
+  check('…and the failure’s own text is not shown', !JSON.stringify(fallbackDraft?.source).includes('stand-in failure'))
+  Object.assign(listModel, realModel)
 } catch (error) {
   failed++
   console.error('\nThe run stopped early:', error instanceof Error ? error.message : error)

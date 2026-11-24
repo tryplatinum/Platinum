@@ -30,8 +30,10 @@ npm run dev                    # http://localhost:5173
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` from the linked project |
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
 | `npm run test:notes` | Check, with no keys or network, that a student's "things to remember" cannot reach a parent report, a parent reminder or the student link's code |
-| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls), then sort two invented files (two more). `npm run test:ai -- sortFile` runs only those |
+| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls), then sort two invented files (two more). `npm run test:ai -- sortFile` runs only those. Then one real college list draft for the sample student Kevin against the real directory (one call, or two if a reason is thrown away); `npm run test:ai -- collegeList` runs only that |
 | `npm run import:colleges` | Fill the college directory from the College Scorecard, by hand (`-- --dry-run` reports without writing). See "The college directory" |
+| `npm run test:bands` | Check, with no keys or network, the band rules (missing data and the under-20% rule included), the candidate cap, the majors match, the check on AI-written reasons, and that the student link and parent reports read no drafts |
+| `npm run build:programs` | Rewrite `shared/cipPrograms.ts`, the list of program titles in the directory, by hand after an import. See "Drafting a college list" |
 
 ### Environment variables
 
@@ -95,6 +97,7 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | Sharing between counselors, invitations, switching firms | Not built. One account, one firm |
 | Payments | Not built |
 | College directory | **Real** public figures for about 1,900 U.S. colleges from the U.S. Department of Education College Scorecard, imported by hand and shown with the year each describes. No deadlines, fees, essay prompts or requirements, and no estimate of any student's chance of admission |
+| Draft college lists | **Real.** Candidates and bands (Reach, Target, Likely) come from our code and the directory's figures. The AI chooses among the candidates and writes a short reason for each, and its answer is checked. A band is a starting point from public data, not a prediction. Nothing reaches a student's list until a counselor presses "Add to list" |
 
 ## How the AI part works
 
@@ -242,7 +245,7 @@ student:    POST /api/student start_upload  ─▶ token, limits, declared size 
 api/ai.ts                 Server function: AI drafts for signed-in members of a firm
 api/student.ts            Server function: the student link (read the page, three writes)
 server/claude.ts          The Claude call (SDK, structured output, error mapping)
-server/prompts.ts         Instructions for each AI feature (seven)
+server/prompts.ts         Instructions for each AI feature (eight)
 server/supabase.ts        Server-side Supabase: verify a session, the service role client
 server/studentLink.ts     What a student link may read and change. The boundary for students
 server/rateLimit.ts       The in-memory rate limit both functions use
@@ -252,7 +255,7 @@ supabase/migrations/      The database: tables, policies, functions
 scripts/test-isolation.ts Two firms, anon, the student link and the AI endpoint, on the real project
 scripts/test-ai.ts        Calls every AI feature for real and prints the drafts
 api/colleges.ts           Server function: search and look up the college directory
-server/collegeTools.ts    The college tools: search, get, a student's list (and the central AI's tool definitions)
+server/collegeTools.ts    The college tools: search, get, a student's list, bands, draft a list (and the central AI's tool definitions)
 shared/colleges.ts        The directory's shapes, labels and which figure has which data year
 scripts/import-colleges.ts  Fills the college directory from the College Scorecard, by hand
 design/reference/         The nine approved HTML mockups (visual reference only)
@@ -261,6 +264,11 @@ api/documents.ts          Server function: stored files for signed-in members (s
 server/documentSorting.ts Everything that decides or records where a file goes, and the one delete path
 server/fileText.ts        The first two pages of a PDF; the opening text of a Word or Excel file
 shared/files.ts           Bucket, limits, file types, the path convention, reading a file's real type
+server/collegeListDrafts.ts  Drafting a college list: candidates, bands for a student, the AI step and its
+                          checks, saving the draft. One module of plain functions
+shared/cipPrograms.ts     Generated: every bachelor's program title in the directory, by CIP code
+scripts/build-cip-programs.ts  Rewrites shared/cipPrograms.ts from the directory, by hand
+scripts/test-bands.ts     Unit tests for the band rules and the checks on a draft; no keys or network
 
 src/types.ts              Every data shape
 src/lib/supabase.ts       The one Supabase client in the browser
@@ -304,6 +312,11 @@ src/store/files.ts        The store's file and folder actions (spread into the o
 src/components/files/     UploadWindow, FilingRow (pickers and suggestion), FileRow and preview, FolderSettings
 src/screens/counselor/Documents.tsx   The firm-wide Documents screen
 src/screens/student/AddFile.tsx       "Add a file" on the student's own page
+src/lib/collegeBands.ts   Reach, Target or Likely by fixed rules, the thresholds, the basis, the candidate cap
+src/lib/collegeListDraft.ts  Preferences, majors to programs, the check on AI-written reasons, assembling a draft,
+                          which meeting notes the AI reads
+src/store/listDrafts.ts   The store's draft list actions (spread into the one store)
+src/screens/counselor/ListDraft.tsx   The preferences form and the draft review screen
 ```
 
 Rules of thumb:
@@ -320,7 +333,7 @@ A shared, read-only table of U.S. colleges (`college_directory`, with each one's
 - **Where it shows.** On a student's Overview, "Add college" searches the directory as you type ("MIT" finds Massachusetts Institute of Technology through its alias). Picking a result links the list row to the directory; "Add it anyway" keeps a typed name for a college the directory does not have. A row from before the directory is offered a possible match by name, and is linked only when you press Link. There is no separate college search screen.
 - **What a linked row shows.** The institution's published admit rate, the SAT and ACT middle ranges (25th to 75th percentile of enrolled students), and the average net price, each with the year it describes, and "Source: U.S. Department of Education College Scorecard". A figure the college did not report is a dash, never zero. The figures are read from the directory when the list is shown; they are not copied onto the student's row.
 - **What it is not.** The admit rate is the college's own figure for everyone who applied. Nothing in the code, the prompts or the screens estimates one student's chance of admission. The directory has no deadlines, fees, essay prompts or requirements: a college added from it has no plan or deadline until you set them on its row, and shows "Not set" until then.
-- **The tools.** `server/collegeTools.ts` has plain functions (`searchColleges`, `getCollege`, `getStudentCollegeList`, and `bandCollegesForStudent`, which is not built yet), each with a JSON schema in `collegeToolDefinitions`. They take the caller's own Supabase client, so row level security applies, and the central AI can call the same functions. `POST /api/colleges` exposes `search` and `get` to signed-in members of a firm, with the same in-memory rate limit as the other functions.
+- **The tools.** `server/collegeTools.ts` has plain functions (`searchColleges`, `getCollege`, `getStudentCollegeList`, `bandCollegesForStudent` and `draftCollegeList`), each with a JSON schema in `collegeToolDefinitions`. They take the caller's own Supabase client, so row level security applies, and the central AI can call the same functions. `POST /api/colleges` exposes `search`, `get`, `band` and `draft` to signed-in members of a firm, with the same in-memory rate limit as the other functions (and at most 10 drafts per person per five minutes).
 
 ### Importing it
 
@@ -369,6 +382,69 @@ Data dictionary released October 15, 2026 (https://collegescorecard.ed.gov/files
 - **Programs** are bachelor's level only (credential level 3), one row per four-digit CIP code. The API lists each code once per credential level and sometimes twice; the import keeps one. The full stop the Scorecard puts at the end of each title is dropped.
 - **Net price** can be negative (grants above the cost of attendance) and is stored as reported.
 - **`sources` groups:** `identity`, `size`, `admissions`, `tests`, `cost` (tuition), `net_price`, `outcomes` (completion rate), `earnings`, `programs`, each `{ "source": "U.S. Department of Education College Scorecard", "year": "…" }`. Which figure belongs to which group is in `shared/colleges.ts`.
+
+## Drafting a college list
+
+On a student's Overview, **Draft a list** (beside the college list) opens a preferences form, then a draft to review. Three parties each do one thing:
+
+| Who | Does | Never does |
+| --- | --- | --- |
+| Our code | Finds the candidates, sets every band, supplies every figure | |
+| The AI | Chooses among the candidates and writes a short reason for each, plus one note about the list | Decides a band, states a figure, or adds a college that was not a candidate |
+| The counselor | Reviews, removes, adds, changes bands, and presses "Add to list" | |
+
+**A band is a starting point from public data for one entering class. It is not a prediction.** Nothing in the code, the prompt or the screens states or implies any student's chance of admission. The admit rate shown is the college's own published figure for everyone who applied, labelled "Admit rate" with its data year. The work has no deadlines, fees, essay prompts or requirements.
+
+### The preferences
+
+Filled in from the student's record and editable: intended majors, the programs a college must offer, states, regions, size, public or private, a net price ceiling, how many per band (default 3 Reach, 5 Target, 3 Likely; up to 10 each), must include and exclude. An empty filter means "any". States and regions are joined with "or"; everything else with "and". Open-admission colleges are left out unless asked for. A college already on the student's list is not proposed again.
+
+- **Majors to programs.** Majors are free text ("Computer Science"); the directory knows programs by four-digit CIP code. The match is made in code (`matchMajors` in `src/lib/collegeListDraft.ts`) against the program titles the directory really has, which are kept in `shared/cipPrograms.ts` (381 titles, generated from `college_programs` by `npm run build:programs`; run it again after an import). A short table of aliases covers common names that are not the Scorecard's title ("Computer Science" also means "Computer and Information Sciences, General"; "Business" means the two general business programs). The form shows the matched programs and the counselor removes or adds any. The model is never asked for a code. A major with no match ("Undecided") filters nothing and the form says so.
+- **Size** is small (under 5,000 undergraduates), medium (5,000 to 14,999) or large (15,000 or more).
+- **Must include** colleges are always in the draft, banded by the same rules, even when they fail a filter. **Exclude** always wins over the filters; a college in both lists is treated as wanted.
+
+### Candidates
+
+`findCandidates` in `server/collegeListDrafts.ts` is one query on `college_directory` with every hard preference in it (and the matching programs joined), active institutions only, largest first, at most 1,000 rows. Each row is then banded in code, and `capCandidates` cuts the list to **300**: every must-include, then each band's share of the rest in proportion to the mix, most relevant first (more matching programs, then a band that rests on full data, then size). The cut is made after banding so that it cannot leave a band empty.
+
+### How a band is decided
+
+`bandCollege` in `src/lib/collegeBands.ts`, pure functions with the thresholds in one object, `BAND_RULES`. In order:
+
+| Rule | Band |
+| --- | --- |
+| Admit rate under **20%** | Reach, whatever the student's numbers |
+| Best test score at or above the college's 75th percentile **and** admit rate **50%** or more | Likely |
+| Best test score below the college's 25th percentile | Reach |
+| Otherwise | Target |
+
+- **Best test score.** The student's SAT total against the sum of the college's Reading-and-Writing and Math percentiles (25th with 25th, 75th with 75th), or the ACT composite against the ACT percentiles. With both on file, the test that places the student higher is used. The sum of two section percentiles is not exactly the percentile of the total; it is the closest the public data allows.
+- **GPA is not used.** The directory has no GPA figures for colleges, so there is nothing to compare a GPA with. It is recorded in each band's basis for context and no rule reads it. The screen says so.
+- **Limited data.** With no SAT or ACT on file, or when the college did not report ranges for the test on file, the band rests on the admit rate alone and is flagged `limitedData`, which the screen shows on the row with what was missing. On the admit rate alone, Likely needs **75%** or more (stricter than the full rule, because half the evidence is missing); under 20% is still Reach; the rest is Target. A college with test ranges but no admit rate is Reach below the 25th percentile and otherwise Target, never Likely. An open-admission college with no admit rate is Likely. A college with no figures at all is Target. All of these are flagged. A college under 20% is not flagged even with no score on file, since no score would change it.
+- **The basis.** Every band comes with which rule, which numbers, the thresholds and the data year of each figure (`fit_basis`), and one sentence, `summary`, which the screen shows as "Why Reach: ...". The data years come from the directory row's `sources`; so does the entering class named in the line at the top of the review screen.
+
+### What the AI does, and what is sent to it
+
+One feature, `collegeList`, run through `runFeature` with the same model setting and structured output as the others. It is **server only**: `/api/ai` refuses it, because the candidates come from the database and the answer is checked on the server (`explainCandidates` in `server/collegeListDrafts.ts`).
+
+- **Sent to Anthropic:** the student's graduation year, intended majors, interests and activities; the three most recent meeting records a counselor approved; the counselor's preferences (the net price ceiling as yes or no, not the amount); and the candidates as compact rows: unitid, name, state, band, size as a word, public or private, matching program titles.
+- **Not sent:** the student's name, test scores or GPA; any college figure (no admit rate, no score range, no price, no enrolment number: the request has no field for one); parent details; anything from documents; things to remember; the counselor's private notes on the Profile tab; transcripts.
+- **"The three most recent notes"** means the record of the student's three most recent completed meetings that a counselor approved: the approved meeting notes (decided, progress, to watch, and the fuller notes), or, when those are not approved, the approved recap. Never the pasted notes or transcript a meeting was logged with, and never a draft nobody approved.
+- **It returns** a list of `{ unitid, reason }` and one note. The output has no field for a band, a figure or a chance.
+- **The server then checks it.** A unitid that was not a candidate is dropped. A duplicate is dropped. A reason is thrown away if it contains a digit followed by "%" (or "percent"), or any four-digit number (a test score, with or without a comma; a year is caught too), or is empty or over 400 characters. If a reason was thrown away or a band came back short, the model is asked **once more**, for what is missing only. Whatever is still short is filled by our code: first a college the model chose but explained badly, then the most relevant candidates in that band, each with the reason "Matches your filters" and marked as not AI-explained. The overall note passes the same check, comes from the first answer only, and is dropped if it fails. The prompt also tells the model to state no figures and no chances; the check is the guarantee, the prompt is not.
+- **If the AI call fails** (no key, an error, a refusal, or no answer in about 100 seconds) a draft is still saved: the ten most relevant candidates in each band, not kept, for the counselor to pick from by hand, with a line saying why the AI did not run.
+
+### Review, and "Add to list"
+
+The review screen groups the draft by band. Each row has the college's name and place, the reason, the directory's figures with their data years, the "why this band" line and the limited-data flag. A counselor can:
+
+- **Remove** a college (it moves to "Removed" and can be put back).
+- **Change a band.** The row records `fit_set_by = counselor` and its why line becomes "Set to Reach by a counselor. By the rule it was a Target: ...". Choosing the rule's own band again undoes that.
+- **Add a college from the directory.** It is banded by the same rule (`POST /api/colleges` `band`) and has no reason: none is made up.
+- **Regenerate.** Opens the preferences again and makes a new draft, discarding the old one. Colleges the counselor removed are carried over as exclusions and colleges they added as must-includes, both visible in the form. A band changed by hand is **not** carried over: bands are set again by the rule.
+- **Add to list.** One database function, `add_draft_to_college_list`, writes the kept colleges into the student's list as Planning with no plan or deadline, each with its band, who set it, the why line as its fit reason and the reason as its note; skips any college already on the list; marks the draft approved with who and when; and adds an activity entry. `draftCollegeList` itself never writes to `colleges`.
+
+**Privacy.** A draft is the counselor's alone. `server/studentLink.ts` reads neither draft table and selects no note or fit reason from the college list, and `src/lib/facts.ts`, which builds parent report facts, reads no drafts. `npm run test:bands` fails if either starts to, and `npm run test:isolation` checks the real student link's answer after a draft has been added.
 
 ## How to add a feature
 
@@ -426,3 +502,15 @@ Data dictionary released October 15, 2026 (https://collegescorecard.ed.gov/files
 - **A suggestion that arrives after the upload window is closed** shows the next time the Documents screen loads its data (on focus), not instantly.
 - **Other counselors' uploads show as "A colleague"**: there is no member directory in the browser yet.
 - **A pre-meeting brief lists recent documents by title**, but only files that are filed in a folder every member can read. Files waiting to be filed and files in owner-only folders are left out.
+- **A band is a rule applied to public figures, and it is coarse.** It knows nothing about a major's own selectivity, residency, test-optional policies, a student's grades, or anything else a counselor knows. That is why every band can be changed by hand.
+- **Many colleges report no test ranges** (about half the directory), and several of the largest report none for one test. Their bands rest on the admit rate alone and are flagged "Limited data".
+- **The SAT comparison adds two section percentiles**, which is close to, but not the same as, the percentile of the total.
+- **The AI's reasons are not fact-checked.** The check removes figures; it cannot tell whether "known for robotics" is true. Read each reason before adding the list.
+- **A reason with any four-digit number is thrown away**, including a harmless year. That college then shows "Matches your filters".
+- **When more than 1,000 colleges pass the filters, only the 1,000 largest are read** before banding, so small colleges can be missed by a draft with few filters. The review screen shows how many passed.
+- **A college typed onto the list by hand is recognised only by name or alias** ("NYU (Tandon)" as NYU). One typed in an unusual way can be proposed again, and "Add to list" skips only an exact name or a directory link.
+- **Regenerating does not keep a band you changed by hand.** Removals and additions carry over; bands are set again by the rule.
+- **A draft takes one or two AI requests and up to two minutes.** On a host that cuts functions off sooner than 120 seconds the draft may fail; nothing is saved when it does.
+- **Discarded and approved drafts stay in the database** and are loaded with the firm's data. There is no screen that lists them.
+- **`shared/cipPrograms.ts` is a snapshot.** After a new import, run `npm run build:programs`; until then a new program title cannot be picked in the form.
+- **Two people reviewing the same draft** follow the usual rule: the last save wins.
