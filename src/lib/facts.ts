@@ -192,13 +192,7 @@ export function briefFacts(data: AppData, meeting: Meeting, student: Student): B
     (d) => d.date >= today && daysBetween(today, d.date) <= BRIEF_DEADLINE_WINDOW_DAYS,
   )
 
-  const waitingOnCounselor = pendingApprovals(data, student.id).map((a) =>
-    a.kind === 'meeting'
-      ? `Drafts from the meeting “${a.meeting.title}” (${a.count} ${a.count === 1 ? 'item' : 'items'})`
-      : a.kind === 'report'
-        ? 'A parent report draft'
-        : 'An essay feedback draft',
-  )
+  const waitingOnCounselor = pendingApprovals(data, student.id).map((a) => `${a.sourceLabel}: ${a.preview.slice(0, 80)}`)
 
   return { meeting, previous, changes, overdue, deadlines, waitingOnCounselor }
 }

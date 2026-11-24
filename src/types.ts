@@ -802,6 +802,18 @@ export interface StudentLink {
   revokedAt?: string
 }
 
+/**
+ * A counselor skipped a reminder queue item. `until` null means until they undo
+ * it; a date means the skip ends on that calendar day (still active while today < until).
+ */
+export interface ReminderSkip {
+  id: ID
+  dedupeKey: string
+  skippedAt: string
+  until?: ISODate
+  skippedBy?: ID
+}
+
 // ── Root ────────────────────────────────────────────────────────────────────
 
 export interface Firm {
@@ -834,4 +846,6 @@ export interface AppData {
   /** Oldest first. */
   collegeListDrafts: CollegeListDraft[]
   collegeListDraftItems: CollegeListDraftItem[]
+  /** Active and recent reminder skips for this firm. */
+  reminderSkips: ReminderSkip[]
 }

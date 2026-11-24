@@ -1143,6 +1143,7 @@ export function buildSeed(): AppData {
     documentTypes: [],
     collegeListDrafts: [],
     collegeListDraftItems: [],
+    reminderSkips: [],
   }
 }
 

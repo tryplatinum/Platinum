@@ -2,68 +2,41 @@
 
 ## Current milestone
 
-M0.3 (branch `m0.3-dispatch`): recipient allowlist, Transport + LogTransport, `POST /api/dispatch`, student-link placeholder at send time, Messages status/Retry. Merged `origin/main` (PR #8 / M0.2c: `20261128000002_cancel_message_qualify.sql`). Migrations not yet on remote: `20261128000002` and `20261129000001`. **Aaron must run `npm run db:push`** (CLI asks for confirmation; no `--yes`). Then `npm run db:types`.
+M3b (branch `m3-approvals`): edit everything in Approvals, reminder skips, links to William’s queues.
+
+**DB hold released for Aaron:** `npm run db:push` asked for confirmation on production (`20261131000001_reminder_skips`). Agent stopped. Aaron: run `npm run db:push` (confirm), then `npm run db:types`. Migration list before push: only `20261131000001` was local-only.
 
 ## Last session
 
 - Agent: Cursor
 - Date: 2026-11-24
 - What changed:
-  - Brought in M0.2c from main: `cancel_message` qualifies `o.id` / `cancel_message.id`, `search_path = public, pg_temp`, grants restated.
-  - Migration `supabase/migrations/20261129000001_dispatch.sql`: `student_links.expires_at` (nullable; old rows never expire), activity actor may be `system`, restates queue/cancel hardening (including `search_path` on `queue_message`).
-  - `shared/dispatch.ts`: allowlist parse/match, phone/email normalize, address resolution, `{{student_link}}` fill/preview, link expiry helper.
-  - `server/transport/`: Transport interface + `LogTransport`; `TRANSPORT` env (default `log`).
-  - `server/dispatch.ts` + `api/dispatch.ts`: claim queued→sending, allowlist, student link mint (30 days), transport, sent/failed + activity. Service role for status updates after `identify()`.
-  - Client: call `/api/dispatch` when undo countdown ends and on firm app load. Weekly texts draft with `{{student_link}}`; preview shows `[student link added when sent]`. Messages shows status/error and Retry (re-queues).
-  - `AGENTS.md`, `.env.example` (`SEND_ALLOWLIST`, `TRANSPORT`, `PUBLIC_APP_URL`), `scripts/test-outbox.ts` extended.
-- Checks: `typecheck`, `lint`, `test:notes`, `test:outbox` all exit 0. `db:push` stopped on confirmation. `expires_at` was added to `database.types.ts` by hand for typecheck.
-- Unfinished / for Aaron:
-  1. `npm run db:push` (confirm when asked) — applies `20261128000002` then `20261129000001`.
-  2. `npm run db:types`.
-  3. Manual checks in the M0.3 prompt (off-list fail, on-list `log_…`, weekly link URL, old links, undo, LINE fail, Retry, double trigger).
+  - Migration `supabase/migrations/20261131000001_reminder_skips.sql`: `reminder_skips` (id, firm_id, dedupe_key, skipped_by, skipped_at, until), unique + index on `(firm_id, dedupe_key)`, RLS firm members, select/insert/delete for authenticated.
+  - Approvals: Edit on profile changes (proposed value via field-kind editors) and meeting notes/recap (same textareas as meeting review). Approve applies the edited value. Reminders: Skip → “Skip this time” (`until` = tomorrow) or “Skip until I turn it back on” (`until` null). Activity row per skip; toast “Undo skip”.
+  - `src/lib/reminders.ts`: `skipIsActive` / `activeSkipKeys`; `reminderQueue` omits active skips.
+  - Repo/store: load skips, `skipReminder`, `undoReminderSkip`. Hand types for `reminder_skips` until `db:types` after push.
+  - Approvals footer: “Waiting on other screens” counts college list drafts + waiting files from store data; links to existing screens. No William code touched.
+  - Meeting review Notes section also editable while pending.
+  - Offline skip-filter checks in `test:outbox`.
+- Checks: `typecheck`, `lint`, `test:notes`, `test:outbox` exit 0. **`db:push` blocked on confirmation — Aaron runs it.**
+- Item types needing only “Edit in meeting review”: **none** — notes, profile, recap, tasks, parent updates, remember all edit inline in Approvals.
+- Follow-up: no screen yet to turn permanent skips back on (only Undo from the toast while it is visible, or delete the skip row).
 
-## Google connect (branches `google-connect` PR 10 and `gmail-transport` PR 11)
+## Prior — M3
 
-- Agent: Claude Code, unattended overnight run for William
-- Date: 2026-11-24
-- **Not applied yet:** `supabase/migrations/20261130000001_google_drive.sql`. It is the only local migration not on the remote. The CLI refuses to prompt in an agent session and the run was told not to pass `--yes`, so a person must run `npm run db:push` and confirm, then `npm run db:types` (the new tables and columns are in `src/lib/database.types.ts` by hand until then). Until it is applied every Google feature fails closed (Settings shows no Google row).
-- What exists:
-  - `api/google.ts`: POST actions `status`, `connect`, `disconnect`, `browse`, `import`, `folders`, `link`, `unlink`, `sync`, `import_removed` behind the same caller check and rate limits as `/api/documents`; GET is Google's redirect (checked by signed `state` plus a cookie).
-  - `server/google/`: `config.ts` (settings, the one `google.fetch`), `secrets.ts` (AES-256-GCM for refresh tokens, signed state), `connection.ts` (connect, status, disconnect, access tokens, "reconnect"), `drive.ts` (read-only Drive REST), `driveFiles.ts` (import one file, link, sync in bounded batches), `removedHere.ts` (files deleted here are not imported again), `fakeDrive.ts` (invented Google for `GOOGLE_FAKE=1` under `npm run dev` only).
-  - `shared/google.ts`: Zod shapes for browser input and Google's answers, limits, and the pure sync decision `planSync`.
-  - Browser: `src/services/google.ts`, `src/components/google/` (`GoogleAccount` in Firm settings, `DrivePicker`, `DriveFolders`), buttons on a student's Documents tab and the Documents screen, "From Google Drive" on file rows.
-  - PR 11: `server/transport/gmail.ts` (`GmailTransport`), per-channel routing in `server/transport/index.ts` (`TRANSPORT_EMAIL=gmail`), `shared/emailSubject.ts`, and the dispatcher passing `approved_by` and a subject.
-- Checks: `typecheck`, `lint`, `test:notes` (now also runs `test:google`), `test:outbox`, `build` all pass. The Drive flow was also driven in a real browser against the invented Drive and an in-memory stand-in for the database (`scripts/fakeSupabase.ts`), because the migration is not applied.
-- A separate security review was run over both branches; its fixes are in (connections bound to a firm, a synced file's folder decided before it is stored, Drive file names shown only to the linker and the owner, a trigger that keeps the Drive columns and `storage_path` as the server set them). What was left open is listed in PR 10's description.
-- Not verified: anything against the real database (row level security on the new table, the column grant, the unique index), a real Google sign-in, and AI sorting of synced files with a real key.
-- For Aaron:
-  - The dispatcher now calls `getTransport(row.channel)` and passes `senderUserId: row.approved_by` and, for email, `subject: emailSubject(row.kind, row.language)`. Nothing before that line changed: the allowlist check, the claim and the student-link step are as he wrote them.
-  - `emailSubject` is a proposal. When the outbox has a real subject, pass that instead.
-  - To send a first real email to the allowlist: apply the migration, connect Google in Firm settings, press "Turn on sending from Gmail", put the recipient in `SEND_ALLOWLIST`, set `TRANSPORT_EMAIL=gmail`, approve an email message. `TRANSPORT_EMAIL` was unset in every run here; nothing was sent.
-- Next step: apply the migration, then walk the numbered manual steps in PR 10's description with the real test Google account.
+Approvals is the counselor home at `/app`. Command center moved to `/app/overview`. Activity log at `/app/activity`.
 
-## Email cases in the sample caseload (branch `email-test-cases`, off `google-connect`)
+## Prior (M0.3 / Google)
 
-- Agent: Claude Code, for William
-- Date: 2026-11-24
-- State of things: `20261130000001_google_drive.sql` is now applied on the remote, and `src/lib/database.types.ts` was regenerated (William's change, uncommitted). PR 11 was merged into `google-connect`, not `main`: `main` has no `server/transport/gmail.ts` until `google-connect` is merged into it again.
-- What changed: `src/data/seed.ts` only. The sample had email parents but nothing waiting that goes by email. Now it has:
-  - a draft report to Chen Chih-hao (Emily's father, Traditional Chinese, email) and one to Priya Patel (Aarav's mother, English, email);
-  - a late parent task for Carlos Martinez (Sophia's father, email), which waits for approval as a late reminder;
-  - Ethan Nguyen prefers email and has a late task, so his reminder and weekly message go by email.
-- Every address is still `@example.com`. To send for real, edit that person's email in the app to an address in `SEND_ALLOWLIST`.
-- The new cases appear only after "Reset to the sample caseload", which deletes the firm's current data.
-- Checks: `typecheck`, `lint`, `test:notes` pass. Nothing committed, nothing sent.
+See git history and earlier BUILD_LOG entries on `main`. Google Drive migration and Gmail transport are on main.
 
 ## Known issues
 
-- Undo fails on the live database until `20261128000002` is applied.
 - Loading the sample does not write the old simulated outbox history.
-- There is still no on-screen activity list.
 - The AI rate limit in `server/rateLimit.ts` is still memory inside one function instance.
-- The sample caseload still uses real colleges, Common App, CSS Profile, and activity organizations (USACO, DECA, HOSA, FRC, Habitat for Humanity).
-- Real Twilio/Resend providers are M1. Cron backstop is M2.
+- The sample caseload still uses real colleges, Common App, CSS Profile, and activity organizations.
+- Permanent reminder skips have no Settings UI to re-enable (toast Undo only).
 
 ## Next step
 
-Aaron: `npm run db:push`, then `npm run db:types`. Sign in with `TRANSPORT=log`, `PUBLIC_APP_URL=http://localhost:5173`, and `SEND_ALLOWLIST` set to founder phones/emails. Walk the M0.3 acceptance checklist. After that, M1 wires Resend and Twilio behind the same Transport interface.
+Aaron: `npm run db:push` then `npm run db:types`. Manual M3b acceptance after Reset demo. Then M4 or merge `m3-approvals`.

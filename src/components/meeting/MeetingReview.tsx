@@ -188,26 +188,55 @@ export function SummaryCards({ ai }: { ai: Pick<NonNullable<Meeting['ai']>, 'dec
 
 function NotesSection({ n, meeting }: { n: number; meeting: Meeting }) {
   const reviewNotes = useStore((s) => s.reviewNotes)
+  const updateMeetingNotes = useStore((s) => s.updateMeetingNotes)
+  const [editing, setEditing] = useState(false)
   const ai = meeting.ai!
+  const pending = ai.notesReview === 'pending'
+  const lines = (xs: string[]) => xs.join('\n')
+  const parse = (raw: string) => raw.split('\n').map((s) => s.trim()).filter(Boolean)
   return (
     <Section n={n} title="Meeting notes" right={<SectionState review={ai.notesReview} approval={ai.notesApproval} />}>
-      <SummaryCards ai={ai} />
-      {ai.notes.length > 0 && (
-        <details className="text-[13px]">
-          <summary className="flex min-h-11 items-center font-semibold text-accent">Full notes · private to you</summary>
-          <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
-            {ai.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </details>
+      {editing && pending ? (
+        <div className="flex flex-col gap-2">
+          <label className="block text-[13px] font-semibold text-muted">
+            Decided
+            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.decided)} onChange={(e) => updateMeetingNotes(meeting.id, { decided: parse(e.target.value) })} />
+          </label>
+          <label className="block text-[13px] font-semibold text-muted">
+            Progress
+            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.progress)} onChange={(e) => updateMeetingNotes(meeting.id, { progress: parse(e.target.value) })} />
+          </label>
+          <label className="block text-[13px] font-semibold text-muted">
+            Watch
+            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.watch)} onChange={(e) => updateMeetingNotes(meeting.id, { watch: parse(e.target.value) })} />
+          </label>
+          <label className="block text-[13px] font-semibold text-muted">
+            Full notes · private
+            <textarea className={cx(textareaClass, 'mt-1')} rows={4} value={lines(ai.notes)} onChange={(e) => updateMeetingNotes(meeting.id, { notes: parse(e.target.value) })} />
+          </label>
+        </div>
+      ) : (
+        <>
+          <SummaryCards ai={ai} />
+          {ai.notes.length > 0 && (
+            <details className="text-[13px]">
+              <summary className="flex min-h-11 items-center font-semibold text-accent">Full notes · private to you</summary>
+              <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+                {ai.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
       )}
       <SourceNotes meeting={meeting} />
-      {ai.notesReview === 'pending' && (
+      {pending && (
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" onClick={() => reviewNotes(meeting.id, 'approved')}>
             Approve notes
           </Button>
+          <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
           <Button variant="quiet" onClick={() => reviewNotes(meeting.id, 'dismissed')}>
             Dismiss
           </Button>

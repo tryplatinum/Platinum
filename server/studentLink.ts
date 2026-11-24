@@ -174,6 +174,7 @@ export async function studentPage(link: Link): Promise<AppData> {
     documentTypes: [],
     collegeListDrafts: [],
     collegeListDraftItems: [],
+    reminderSkips: [],
   }
 }
 

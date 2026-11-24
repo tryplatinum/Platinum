@@ -9,6 +9,7 @@ import { notify, onNotify, type Notice } from '../lib/notify'
 import { outboxStatusLabel } from '../../shared/outbox'
 import { runDispatch } from '../services/dispatch'
 import { useStore } from '../store/store'
+import { undoReminderSkip } from '../data/repo'
 import {
   createContext,
   useCallback,
@@ -489,8 +490,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       const id = Date.now() + Math.random()
       setToasts((t) => [...t, { id, ...notice }])
-      const life = Math.max(1000, Date.parse(notice.sendAfter) - Date.now() + 1500)
-      setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), life)
+      if (notice.kind === 'queue') {
+        const life = Math.max(1000, Date.parse(notice.sendAfter) - Date.now() + 1500)
+        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), life)
+      } else {
+        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 10_000)
+      }
     },
     [show],
   )
@@ -505,12 +510,42 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
               {t.message}
             </div>
+          ) : t.kind === 'skip_undo' ? (
+            <SkipUndoToast key={t.id} skipId={t.skipId} message={t.message} onClose={() => setToasts((all) => all.filter((x) => x.id !== t.id))} />
           ) : (
             <QueueToast key={t.id} messageId={t.messageId} sendAfter={t.sendAfter} onClose={() => setToasts((all) => all.filter((x) => x.id !== t.id))} />
           ),
         )}
       </div>
     </ToastContext.Provider>
+  )
+}
+
+function SkipUndoToast({ skipId, message, onClose }: { skipId: string; message: string; onClose: () => void }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
+      <span>{message}</span>
+      <button
+        type="button"
+        disabled={busy}
+        className="min-h-11 rounded-control bg-surface px-3 font-semibold text-ink"
+        onClick={() => {
+          setBusy(true)
+          void undoReminderSkip(skipId)
+            .then(() => {
+              useStore.setState((s) => ({ data: { ...s.data, reminderSkips: s.data.reminderSkips.filter((x) => x.id !== skipId) } }))
+              onClose()
+            })
+            .catch((error: unknown) => {
+              setBusy(false)
+              notify(error instanceof Error ? error.message : 'Could not undo the skip.')
+            })
+        }}
+      >
+        Undo skip
+      </button>
+    </div>
   )
 }
 

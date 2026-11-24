@@ -1158,6 +1158,41 @@ export type Database = {
           },
         ]
       }
+      reminder_skips: {
+        Row: {
+          dedupe_key: string
+          firm_id: string
+          id: string
+          skipped_at: string
+          skipped_by: string | null
+          until: string | null
+        }
+        Insert: {
+          dedupe_key: string
+          firm_id: string
+          id?: string
+          skipped_at?: string
+          skipped_by?: string | null
+          until?: string | null
+        }
+        Update: {
+          dedupe_key?: string
+          firm_id?: string
+          id?: string
+          skipped_at?: string
+          skipped_by?: string | null
+          until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_skips_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reports: {
         Row: {
           approval: Json | null

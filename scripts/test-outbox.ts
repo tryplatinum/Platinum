@@ -364,6 +364,27 @@ check('…and it keeps failing that way until they reconnect', rowOf(after).erro
 check('no failure reason holds a token or Google’s raw answer', db.table('outbox').every((r) => !/token|invalid_grant|Bearer|\{/.test(String(r.error ?? ''))))
 check('every message handed to Gmail carried a bearer token in the header only', gmailSends.every((s) => s.authorization === 'Bearer fake-access-token' && !JSON.stringify(s.message).includes('fake-access-token')))
 
+// ── Reminder skips ──────────────────────────────────────────────────────────
+
+{
+  const { activeSkipKeys, skipIsActive } = await import('../src/lib/reminders.js')
+  const { addDays, todayISO } = await import('../src/lib/dates.js')
+  const today = todayISO()
+  check('a skip with no until stays active', skipIsActive({ until: undefined }, today))
+  check('a skip until tomorrow is active today', skipIsActive({ until: addDays(today, 1) }, today))
+  check('a skip until today has ended', !skipIsActive({ until: today }, today))
+  check('a skip until yesterday has ended', !skipIsActive({ until: addDays(today, -1) }, today))
+  const keys = activeSkipKeys(
+    [
+      { id: '1', dedupeKey: 'keep', skippedAt: today, until: addDays(today, 1) },
+      { id: '2', dedupeKey: 'gone', skippedAt: today, until: today },
+      { id: '3', dedupeKey: 'forever', skippedAt: today },
+    ],
+    today,
+  )
+  check('activeSkipKeys keeps future and permanent skips', keys.has('keep') && keys.has('forever') && !keys.has('gone'))
+}
+
 if (failed > 0) {
   console.error(`${failed} failed`)
   process.exit(1)

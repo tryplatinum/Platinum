@@ -7,7 +7,8 @@ import { LogMeetingModal } from '../../components/forms'
 import { ReminderComposer } from '../../components/ReminderComposer'
 import { StudentLinkModal } from '../../components/StudentLinkModal'
 import { Button, Modal, PageHeader, StatusPill, Tabs, useTab, type TabItem } from '../../components/ui'
-import { essaysFor, findStudent, fullName, pendingApprovals, sortByUrgency, summarize, tasksFor, isOpen } from '../../lib/derive'
+import { MEETING_APPROVAL_KINDS, allPendingApprovals, essaysFor, findStudent, fullName, sortByUrgency, summarize, tasksFor, isOpen } from '../../lib/derive'
+import { reminderQueue } from '../../lib/reminders'
 import { useData } from '../../store/store'
 import DocumentsTab from './student/DocumentsTab'
 import EssaysTab from './student/EssaysTab'
@@ -24,10 +25,10 @@ export default function StudentPage() {
   const student = findStudent(data, studentId)
   const [modal, setModal] = useState<'remind' | 'log' | 'link'>()
 
-  const approvals = student ? pendingApprovals(data, student.id) : []
+  const approvals = student ? allPendingApprovals(data, reminderQueue(data), student.id) : []
   const tabs: TabItem<TabKey>[] = [
     { key: 'overview', label: 'Overview' },
-    { key: 'meetings', label: 'Meetings', count: approvals.filter((a) => a.kind === 'meeting').length },
+    { key: 'meetings', label: 'Meetings', count: approvals.filter((a) => MEETING_APPROVAL_KINDS.includes(a.kind)).length },
     { key: 'documents', label: 'Documents' },
     { key: 'essays', label: 'Essays', count: student ? essaysFor(data, student.id).filter((e) => e.status === 'needs_feedback' || e.feedback?.review === 'pending').length : 0 },
     { key: 'reports', label: 'Parent reports', count: approvals.filter((a) => a.kind === 'report').length },
@@ -37,6 +38,7 @@ export default function StudentPage() {
   if (!student) return <Navigate to="/app/students" replace />
 
   const summary = summarize(data, student)
+  const waiting = approvals.length
   // The task a reminder would be about: the most overdue one that is not the counselor's own.
   const remindTask = sortByUrgency(tasksFor(data, student.id).filter((t) => isOpen(t) && t.owner !== 'counselor'))[0]
   const facts = [
@@ -66,7 +68,19 @@ export default function StudentPage() {
           </>
         }
         pill={<StatusPill status={summary.status} />}
-        sub={facts.join(' · ')}
+        sub={
+          <>
+            {facts.join(' · ')}
+            {waiting > 0 && (
+              <>
+                {' · '}
+                <Link to={`/app?student=${student.id}`} className="font-medium text-accent hover:underline">
+                  Waiting for review ({waiting})
+                </Link>
+              </>
+            )}
+          </>
+        }
         actions={
           <>
             <Button onClick={() => setModal('link')}>Student link</Button>
