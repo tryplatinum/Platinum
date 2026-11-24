@@ -9,7 +9,7 @@
 
 import { create } from 'zustand'
 import { withFreshIds } from '../data/ids'
-import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, type Changes } from '../data/repo'
+import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, decideAgentProposal, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, updateAgentProposalPayload, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
 import { notify, notifyQueued, notifySkipUndo } from '../lib/notify'
 import { validateQueuePayload } from '../../shared/outbox'
@@ -37,7 +37,9 @@ import type {
   ParentCopy,
   ParentReport,
   MeetingAI,
+  OwnerType,
   ProfilePatch,
+  TaskCategory,
   Recap,
   ReminderRule,
   SavedBrief,
@@ -188,6 +190,11 @@ interface Actions {
   /** Skip a reminder: 'once' until tomorrow, 'until_on' until undo. */
   skipReminder: (dedupeKey: string, mode: 'once' | 'until_on', studentId: ID, taskTitle: string) => Promise<void>
   undoSkipReminder: (skipId: ID) => Promise<void>
+  /** Inline edit of a pending assistant proposal payload. */
+  updateAgentProposal: (id: ID, payload: Record<string, unknown>) => void
+  /** Approve a pending assistant proposal (queues/sends via existing paths). */
+  approveAgentProposal: (id: ID) => Promise<void>
+  discardAgentProposal: (id: ID) => Promise<void>
 
   // Things to remember
   /** A note the counselor types in. Writing it is the approval. */
@@ -358,6 +365,7 @@ function emptyData(firm: Firm): AppData {
     collegeListDrafts: [],
     collegeListDraftItems: [],
     reminderSkips: [],
+    agentProposals: [],
   }
 }
 
@@ -1067,6 +1075,100 @@ export const useStore = create<State & Actions>()((set, get) => {
     undoSkipReminder: async (skipId) => {
       await undoReminderSkip(skipId)
       set((s) => ({ data: { ...s.data, reminderSkips: s.data.reminderSkips.filter((x) => x.id !== skipId) } }))
+    },
+
+    updateAgentProposal: (id, payload) => {
+      const before = get().data
+      const row = before.agentProposals.find((p) => p.id === id && p.status === 'pending')
+      if (!row) return
+      const after = {
+        ...before,
+        agentProposals: before.agentProposals.map((p) => (p.id === id ? { ...p, payload } : p)),
+      }
+      set({ data: after })
+      void updateAgentProposalPayload(id, payload).catch((error: unknown) => {
+        set({ data: before })
+        notify(error instanceof Error ? error.message : 'Could not update the proposal.')
+      })
+    },
+
+    approveAgentProposal: async (id) => {
+      const { account, data } = get()
+      if (account.status !== 'ready') throw new Error('Sign in first.')
+      const proposal = data.agentProposals.find((p) => p.id === id && p.status === 'pending')
+      if (!proposal) return
+      const payload = proposal.payload
+      const student = data.students.find((s) => s.id === proposal.studentId)
+
+      if (proposal.kind === 'message' || proposal.kind === 'parent_update') {
+        const body = String(payload.body ?? '')
+        const toKind = proposal.kind === 'parent_update' || payload.recipientKind === 'parent' ? 'parent' : 'student'
+        const message: OutgoingMessage = {
+          studentId: proposal.studentId,
+          toKind,
+          toName: String(payload.toName ?? (toKind === 'student' ? student?.firstName : 'Parent') ?? 'Recipient'),
+          parentId: typeof payload.parentId === 'string' ? payload.parentId : undefined,
+          channel: (payload.channel as OutgoingMessage['channel']) ?? 'text',
+          language: (payload.language as OutgoingMessage['language']) ?? 'en',
+          kind: proposal.kind === 'parent_update' ? 'parent_report' : ((payload.outboxKind as OutgoingMessage['kind']) ?? 'reminder_upcoming'),
+          body,
+          bodyEn: typeof payload.bodyEn === 'string' ? payload.bodyEn : undefined,
+          trigger: 'approved',
+        }
+        get().sendMessage(message)
+      } else if (proposal.kind === 'task') {
+        get().addTask({
+          studentId: proposal.studentId,
+          title: String(payload.title ?? 'Task'),
+          detail: typeof payload.detail === 'string' ? payload.detail : undefined,
+          category: (payload.category as TaskCategory) ?? 'planning',
+          owner: (payload.owner as OwnerType) ?? 'student',
+          ownerParentId: typeof payload.ownerParentId === 'string' ? payload.ownerParentId : undefined,
+          dueDate: String(payload.dueDate ?? todayISO()),
+        })
+      } else if (proposal.kind === 'profile_change' && student && payload.patch) {
+        change((d) => {
+          const next = patchStudent(d, proposal.studentId, (s) => applyProfilePatch(s, payload.patch as ProfilePatch))
+          return logActivity(next, proposal.studentId, 'counselor', `Approved profile change from the assistant: ${String(payload.field ?? 'field')}`)
+        })
+      } else if (proposal.kind === 'meeting_times') {
+        change((d) =>
+          logActivity(
+            d,
+            proposal.studentId,
+            'counselor',
+            `Recorded meeting times from the assistant: ${Array.isArray(payload.slots) ? (payload.slots as { when?: string }[]).map((s) => s.when).filter(Boolean).join(', ') : 'slots'}`,
+          ),
+        )
+      }
+
+      await decideAgentProposal(id, 'approved', account.userId)
+      change((d) => {
+        const next = {
+          ...d,
+          agentProposals: d.agentProposals.map((p) =>
+            p.id === id ? { ...p, status: 'approved' as const, decidedBy: account.userId, decidedAt: nowTimestamp() } : p,
+          ),
+        }
+        return logActivity(next, proposal.studentId, 'counselor', `Approved assistant draft (${proposal.kind})`)
+      })
+    },
+
+    discardAgentProposal: async (id) => {
+      const { account, data } = get()
+      if (account.status !== 'ready') throw new Error('Sign in first.')
+      const proposal = data.agentProposals.find((p) => p.id === id && p.status === 'pending')
+      if (!proposal) return
+      await decideAgentProposal(id, 'discarded', account.userId)
+      change((d) => {
+        const next = {
+          ...d,
+          agentProposals: d.agentProposals.map((p) =>
+            p.id === id ? { ...p, status: 'discarded' as const, decidedBy: account.userId, decidedAt: nowTimestamp() } : p,
+          ),
+        }
+        return logActivity(next, proposal.studentId, 'counselor', `Discarded assistant draft (${proposal.kind})`)
+      })
     },
 
     updateDraftNote: (meetingId, noteId, patch) =>

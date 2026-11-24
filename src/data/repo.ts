@@ -28,6 +28,7 @@ import type {
   ReminderRule,
   Student,
   StudentDocument,
+  AgentProposal,
   ReminderSkip,
   StudentLink,
   Task,
@@ -712,7 +713,7 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems, skips] = await Promise.all([
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems, skips, proposals] = await Promise.all([
     supabase.from('firms').select('name, weekly_text_day, sort_files_automatically').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
@@ -731,6 +732,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     all('college_list_drafts', firmId, false),
     supabase.from('college_list_draft_items').select('*').eq('firm_id', firmId).order('position').limit(5000),
     supabase.from('reminder_skips').select('*').eq('firm_id', firmId).order('skipped_at', { ascending: false }),
+    supabase.from('agent_proposals').select('*').eq('firm_id', firmId).eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
@@ -738,6 +740,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
   if (documentTypes.error) fail(documentTypes.error, 'Could not load your folders')
   if (listDraftItems.error) fail(listDraftItems.error, 'Could not load your draft lists')
   if (skips.error) fail(skips.error, 'Could not load reminder skips')
+  if (proposals.error) fail(proposals.error, 'Could not load assistant proposals')
 
   const parentsOf = new Map<ID, Parent[]>()
   for (const p of parents) parentsOf.set(p.student_id, [...(parentsOf.get(p.student_id) ?? []), parentFrom(p)])
@@ -765,6 +768,7 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     collegeListDrafts: listDrafts.map(listDraftFrom),
     collegeListDraftItems: listDraftItems.data.map(listDraftItemFrom),
     reminderSkips: skips.data.map(reminderSkipFrom),
+    agentProposals: proposals.data.map(agentProposalFrom),
   }
 }
 
@@ -775,6 +779,48 @@ const reminderSkipFrom = (r: { id: string; dedupe_key: string; skipped_at: strin
   until: r.until ?? undefined,
   skippedBy: u(r.skipped_by),
 })
+
+const agentProposalFrom = (r: {
+  id: string
+  student_id: string
+  thread_id: string
+  kind: string
+  payload: Json
+  rationale: string
+  sources: Json
+  status: string
+  created_at: string
+  decided_by: string | null
+  decided_at: string | null
+}): AgentProposal => ({
+  id: r.id,
+  studentId: r.student_id,
+  threadId: r.thread_id,
+  kind: r.kind as AgentProposal['kind'],
+  payload: (r.payload && typeof r.payload === 'object' && !Array.isArray(r.payload) ? r.payload : {}) as Record<string, unknown>,
+  rationale: r.rationale,
+  sources: Array.isArray(r.sources) ? (r.sources as unknown as AgentProposal['sources']) : [],
+  status: r.status as AgentProposal['status'],
+  createdAt: stamp(r.created_at),
+  decidedBy: u(r.decided_by),
+  decidedAt: r.decided_at ? stamp(r.decided_at) : undefined,
+})
+
+/** Updates a pending proposal’s editable payload (Approvals inline edit). */
+export async function updateAgentProposalPayload(id: ID, payload: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.from('agent_proposals').update({ payload: payload as Json }).eq('id', id).eq('status', 'pending')
+  if (error) fail(error, 'Could not update the proposal')
+}
+
+/** Marks a proposal approved or discarded. */
+export async function decideAgentProposal(id: ID, status: 'approved' | 'discarded', userId: ID): Promise<void> {
+  const { error } = await supabase
+    .from('agent_proposals')
+    .update({ status, decided_by: userId, decided_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'pending')
+  if (error) fail(error, 'Could not update the proposal')
+}
 
 /** Records a skip for a reminder dedupe key. Replaces any existing skip for that key. */
 export async function skipReminder(firmId: ID, dedupeKey: string, userId: ID, until: string | null): Promise<ReminderSkip> {

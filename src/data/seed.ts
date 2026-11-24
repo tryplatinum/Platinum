@@ -1144,6 +1144,7 @@ export function buildSeed(): AppData {
     collegeListDrafts: [],
     collegeListDraftItems: [],
     reminderSkips: [],
+    agentProposals: [],
   }
 }
 

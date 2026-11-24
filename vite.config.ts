@@ -35,9 +35,11 @@ const SERVER_ENV = [
   'GOOGLE_FAKE',
   'GOOGLE_FAKE_STATE',
   'GOOGLE_SYNC_BATCH',
+  'AGENT_DAILY_LIMIT',
+  'AGENT_MAX_ROUNDS',
 ]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent']
 
 function devApi(): Plugin {
   return {
