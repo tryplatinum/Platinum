@@ -1,7 +1,9 @@
 // The only place the logo is rendered. The files are crops of the master image
-// with its porcelain background left in place, so the logo belongs on the
-// canvas colour (or a porcelain tile) and nowhere else. Width and height are
-// always set, so nothing shifts when the image loads.
+// with its porcelain background left in place. In the light theme that
+// background is the canvas colour, so the logo sits on the canvas and its edge
+// cannot be seen. In the dark theme the same image shows as a porcelain tile
+// with rounded corners: the artwork is never recoloured for the dark. Width and
+// height are always set, so nothing shifts when the image loads.
 
 import { LOGO_FULL, LOGO_SPARK, LOGO_SYMBOL, PRODUCT_NAME } from '../brand'
 
@@ -24,7 +26,7 @@ export function Logo({ variant = 'full', width, decorative, className }: { varia
       height={Math.round(w / file.ratio)}
       alt={decorative ? '' : PRODUCT_NAME}
       decoding="async"
-      className={join('block shrink-0', className)}
+      className={join('block shrink-0 rounded-control', className)}
     />
   )
 }

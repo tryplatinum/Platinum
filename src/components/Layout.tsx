@@ -11,11 +11,12 @@ import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApp
 import { filesWaitingCount } from '../lib/files'
 import { reminderQueue } from '../lib/reminders'
 import { signOut } from '../store/session'
+import { setAppearance, useAppearance } from '../theme'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
 import { FolderSettings } from './files/FolderSettings'
 import { Logo } from './Logo'
-import { Button, Card, Field, Modal, cx, inputClass, useToast } from './ui'
+import { Button, Card, Field, Modal, SegmentedControl, cx, inputClass, useToast } from './ui'
 
 /** Navigation and button icons: 20px, stroke 1.75. Always beside a text label. */
 const ICON = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const
@@ -72,7 +73,7 @@ export function CounselorLayout() {
               <item.icon {...ICON} className="shrink-0" />
               <span className="min-w-0 flex-1 whitespace-nowrap">{item.label}</span>
               {item.badge > 0 && (
-                <span className="nums rounded-full bg-primary px-1.5 text-xs font-semibold text-white" aria-label={`${item.badge} ${item.badgeLabel}`}>
+                <span className="nums rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary" aria-label={`${item.badge} ${item.badgeLabel}`}>
                   {item.badge}
                 </span>
               )}
@@ -177,9 +178,42 @@ function SidebarMenu() {
         <button type="button" className={item} onClick={() => void signOut()}>
           Sign out
         </button>
+        <AppearanceSetting />
       </div>
       {settings && <FirmSettings onClose={() => setSettings(false)} />}
     </details>
+  )
+}
+
+/**
+ * Light or dark. Follows the device until that is switched off; then the
+ * counselor chooses. Kept in this browser, not with the firm.
+ */
+function AppearanceSetting() {
+  const { appearance, theme } = useAppearance()
+  const auto = appearance === 'auto'
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t border-line px-3 pb-1 pt-3">
+      <span className="text-xs font-semibold text-muted">Appearance</span>
+      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+        <input type="checkbox" className="h-5 w-5 shrink-0" checked={auto} onChange={(e) => setAppearance(e.target.checked ? 'auto' : theme)} />
+        <span>
+          Match this device
+          <span className="block text-xs font-normal text-muted">{auto ? `Showing ${theme} now` : 'Off: choose below'}</span>
+        </span>
+      </label>
+      {!auto && (
+        <SegmentedControl
+          label="Appearance"
+          value={theme}
+          onChange={setAppearance}
+          options={[
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+        />
+      )}
+    </div>
   )
 }
 

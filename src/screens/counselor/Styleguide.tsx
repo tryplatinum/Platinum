@@ -48,9 +48,10 @@ const COLORS = [
   ['chip / track / line', 'bg-chip', 'neutral tags, empty progress, card borders'],
   ['line-strong', 'bg-line-strong', 'input, checkbox and secondary button edges'],
   ['silver', 'bg-silver', 'decoration only, never text'],
-  ['heading / primary', 'bg-primary', 'h1 to h3, card titles, filled buttons'],
+  ['heading', 'bg-heading', 'h1 to h3, card titles'],
+  ['primary', 'bg-primary', 'filled buttons; text on them is on-primary'],
   ['ink', 'bg-ink', 'body text'],
-  ['ink-soft / primary-hover', 'bg-ink-soft', 'emphasised secondary text, chip text'],
+  ['ink-soft', 'bg-ink-soft', 'emphasised secondary text, chip text'],
   ['muted', 'bg-muted', 'secondary text'],
   ['accent', 'bg-accent', 'links, selected tab, focus ring, AI'],
   ['accent-soft', 'bg-accent-soft', 'AI panels'],
@@ -149,7 +150,7 @@ export default function Styleguide() {
           <Spark size={16} />
           <Spark size={14} />
         </Row>
-        <p className="text-[13px] text-muted">Cropped and resized from the master, never redrawn. It keeps its porcelain background, so it sits on the canvas colour only. The spark is the logo’s own star and marks AI work; it is the only decorative use of the logo’s shapes.</p>
+        <p className="text-[13px] text-muted">Cropped and resized from the master, never redrawn or recoloured. It keeps its porcelain background: invisible on the light canvas, a light tile in the dark. The spark is the logo’s own star and marks AI work; it is the only decorative use of the logo’s shapes.</p>
       </Block>
 
       <Block title="Colour">

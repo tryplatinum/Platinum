@@ -118,7 +118,7 @@ type Variant = 'primary' | 'secondary' | 'remind' | 'quiet' | 'danger'
 
 const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 const BUTTON_VARIANT: Record<Variant, string> = {
-  primary: 'bg-primary text-white hover:bg-primary-hover',
+  primary: 'bg-primary text-on-primary hover:bg-primary-hover',
   secondary: 'border border-line-strong bg-surface text-heading hover:bg-surface-2',
   remind: 'border border-accent bg-surface text-accent hover:bg-accent-soft',
   quiet: 'text-accent hover:bg-accent-soft',
@@ -296,7 +296,7 @@ export function CheckCircle({ done, late, label, onToggle }: { done: boolean; la
   const circle = (
     <span
       className={cx(
-        'flex h-6 w-6 items-center justify-center rounded-full border-2 text-white',
+        'flex h-6 w-6 items-center justify-center rounded-full border-2 text-surface',
         done ? 'border-good-bar bg-good-bar' : late ? 'border-bad-bar bg-surface' : 'border-line-strong bg-surface',
       )}
     >
@@ -393,7 +393,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           aria-checked={value === o.value}
           tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
-          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-primary text-white' : 'text-ink-soft hover:bg-surface-2')}
+          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-primary text-on-primary' : 'text-ink-soft hover:bg-surface-2')}
         >
           {o.label}
         </button>
@@ -446,7 +446,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
         {toasts.map((t) => (
-          <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-white shadow-float">
+          <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
             {t.message}
           </div>
         ))}
