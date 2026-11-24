@@ -9,6 +9,7 @@
 //     touches one task the student owns and records it as done by the student.
 
 import { createHash, randomUUID } from 'node:crypto'
+import { linkIsExpired } from '../shared/dispatch.js'
 import { STUDENT_FILES_PER_DAY, STUDENT_TOTAL_BYTES, DOCUMENTS_BUCKET } from '../shared/files.js'
 import type { StudentUpload, StudentUploadTicket, StudentWrite } from '../shared/student.js'
 import type { AppData, Attachment, CollegeApp, EssayFeedback, Meeting, Recap, StudentDocument, Task } from '../src/types.js'
@@ -38,11 +39,19 @@ const daysFromNow = (days: number) => isoDate(new Date(Date.now() + days * 86_40
 /** SHA-256 of the link token. The raw token is never written down. */
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
-/** The student a token opens, or undefined when it is unknown or revoked. Lookup is by hash only. */
+/** The student a token opens, or undefined when it is unknown, revoked, or expired. Lookup is by hash only. */
 export async function findLink(token: string): Promise<Link | undefined> {
-  const { data, error } = await serviceClient().from('student_links').select('id, firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
+  const { data, error } = await serviceClient()
+    .from('student_links')
+    .select('id, firm_id, student_id, expires_at')
+    .eq('token_hash', hashToken(token))
+    .is('revoked_at', null)
+    .maybeSingle()
   if (error) throw new Error(`student link lookup failed: ${error.message}`)
-  return data ? { firmId: data.firm_id, studentId: data.student_id, id: data.id } : undefined
+  if (!data) return undefined
+  // Null expiry = never expires (links created before M0.3).
+  if (linkIsExpired(data.expires_at)) return undefined
+  return { firmId: data.firm_id, studentId: data.student_id, id: data.id }
 }
 
 /** Done tasks stay on the page this long. */

@@ -2,6 +2,8 @@
 // browser can use this file without pulling in Zod.
 
 export const AI_ENDPOINT = '/api/ai'
+/** Sends due queued outbox rows for the signed-in firm. */
+export const DISPATCH_ENDPOINT = '/api/dispatch'
 /** The student link endpoint and the header that carries the link's token. */
 export const STUDENT_ENDPOINT = '/api/student'
 export const STUDENT_TOKEN_HEADER = 'x-student-token'

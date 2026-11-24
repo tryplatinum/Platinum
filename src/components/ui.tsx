@@ -7,6 +7,7 @@
 import { Inbox, X, type LucideIcon } from 'lucide-react'
 import { notify, onNotify, type Notice } from '../lib/notify'
 import { outboxStatusLabel } from '../../shared/outbox'
+import { runDispatch } from '../services/dispatch'
 import { useStore } from '../store/store'
 import {
   createContext,
@@ -434,12 +435,18 @@ export const useToast = () => useContext(ToastContext)
 function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; sendAfter: string; onClose: () => void }) {
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState(false)
+  const [dispatched, setDispatched] = useState(false)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   const open = Date.parse(sendAfter) > now
+  useEffect(() => {
+    if (open || dispatched) return
+    setDispatched(true)
+    void runDispatch()
+  }, [open, dispatched])
+  const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   return (
     <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
       <span>{label}</span>

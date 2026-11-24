@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
+import { previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
 import { formatTimestamp } from '../../lib/dates'
 import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
@@ -47,7 +48,7 @@ export default function Messages() {
     <>
       <PageHeader title="Messages sent" />
       <p className="rounded-lg border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-        <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. Nothing is delivered yet; that arrives in a later version. You can still copy a message into email, text, WeChat or LINE yourself.
+        <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
       </p>
       <Tabs tabs={tabs} label="Messages" />
       {tab === 'sent' && <Sent />}
@@ -146,15 +147,17 @@ function Recipient({ m }: { m: Pick<OutboxMessage, 'toName' | 'toKind' | 'channe
 }
 
 function Body({ body, bodyEn, language }: { body: string; bodyEn?: string; language: string }) {
+  const shown = previewStudentLink(body)
+  const shownEn = bodyEn ? previewStudentLink(bodyEn) : undefined
   return (
-    <div className={cx('grid gap-3', bodyEn && 'md:grid-cols-2')}>
+    <div className={cx('grid gap-3', shownEn && 'md:grid-cols-2')}>
       <p lang={language} className="whitespace-pre-wrap rounded-lg bg-canvas p-3 text-sm leading-relaxed">
-        {body}
+        {shown}
       </p>
-      {bodyEn && (
+      {shownEn && (
         <p className="whitespace-pre-wrap rounded-lg border border-line p-3 text-sm leading-relaxed text-ink-soft">
           <span className="mb-1 block text-xs font-semibold text-muted">English, for you</span>
-          {bodyEn}
+          {shownEn}
         </p>
       )}
     </div>
@@ -175,6 +178,26 @@ function OutboxStatus({ message }: { message: OutboxMessage }) {
 function LogRow({ message: m }: { message: OutboxMessage }) {
   const [open, setOpen] = useState(false)
   const toast = useToast()
+  const sendMessage = useStore((s) => s.sendMessage)
+  const preview = previewStudentLink(m.body)
+  const retry = () => {
+    sendMessage({
+      studentId: m.studentId,
+      toKind: m.toKind,
+      toName: m.toName,
+      parentId: m.parentId,
+      channel: m.channel,
+      language: m.language,
+      kind: m.kind,
+      body: m.body,
+      bodyEn: m.bodyEn,
+      trigger: 'approved',
+      taskId: m.taskId,
+      note: m.note,
+      dedupeKey: m.dedupeKey,
+    })
+    toast('Queued again. Undo is on the toast.')
+  }
   return (
     <li className="border-t border-line px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -185,6 +208,11 @@ function LogRow({ message: m }: { message: OutboxMessage }) {
           {m.note && <Pill>{m.note}</Pill>}
           <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
+          {m.status === 'failed' && (
+            <Button variant="quiet" onClick={retry}>
+              Retry
+            </Button>
+          )}
           <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? 'Hide' : 'View'}
           </Button>
@@ -193,10 +221,11 @@ function LogRow({ message: m }: { message: OutboxMessage }) {
       {open ? (
         <div className="mt-2 flex flex-col gap-2">
           <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
+          {m.status === 'failed' && m.error && <p className="text-[13px] text-ink-soft">Error: {m.error}</p>}
           <Button
             className="self-start"
             onClick={() => {
-              void navigator.clipboard?.writeText(m.body)
+              void navigator.clipboard?.writeText(preview)
               toast(`Copied. Paste it into ${CHANNEL_LABEL[m.channel]} yourself.`)
             }}
           >
@@ -204,7 +233,7 @@ function LogRow({ message: m }: { message: OutboxMessage }) {
           </Button>
         </div>
       ) : (
-        <p className="mt-1 line-clamp-1 text-[13px] text-muted">{m.body}</p>
+        <p className="mt-1 line-clamp-1 text-[13px] text-muted">{preview}</p>
       )}
     </li>
   )

@@ -17,6 +17,7 @@ const WHO: Record<Actor, (s: Student) => string> = {
   parent: () => 'a parent',
   counselor: () => 'you',
   ai: () => 'AI',
+  system: () => 'the system',
 }
 
 function DueChip({ task }: { task: Task }) {

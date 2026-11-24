@@ -14,7 +14,7 @@ export type Language = 'en' | 'zh-Hans' | 'zh-Hant'
 export type Channel = 'email' | 'wechat' | 'line' | 'text'
 
 /** Who did something. Used for activity entries, attachments and completed tasks. */
-export type Actor = 'student' | 'parent' | 'counselor' | 'ai'
+export type Actor = 'student' | 'parent' | 'counselor' | 'ai' | 'system'
 
 /** Review state of anything the AI drafted. Nothing leaves "pending" without a counselor. */
 export type Review = 'pending' | 'approved' | 'dismissed'

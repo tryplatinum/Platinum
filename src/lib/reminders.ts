@@ -7,6 +7,7 @@
 //
 // NOTE: Chinese templates need a native-speaker review.
 
+import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW } from '../../shared/dispatch'
 import type { AppData, ID, Language, OutboxMessage, Parent, ReminderMode, ReminderRule, Student, Task } from '../types'
 import { daysBetween, formatDate, formatDateLong, formatDateZh, formatTime, todayISO, type ISODate } from './dates'
 import { activeStudents, daysLate, fullName, isLate, isOpen, primaryParent, type WeeklyTextItems } from './derive'
@@ -252,12 +253,17 @@ export function weeklyTextFirstTask(text: string, f: WeeklyTextFacts): { id: str
 
 /** The facts as lines for the counselor to read beside the draft. */
 export function weeklyTextFactLines(f: WeeklyTextFacts): string[] {
+  const linkLine = !f.link
+    ? 'No link in this text'
+    : f.link === STUDENT_LINK_PLACEHOLDER
+      ? `Link: ${STUDENT_LINK_PREVIEW}`
+      : `Link: ${f.link}`
   return [
     f.meeting ? `Next meeting: ${f.meeting}` : 'No meeting in the next 7 days',
     ...f.late.map((t) => `Late: ${t.title} (was due ${t.due}, ${t.late})`),
     ...f.due.map((t) => `Due: ${t.title} (${t.due})`),
     ...(f.more ? [`and ${f.more} more`] : []),
     ...f.deadlines.map((x) => `Application deadline (not in the text; used to judge what comes first): ${x.label}, ${x.due}`),
-    f.link ? `Link: ${f.link}` : 'No link in this text',
+    linkLine,
   ]
 }

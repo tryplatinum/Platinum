@@ -5,6 +5,7 @@
 import type { Session } from '@supabase/supabase-js'
 import { createFirm, myMembership } from '../data/repo'
 import { supabase } from '../lib/supabase'
+import { runDispatch } from '../services/dispatch'
 import { studentLinkLoad } from '../services/studentLink'
 import { emptyAppData, useStore } from './store'
 
@@ -20,6 +21,8 @@ async function enter(userId: string, email: string): Promise<void> {
     }
     useStore.setState({ account: { status: 'ready', userId, email, ...membership }, mode: 'firm', linkToken: undefined })
     await useStore.getState().reload()
+    // Catch anything whose undo window already passed while the app was closed.
+    void runDispatch()
   } catch (error) {
     useStore.setState({ account: { status: 'error', message: reasonOf(error) } })
   }
