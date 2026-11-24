@@ -8,6 +8,7 @@
 // real model calls. Pass a feature name to run just one:
 //   npm run test:ai -- parentReport
 
+import './loadEnv.js'
 import { POST } from '../api/ai.js'
 import type { Feature } from '../shared/contract.js'
 import { IDS, KEVIN_ESSAY_PROMPT, KEVIN_ESSAY_TEXT, sampleCounselorNote } from '../src/data/fixtures.js'

@@ -24,7 +24,7 @@ React, Vite, TypeScript, Tailwind, Zustand, and Zod in the browser. Supabase (Po
 - `npm run db:push` — apply migrations to the linked Supabase project
 - `npm run db:types` — regenerate `src/lib/database.types.ts` from that project
 
-`npm run test:ai` calls Anthropic. `npm run test:isolation` creates rows in the linked Supabase project. Do not run either unless the task says so.
+`npm run test:ai` and `npm run test:agent` call Anthropic. `npm run test:isolation` creates rows in the linked Supabase project. Do not run either unless the task says so.
 
 ## Hard rules
 

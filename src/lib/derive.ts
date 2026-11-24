@@ -19,6 +19,7 @@ import type {
   Task,
   WeeklyText,
 } from '../types'
+import { classifyAttention, MEETING_GAP_DAYS, NEW_STUDENT_DAYS } from '../../shared/attention'
 import { addDays, daysBetween, daysFromToday, formatDate, parseISODate, todayISO, type ISODate } from './dates'
 
 // ── People ──────────────────────────────────────────────────────────────────
@@ -283,6 +284,11 @@ export type ApprovalKind =
   | 'weekly_text'
   | 'weekly_parent'
   | 'reminder'
+  | 'agent_message'
+  | 'agent_parent_update'
+  | 'agent_task'
+  | 'agent_profile_change'
+  | 'agent_meeting_times'
 
 export const APPROVAL_TYPE_LABEL: Record<ApprovalKind, string> = {
   notes: 'Meeting notes',
@@ -296,6 +302,11 @@ export const APPROVAL_TYPE_LABEL: Record<ApprovalKind, string> = {
   weekly_text: 'Weekly text',
   weekly_parent: 'Parent copy',
   reminder: 'Reminder',
+  agent_message: 'Message',
+  agent_parent_update: 'Parent update',
+  agent_task: 'Task',
+  agent_profile_change: 'Profile change',
+  agent_meeting_times: 'Meeting times',
 }
 
 export const MEETING_APPROVAL_KINDS: ApprovalKind[] = ['notes', 'task', 'parent_update', 'recap', 'profile', 'remember']
@@ -325,6 +336,10 @@ export type ApprovalItem = {
   weeklyTextId?: ID
   /** Reminder queue key when kind is reminder. */
   reminderKey?: string
+  /** Pending assistant proposal. */
+  proposalId?: ID
+  rationale?: string
+  sourcesLine?: string
 }
 
 /** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by the Approvals screen (see reminderApprovals). */
@@ -510,6 +525,46 @@ export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] 
     }
   }
 
+  const kindMap = {
+    message: 'agent_message',
+    parent_update: 'agent_parent_update',
+    task: 'agent_task',
+    profile_change: 'agent_profile_change',
+    meeting_times: 'agent_meeting_times',
+  } as const
+  for (const p of data.agentProposals ?? []) {
+    if (p.status !== 'pending' || !mine(p.studentId)) continue
+    const payload = p.payload
+    const preview =
+      typeof payload.body === 'string'
+        ? payload.body
+        : typeof payload.title === 'string'
+          ? payload.title
+          : Array.isArray(payload.slots)
+            ? (payload.slots as { when?: string }[]).map((s) => s.when).filter(Boolean).join(' · ')
+            : typeof payload.to === 'string'
+              ? `${payload.field ?? 'Field'}: ${payload.from ?? ''} → ${payload.to}`
+              : p.rationale || p.kind
+    items.push({
+      key: `agent:${p.id}`,
+      kind: kindMap[p.kind],
+      studentId: p.studentId,
+      sourceKey: `agent:${p.threadId}`,
+      sourceLabel: 'From the assistant',
+      sourceLine: p.rationale || 'Drafted by the assistant',
+      preview: String(preview),
+      isSend: p.kind === 'message' || p.kind === 'parent_update',
+      toName: typeof payload.toName === 'string' ? payload.toName : undefined,
+      channel: typeof payload.channel === 'string' ? (payload.channel as Channel) : undefined,
+      language: typeof payload.language === 'string' ? (payload.language as Language) : undefined,
+      sortDue: typeof payload.dueDate === 'string' ? payload.dueDate : undefined,
+      sortAt: p.createdAt,
+      proposalId: p.id,
+      rationale: p.rationale,
+      sourcesLine: p.sources.map((s) => s.label).filter(Boolean).join(' · ') || undefined,
+    })
+  }
+
   return items
 }
 
@@ -685,8 +740,6 @@ export interface StudentSummary {
   pendingApprovalCount: number
 }
 
-const NEW_STUDENT_DAYS = 21
-const MEETING_GAP_DAYS = 30
 const COLLEGE_DEADLINE_WARNING_DAYS = 10
 
 /**
@@ -695,6 +748,8 @@ const COLLEGE_DEADLINE_WARNING_DAYS = 10
  *   behind    3+ late tasks, or anything a week or more overdue
  *   slipping  any late task, or no meeting in a month
  *   on_track  everything else
+ *
+ * Status thresholds live in shared/attention.ts (also used by the assistant).
  */
 export function summarize(data: AppData, student: Student): StudentSummary {
   const today = todayISO()
@@ -706,10 +761,12 @@ export function summarize(data: AppData, student: Student): StudentSummary {
   const sinceMeeting = recent ? daysBetween(recent.date, today) : undefined
   const isNew = daysBetween(student.onboardedOn, today) <= NEW_STUDENT_DAYS
 
-  let status: StudentStatus = 'on_track'
-  if (late.length >= 3 || maxLate >= 7) status = 'behind'
-  else if (late.length >= 1 || (sinceMeeting !== undefined && sinceMeeting > MEETING_GAP_DAYS && !isNew)) status = 'slipping'
-  else if (isNew) status = 'new'
+  const status: StudentStatus = classifyAttention({
+    lateCount: late.length,
+    maxDaysLate: maxLate,
+    daysSinceMeeting: sinceMeeting,
+    daysSinceOnboarded: daysBetween(student.onboardedOn, today),
+  })
 
   const reasons: string[] = []
   if (late.length > 0) reasons.push(`${late.length} late ${late.length === 1 ? 'task' : 'tasks'}, oldest ${maxLate} ${maxLate === 1 ? 'day' : 'days'} overdue`)
