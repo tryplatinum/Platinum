@@ -7,6 +7,7 @@
 // which is verified with Supabase on every call. Everything is then done as
 // that person, so row level security applies. The service role is never used here.
 
+import { CollegeToolError, getCollege, searchColleges, type CollegeToolErrorCode } from '../server/collegeTools.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, type Caller } from '../server/supabase.js'
 
@@ -27,7 +28,14 @@ const fail = (code: string, message: string, status: number) => json({ ok: false
 type SignedIn = Extract<Caller, { ok: true }>
 
 /** One function per action. Each gets the verified caller and the request body. */
-const ACTIONS: Record<string, (caller: SignedIn, body: Record<string, unknown>) => Promise<unknown>> = {}
+const ACTIONS: Record<string, (caller: SignedIn, body: Record<string, unknown>) => Promise<unknown>> = {
+  /** { action: 'search', filters } → { colleges, total } */
+  search: (caller, body) => searchColleges(caller.client, (body.filters ?? {}) as Parameters<typeof searchColleges>[1]),
+  /** { action: 'get', college: unitid or name } → { found, college } or { found: false, candidates } */
+  get: (caller, body) => getCollege(caller.client, body.college as number | string),
+}
+
+const STATUS: Record<CollegeToolErrorCode, number> = { bad_input: 400, not_found: 404, not_built: 501, database: 502 }
 
 export async function POST(request: Request): Promise<Response> {
   // Fail closed: if sign-ins cannot be checked, the endpoint does nothing.
@@ -54,6 +62,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     return json({ ok: true, data: await action(caller, body) })
   } catch (error) {
+    if (error instanceof CollegeToolError) return fail(error.code === 'bad_input' ? 'bad_request' : error.code, error.message, STATUS[error.code])
     console.error('[colleges]', error instanceof Error ? error.message : error)
     return fail('server', 'Something went wrong. Please try again.', 500)
   }

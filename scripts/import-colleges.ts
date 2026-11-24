@@ -3,6 +3,9 @@
 //
 //   npm run import:colleges -- --dry-run     fetch and report, write nothing
 //   npm run import:colleges                  fetch, then write
+//   npm run import:colleges -- --only=166027,110635
+//                                            just these UNITIDs (to try it out, or
+//                                            to refresh a few rows). Never deactivates.
 //
 // Needs SCORECARD_API_KEY (free: https://api.data.gov/signup/), VITE_SUPABASE_URL
 // and SUPABASE_SERVICE_ROLE_KEY in .env.local. The service role is the only
@@ -289,6 +292,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function fetchPage(key: string, page: number): Promise<{ total: number; results: ApiRow[] }> {
   const url = new URL(API)
   for (const [name, value] of Object.entries(FILTER)) url.searchParams.set(name, value)
+  if (only.length) url.searchParams.set('id', only.join(','))
   url.searchParams.set('fields', [...Object.values(F), ...PROGRAM_FIELDS].join(','))
   url.searchParams.set('per_page', String(PER_PAGE))
   url.searchParams.set('page', String(page))
@@ -328,6 +332,9 @@ class Fatal extends Error {}
 
 const dryRun = process.argv.includes('--dry-run')
 const force = process.argv.includes('--force')
+/** UNITIDs from --only=1,2,3. The same filter still applies, and nothing is deactivated. */
+const onlyGiven = process.argv.some((arg) => arg.startsWith('--only'))
+const only = (process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length) ?? '').split(',').filter((id) => /^\d{1,8}$/.test(id))
 
 async function main(): Promise<void> {
   const key = process.env.SCORECARD_API_KEY ?? ''
@@ -347,7 +354,9 @@ async function main(): Promise<void> {
   if (missing.length) throw new Fatal(`Missing in .env.local: ${missing.join(', ')}. Nothing was fetched or written.`)
 
   console.log(`College Scorecard import${dryRun ? ' (dry run: nothing will be written)' : ''}`)
-  console.log(`Dictionary release ${DICTIONARY_RELEASED}. Keeping: currently operating, predominantly bachelor's-granting.\n`)
+  console.log(`Dictionary release ${DICTIONARY_RELEASED}. Keeping: currently operating, predominantly bachelor's-granting.`)
+  if (onlyGiven && !only.length) throw new Fatal('--only needs UNITIDs, for example --only=166027,110635. Nothing was fetched or written.')
+  console.log(only.length ? `Only UNITIDs ${only.join(', ')}. Nothing will be deactivated.\n` : '')
 
   // 1. Fetch every page.
   const fetched: ApiRow[] = []
@@ -389,7 +398,7 @@ async function main(): Promise<void> {
   }
   const inserted = list.filter((r) => !existing.has(r.unitid)).length
   const updated = list.length - inserted
-  const toDeactivate = [...existing].filter(([unitid, active]) => active && !rows.has(unitid)).map(([unitid]) => unitid)
+  const toDeactivate = onlyGiven ? [] : [...existing].filter(([unitid, active]) => active && !rows.has(unitid)).map(([unitid]) => unitid)
   const activeBefore = [...existing.values()].filter(Boolean).length
   // A source that suddenly returns far fewer institutions is more likely a fault than a mass closure.
   const suspicious = activeBefore >= 100 && toDeactivate.length > activeBefore * 0.2
