@@ -368,25 +368,60 @@ export const collegeInitials = (name: string): string =>
     .map((word) => word[0])
     .join('')
 
+/** Short forms people type, spelled out the way the directory writes them. Applied to typed names only. */
+const SHORT_FORMS: [RegExp, string][] = [
+  [/^uc /, 'university of california '],
+  [/^u of /, 'university of '],
+  [/^univ /, 'university '],
+  [/ univ$/, ' university'],
+  [/^cal state /, 'california state university '],
+  [/^csu /, 'california state university '],
+  [/^suny /, 'suny at '],
+  [/ tech$/, ' institute of technology'],
+  [/^st /, 'saint '],
+]
+
+/** Words that say what kind of place it is, not which one. "Purdue" is "Purdue University-Main Campus" without them. */
+const KIND_WORDS = new Set(['university', 'college', 'the', 'of', 'at', 'main', 'campus'])
+const withoutKindWords = (plain: string) =>
+  plain
+    .split(' ')
+    .filter((word) => !KIND_WORDS.has(word))
+    .join(' ')
+
 /**
  * The ways the typed (unlinked) rows of a list can be recognised: each name
- * with its brackets removed ("NYU (Tandon)" → "nyu"), and with their contents
- * kept ("University of California (Berkeley)" → "university of california berkeley").
+ * with its brackets removed ("NYU (Tandon)" → "nyu"), with their contents kept
+ * ("University of California (Berkeley)" → "university of california berkeley"),
+ * and with a short form spelled out ("UC San Diego" → "university of california san diego").
  */
 export function typedListNames(names: readonly string[]): Set<string> {
-  return new Set(names.flatMap((name) => [plainCollegeName(name), plainCollegeName(name, true)]).filter(Boolean))
+  const out = new Set<string>()
+  for (const name of names) {
+    for (const plain of [plainCollegeName(name), plainCollegeName(name, true)]) {
+      if (!plain) continue
+      out.add(plain)
+      for (const [short, long] of SHORT_FORMS) if (short.test(plain)) out.add(plain.replace(short, long))
+    }
+  }
+  return out
 }
 
 /**
  * True when a directory college is already on the list under a typed name: the
- * typed name is the college's name, one of its aliases, or its initials. When
- * in doubt this says yes: leaving a college out of a draft costs a search,
- * proposing one the student already has is a mistake.
+ * typed name is the college's name, one of its aliases, its initials, or its
+ * name without the words that only say what kind of place it is ("Purdue",
+ * "Carnegie Mellon"). When in doubt this says yes: leaving a college out of a
+ * draft costs a search, proposing one the student already has is a mistake.
  */
 export function typedNameMatches(typed: ReadonlySet<string>, college: { name: string; aliases?: readonly string[] | null }): boolean {
   if (typed.size === 0) return false
   const names = [college.name, ...(college.aliases ?? [])].flatMap((name) => [plainCollegeName(name), plainCollegeName(name, true)])
   if (names.some((name) => name && typed.has(name))) return true
+  // "Georgia Institute of Technology-Main Campus" is also "georgia institute of technology", and "Purdue University-Main Campus" is "purdue".
+  const own = plainCollegeName(college.name)
+  const core = withoutKindWords(own)
+  if (typed.has(own.replace(/ main campus$/, '')) || (core && typed.has(core))) return true
   const initials = collegeInitials(college.name)
   return initials.length >= 2 && typed.has(initials)
 }

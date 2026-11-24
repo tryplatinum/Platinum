@@ -275,7 +275,25 @@ check('initials skip the small words', collegeInitials('New York University') ==
 check('“NYU (Tandon)” on the list keeps New York University out of a draft', alreadyOnList([typedRow('NYU (Tandon)')], NYU))
 check('…and so does plain “NYU”, or the full name in any case', alreadyOnList([typedRow('NYU')], NYU) && alreadyOnList([typedRow('new york university')], NYU) && alreadyOnList([typedRow('New York University (Stern)')], NYU))
 check('a typed alias matches', alreadyOnList([typedRow('UCLA')], UCLA) && alreadyOnList([typedRow('M.I.T.')], MIT) && alreadyOnList([typedRow('mit')], MIT))
-check('a campus written in brackets matches the campus', alreadyOnList([typedRow('University of California (Berkeley)')], BERKELEY) && alreadyOnList([typedRow('UC Berkeley')], BERKELEY) === false)
+check('a campus written in brackets matches the campus', alreadyOnList([typedRow('University of California (Berkeley)')], BERKELEY))
+// The sample caseload's own list: every one of these was typed by hand.
+const SAN_DIEGO = { unitid: 110680, name: 'University of California-San Diego', aliases: ['UCSD'] }
+const PURDUE = { unitid: 243780, name: 'Purdue University-Main Campus', aliases: [] as string[] }
+const PURDUE_FW = { unitid: 151102, name: 'Purdue University Fort Wayne', aliases: [] as string[] }
+const GATECH = { unitid: 139755, name: 'Georgia Institute of Technology-Main Campus', aliases: [] as string[] }
+const UGA = { unitid: 139959, name: 'University of Georgia', aliases: [] as string[] }
+const CMU = { unitid: 211440, name: 'Carnegie Mellon University', aliases: [] as string[] }
+const NORTHEASTERN = { unitid: 167358, name: 'Northeastern University', aliases: [] as string[] }
+const NORTHEASTERN_STATE = { unitid: 207263, name: 'Northeastern State University', aliases: [] as string[] }
+const UIUC = { unitid: 145637, name: 'University of Illinois Urbana-Champaign', aliases: [] as string[] }
+const BU = { unitid: 164988, name: 'Boston University', aliases: [] as string[] }
+const kevinsList = ['UIUC (Grainger)', 'Purdue', 'UC Berkeley', 'UC San Diego', 'UC Irvine', 'UC Santa Barbara', 'NYU (Tandon)', 'Carnegie Mellon (SCS)', 'Georgia Tech', 'Northeastern'].map(typedRow)
+check('“UC San Diego” and “UC Berkeley” keep those campuses out', alreadyOnList(kevinsList, SAN_DIEGO) && alreadyOnList(kevinsList, BERKELEY) && alreadyOnList([typedRow('UC San Diego')], SAN_DIEGO))
+check('a name typed without “University” matches', alreadyOnList(kevinsList, PURDUE) && alreadyOnList(kevinsList, CMU) && alreadyOnList(kevinsList, NORTHEASTERN))
+check('“Georgia Tech” and “UIUC (Grainger)” match', alreadyOnList(kevinsList, GATECH) && alreadyOnList(kevinsList, UIUC))
+check('…and every college on that sample list is caught', [NYU, SAN_DIEGO, BERKELEY, PURDUE, CMU, NORTHEASTERN, GATECH, UIUC].every((college) => alreadyOnList(kevinsList, college)))
+check('…without catching a different campus or a neighbour', !alreadyOnList(kevinsList, PURDUE_FW) && !alreadyOnList(kevinsList, UGA) && !alreadyOnList(kevinsList, NORTHEASTERN_STATE) && !alreadyOnList(kevinsList, UCLA) && !alreadyOnList(kevinsList, MIT))
+check('“Boston College” on the list does not keep Boston University out', !alreadyOnList([typedRow('Boston College')], BU))
 check('a row linked to the directory matches by its id, whatever it is called', alreadyOnList([{ name: 'My dream school', directoryUnitid: 193900 }], NYU))
 check('…and a linked row’s name is not used to match another college', !alreadyOnList([{ name: 'NYU', directoryUnitid: 110662 }], NYU))
 check('a different college is not matched', !alreadyOnList([typedRow('NYU (Tandon)'), typedRow('UCLA')], MIT) && !alreadyOnList([typedRow('Boston University')], NYU) && !alreadyOnList([], NYU))
