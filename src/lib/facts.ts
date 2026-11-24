@@ -81,9 +81,10 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
     recentlyDone: tasks
       .filter((t) => t.status === 'done' && t.completedOn && daysBetween(t.completedOn, today) <= RECENT_DAYS)
       .map((t) => ({ title: t.title, completedOn: t.completedOn! })),
+    // Only colleges with a plan and a deadline: the AI's facts are about what is due.
     colleges: data.colleges
       .filter((c) => c.studentId === student.id)
-      .map((c) => ({ name: c.name, plan: c.plan, deadline: c.deadline, status: c.status, daysUntilDeadline: daysBetween(today, c.deadline) })),
+      .flatMap((c) => (c.plan && c.deadline ? [{ name: c.name, plan: c.plan, deadline: c.deadline, status: c.status, daysUntilDeadline: daysBetween(today, c.deadline) }] : [])),
     nextMeeting: next && { title: next.title, date: next.date },
     lastMeeting: last && { title: last.title, date: last.date },
   }
@@ -227,9 +228,10 @@ export function reportFacts(data: AppData, student: Student, parentId: ID): stri
       `Needed from this parent, ${late > 0 ? `overdue by ${late} ${late === 1 ? 'day' : 'days'} (was due ${formatDate(t.dueDate)})` : `by ${formatDate(t.dueDate)}`}: ${t.title}`,
     )
   }
-  for (const c of data.colleges.filter((x) => x.studentId === student.id).sort((a, b) => a.deadline.localeCompare(b.deadline))) {
-    if (c.status === 'in_progress') facts.push(`Application in progress: ${c.name} (${c.plan}), deadline ${formatDate(c.deadline)}`)
-    else if (c.status === 'submitted') facts.push(`Application submitted: ${c.name} (${c.plan})`)
+  for (const c of data.colleges.filter((x) => x.studentId === student.id).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999'))) {
+    const plan = c.plan ? ` (${c.plan})` : ''
+    if (c.status === 'in_progress') facts.push(`Application in progress: ${c.name}${plan}${c.deadline ? `, deadline ${formatDate(c.deadline)}` : ''}`)
+    else if (c.status === 'submitted') facts.push(`Application submitted: ${c.name}${plan}`)
     else if (c.status !== 'considering') facts.push(`Decision from ${c.name} (${c.plan}): ${c.status}`)
   }
   const next = nextMeeting(data, student.id)

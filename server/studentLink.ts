@@ -124,7 +124,7 @@ export async function studentPage(link: Link): Promise<AppData> {
   })
 
   return {
-    firm: { name: firm.data!.name, weeklyTextDay: 0, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
+    firm: { name: firm.data!.name, weeklyTextDay: 0, sortFilesAutomatically: false, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
     students: [
       {
         id: s.id,
@@ -146,7 +146,7 @@ export async function studentPage(link: Link): Promise<AppData> {
     tasks: taskList,
     meetings,
     colleges: colleges.data!.map(
-      (c): CollegeApp => ({ id: c.id, studentId: s.id, name: c.name, plan: c.plan as CollegeApp['plan'], deadline: c.deadline, status: c.status as CollegeApp['status'], fit: c.fit as CollegeApp['fit'] }),
+      (c): CollegeApp => ({ id: c.id, studentId: s.id, name: c.name, plan: (c.plan ?? undefined) as CollegeApp['plan'], deadline: c.deadline ?? undefined, status: c.status as CollegeApp['status'], fit: c.fit as CollegeApp['fit'] }),
     ),
     documents,
     reports: [],
@@ -156,6 +156,10 @@ export async function studentPage(link: Link): Promise<AppData> {
     weeklyTexts: [],
     // Things to remember are the counselor's. No query in this file reads personal_notes.
     personalNotes: [],
+    // Folders and draft college lists are the firm's. No query in this file reads them.
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }
 

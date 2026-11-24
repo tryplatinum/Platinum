@@ -1074,7 +1074,7 @@ export function buildSeed(): AppData {
   }
 
   return {
-    firm: { name: 'Alder & Vine College Counseling', weeklyTextDay: 0, counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },
+    firm: { name: 'Alder & Vine College Counseling', weeklyTextDay: 0, sortFilesAutomatically: true, counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },
     students: [kevin, emily, sophia, jason, aarav, mia, daniel, chloe, ethan, grace].map(finishStudent),
     tasks,
     meetings,
@@ -1086,5 +1086,9 @@ export function buildSeed(): AppData {
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     weeklyTexts: [],
     personalNotes,
+    // Folders belong to the firm and are made with it, not with the sample.
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }

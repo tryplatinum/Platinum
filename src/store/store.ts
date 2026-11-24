@@ -108,7 +108,12 @@ interface Actions {
   /** Makes a secret link for a student and returns its token. The token cannot be read again later. */
   createStudentLink: (studentId: ID) => Promise<string>
   revokeStudentLink: (linkId: ID) => Promise<void>
-  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay'>>) => void
+  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay' | 'sortFilesAutomatically'>>) => void
+  /**
+   * Takes in rows the server has already saved (a file it sorted, a draft list it made):
+   * memory changes, nothing is written back. Never use it for a change the person made.
+   */
+  absorb: (fn: (data: AppData) => AppData) => void
 
   // Students and families
   addStudent: (student: NewStudent) => ID
@@ -312,6 +317,9 @@ function emptyData(firm: Firm): AppData {
     activity: [],
     weeklyTexts: [],
     personalNotes: [],
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }
 
@@ -332,7 +340,7 @@ function merged(base: AppData, add: AppData): AppData {
   }
 }
 
-const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, counselorName: '', counselorFirstName: '' }
+const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, sortFilesAutomatically: true, counselorName: '', counselorFirstName: '' }
 
 // ── Writing changes to the database ─────────────────────────────────────────
 // Writes run one at a time, in the order the changes were made.
@@ -429,7 +437,8 @@ export const useStore = create<State & Actions>()((set, get) => {
   /** Replaces or extends the firm's data in one transaction. */
   const install = (add: AppData | undefined, clear: boolean) => {
     const before = get().data
-    const base = clear ? emptyData(before.firm) : before
+    // Clearing removes the caseload. The firm's folders are settings and stay.
+    const base = clear ? { ...emptyData(before.firm), documentTypes: before.documentTypes } : before
     const after = add ? merged(base, add) : base
     const changes: Changes = (add && diffData(emptyData(before.firm), merged(emptyData(before.firm), add))) || { upsert: {}, delete: {} }
     changes.clear = clear
@@ -506,6 +515,14 @@ export const useStore = create<State & Actions>()((set, get) => {
     revokeStudentLink: async (linkId) => {
       await revokeStudentLink(linkId)
       set((s) => ({ studentLinks: s.studentLinks.filter((l) => l.id !== linkId) }))
+    },
+
+    absorb: (fn) => {
+      const before = get().data
+      const after = fn(before)
+      if (after === before || get().mode === 'student_link') return
+      revision++
+      set({ data: after })
     },
 
     updateFirm: (firm) =>

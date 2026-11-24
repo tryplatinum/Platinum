@@ -187,11 +187,11 @@ function CollegeList({ student }: { student: Student }) {
                     {c.note && <span className="block text-[13px] text-muted">{c.note}</span>}
                   </td>
                   <td className="px-3 py-2.5">
-                    <Pill tone={c.plan.startsWith('ED') ? 'accent' : 'neutral'}>{c.plan}</Pill>
+                    {c.plan ? <Pill tone={c.plan.startsWith('ED') ? 'accent' : 'neutral'}>{c.plan}</Pill> : <span className="text-muted">Not set</span>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5">
-                    {formatDate(c.deadline)}
-                    {collegeIsPending(c) && <span className="text-muted"> · {dueText(c.deadline)}</span>}
+                    {c.deadline ? formatDate(c.deadline) : <span className="text-muted">Not set</span>}
+                    {c.deadline && collegeIsPending(c) && <span className="text-muted"> · {dueText(c.deadline)}</span>}
                   </td>
                   <td className="px-3 py-2.5">
                     <select aria-label={`Status of ${c.name}`} className={inputBase} value={c.status} onChange={(e) => updateCollege(c.id, { status: e.target.value as CollegeStatus })}>
