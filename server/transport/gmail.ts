@@ -85,11 +85,15 @@ export class GmailTransport implements Transport {
     if (!EMAIL.test(to)) throw new Error('not a valid email address')
 
     const db = serviceClient()
-    const member = await db.from('firm_members').select('display_name').eq('user_id', input.senderUserId).maybeSingle()
+    const member = await db.from('firm_members').select('firm_id, display_name').eq('user_id', input.senderUserId).maybeSingle()
     if (member.error) throw new Error('could not read the counselor')
-    const name = member.data?.display_name?.trim() || 'the counselor'
+    // Someone who is no longer in a firm sends nothing.
+    if (!member.data) throw new Error('No counselor on this message')
+    const name = member.data.display_name?.trim() || 'the counselor'
+    const who = { userId: input.senderUserId, firmId: member.data.firm_id }
 
-    const connection = await db.from('google_connections').select('google_address, scopes, last_error').eq('user_id', input.senderUserId).maybeSingle()
+    // The connection must be the one made in the counselor's present firm.
+    const connection = await db.from('google_connections').select('google_address, scopes, last_error').eq('user_id', who.userId).eq('firm_id', who.firmId).maybeSingle()
     if (connection.error) throw new Error('could not read the Gmail connection')
     if (!connection.data || !connection.data.scopes.includes(GMAIL_SEND_SCOPE)) throw new Error(`Gmail not connected for ${name}`)
     if (connection.data.last_error === 'reconnect') throw new Error(`Reconnect Gmail for ${name}`)
@@ -100,7 +104,7 @@ export class GmailTransport implements Transport {
     for (let attempt = 0; ; attempt++) {
       let token: string
       try {
-        token = await accessTokenFor(input.senderUserId, GMAIL_SEND_SCOPE)
+        token = await accessTokenFor(who, GMAIL_SEND_SCOPE)
       } catch (error) {
         // accessTokenFor has already recorded an expired or revoked grant on the connection.
         // The cause is one of our own errors, whose message is already safe to show; it never holds a token.

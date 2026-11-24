@@ -218,7 +218,7 @@ process.env.VITE_SUPABASE_ANON_KEY = 'anon'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service'
 process.env.GOOGLE_CLIENT_ID = 'test-client-id'
 process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
-process.env.GOOGLE_TOKEN_KEY = 'test key for the outbox checks'
+process.env.GOOGLE_TOKEN_KEY = 'a test key for the outbox checks, long enough'
 delete process.env.GOOGLE_FAKE
 delete process.env.TRANSPORT
 delete process.env.TRANSPORT_EMAIL
@@ -274,6 +274,20 @@ check('a counselor who has not connected Google fails plainly', (await reasonOf(
 check('a counselor connected for Drive only fails the same way', (await reasonOf(() => gmail.send({ ...mail, senderUserId: DRIVE_ONLY }))) === 'Gmail not connected for Sam Okafor')
 check('Gmail refuses anything that is not email', (await reasonOf(() => gmail.send({ ...mail, channel: 'text', to: '+15551234567', senderUserId: LIN }))) === 'Gmail sends email only')
 check('an address that is not an email address is refused', (await reasonOf(() => gmail.send({ ...mail, to: 'a@example.com\r\nBcc: b@example.com', senderUserId: LIN }))) === 'not a valid email address')
+check('a counselor who has left the firm sends nothing', await (async () => {
+  const members = db.table('firm_members')
+  const gone = members.splice(members.findIndex((m) => m.user_id === LIN), 1)[0]
+  const reason = await reasonOf(() => gmail.send({ ...mail, senderUserId: LIN }))
+  members.push(gone)
+  return reason === 'No counselor on this message'
+})())
+check('a connection made in another firm is not used', await (async () => {
+  const row = db.table('google_connections').find((c) => c.user_id === LIN)!
+  row.firm_id = '99999999-9999-4999-8999-999999999999'
+  const reason = await reasonOf(() => gmail.send({ ...mail, senderUserId: LIN }))
+  row.firm_id = FIRM
+  return reason === 'Gmail not connected for 林老師'
+})())
 check('none of those reached Gmail', gmailSends.length === 1)
 
 // The dispatcher, with rows as queue_message leaves them.
