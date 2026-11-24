@@ -9,7 +9,7 @@
 
 import { FolderSync } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { SYNC_STALE_MS, type LinkedFolder } from '../../../shared/google'
+import { REASON, SYNC_STALE_MS, type LinkedFolder } from '../../../shared/google'
 import { todayISO } from '../../lib/dates'
 import { GoogleFailure, callGoogle, driveReady, loadGoogleStatus, useGoogleStatus } from '../../services/google'
 import type { DocumentRow } from '../../services/files'
@@ -23,6 +23,9 @@ interface SyncAnswer {
   busy: boolean
   documents: DocumentRow[]
 }
+
+/** Reasons that are about the folder, not one file. */
+const GENERAL: string[] = [REASON.tooMany]
 
 const reasonOf = (error: unknown) => (error instanceof GoogleFailure ? error.message : 'Something went wrong. Please try again.')
 
@@ -130,6 +133,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
   const status = useGoogleStatus()
   const toast = useToast()
   const [open, setOpen] = useState<string>()
+  const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
   if (!status?.available || linked.folders.length === 0) return null
   const ready = driveReady(status)
 
@@ -146,7 +150,8 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
           const busy = linked.syncing(folder.id)
           const working = busy || folder.status === 'syncing'
           const named = folder.skipped.filter((s) => s.name)
-          const notes = folder.skipped.filter((s) => !s.name)
+          // Notes about the folder as a whole (too many files, too deep) have no file name for anyone.
+          const notes = folder.skipped.filter((s) => !s.name && (folder.mine || owner || GENERAL.includes(s.reason)))
           return (
             <li key={folder.id} className="flex flex-col gap-2 border-t border-line px-5 py-4">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -210,7 +215,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-soft">
                   {folder.skipped.length > 0 && (
                     <button type="button" className="min-h-11 font-semibold text-accent underline" aria-expanded={open === folder.id} onClick={() => setOpen(open === folder.id ? undefined : folder.id)}>
-                      {named.length > 0 ? `${named.length} ${named.length === 1 ? 'file was' : 'files were'} not imported` : 'Some of the folder was not read'}
+                      {folder.skippedCount > notes.length ? `${folder.skippedCount - notes.length} ${folder.skippedCount - notes.length === 1 ? 'file was' : 'files were'} not imported` : 'Some of the folder was not read'}
                     </button>
                   )}
                   {folder.missingFileIds.length > 0 && (
@@ -240,6 +245,15 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                       <span className="break-all font-medium">{s.name}</span> <span className="text-muted">{s.reason}</span>
                     </li>
                   ))}
+                  {/* Someone who did not link the folder is told why files were left out, not their names. */}
+                  {named.length === 0 &&
+                    folder.skipped
+                      .filter((s) => !s.name && !GENERAL.includes(s.reason))
+                      .map((s, i) => (
+                        <li key={`why-${i}`} className="text-ink-soft">
+                          {s.reason}
+                        </li>
+                      ))}
                 </ul>
               )}
             </li>

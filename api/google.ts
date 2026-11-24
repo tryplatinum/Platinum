@@ -15,7 +15,7 @@
 
 import { browseInput, connectInput, folderInput, foldersInput, importInput, linkInput, syncInput } from '../shared/google.js'
 import { FileError } from '../server/documentSorting.js'
-import { GoogleError, connectionStatus, disconnect, finishConnect, startConnect } from '../server/google/connection.js'
+import { GoogleError, clearStateCookie, connectionStatus, disconnect, finishConnect, startConnect } from '../server/google/connection.js'
 import { browseDrive } from '../server/google/drive.js'
 import { importDriveFile, importRemovedAgain, linkFolder, listFolders, syncFolder, unlinkFolder } from '../server/google/driveFiles.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
@@ -56,7 +56,7 @@ const ACTIONS: Record<string, (caller: SignedIn, body: unknown, request: Request
   /** Revokes the grant at Google, then deletes our row. */
   disconnect: async (caller) => ({ data: await disconnect(caller) }),
   /** One page of the Drive panel, live from Google. Not saved. */
-  browse: async (caller, body) => ({ data: await browseDrive(caller.userId, checked(browseInput, body)) }),
+  browse: async (caller, body) => ({ data: await browseDrive({ userId: caller.userId, firmId: caller.firmId }, checked(browseInput, body)) }),
   /** Copies one picked file into storage. It then waits for the counselor like an upload. */
   import: async (caller, body) => ({ data: await importDriveFile(caller, checked(importInput, body)) }),
   folders: async (caller, body) => ({ data: await listFolders(caller, checked(foldersInput, body).studentId) }),
@@ -105,12 +105,14 @@ export async function POST(request: Request): Promise<Response> {
 export async function GET(request: Request): Promise<Response> {
   const back = (outcome: string, headers: Record<string, string> = {}) =>
     new Response(null, { status: 302, headers: { location: new URL(`/app?google=${outcome}`, request.url).toString(), 'cache-control': 'no-store', ...headers } })
-  if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return back('failed')
+  // However it ends, the one-time cookie is cleared, so its state cannot be used again.
+  const clear = { 'set-cookie': clearStateCookie(request) }
+  if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return back('failed', clear)
   try {
-    const { outcome, clearCookie } = await finishConnect(request)
-    return back(outcome, { 'set-cookie': clearCookie })
+    const { outcome } = await finishConnect(request)
+    return back(outcome, clear)
   } catch (error) {
     console.error('[google] the connection could not be finished:', error instanceof Error ? error.message : 'unknown')
-    return back('failed')
+    return back('failed', clear)
   }
 }

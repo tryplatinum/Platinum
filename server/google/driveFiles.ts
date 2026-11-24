@@ -9,11 +9,12 @@
 //   * unlinkFolder, listFolders, importRemovedAgain
 //
 // There is no second pipeline. A file is copied into the `documents` bucket and
-// then goes through documentSorting.ts: confirmUpload (the real type, the
-// size), the content hash, and the same sorting. A file from a linked folder is
-// filed automatically like a student's own upload (sortStudentDrop), because
-// the person who linked the folder chose the student; unsure ones are marked
-// "Check these".
+// then goes through documentSorting.ts: the check of its real type and size,
+// the content hash, and the same sorting. A file from a linked folder is filed
+// automatically like a student's own upload, because the person who linked the
+// folder chose the student; unsure ones are marked "Check these". Its folder is
+// decided before it is stored (decideFiling), so a file that belongs where only
+// the owner can open it is never readable by anyone else, even for a moment.
 //
 // Who acts in a sync: whoever opened the page may not be the person who linked
 // the folder, and a synced file may land in a folder only the owner can open.
@@ -38,10 +39,10 @@ import {
   type SyncState,
 } from '../../shared/google.js'
 import type { Database, Json } from '../../src/lib/database.types.js'
-import { FileError, bucket, confirmUpload, finishCounselorUpload, logEvent, plausibleDay, removeObjects, sha256, sortStudentDrop, uploadingRow, type DocumentRow } from '../documentSorting.js'
+import { FileError, bucket, decideFiling, finishCounselorUpload, logEvent, plausibleDay, removeObjects, sha256, uploadingRow, type DocumentRow } from '../documentSorting.js'
 import { serviceClient, type Caller } from '../supabase.js'
 import { syncBatchLimit } from './config.js'
-import { GoogleError } from './connection.js'
+import { GoogleError, type Who } from './connection.js'
 import { downloadDriveFile, getDriveFile, listFolderTree } from './drive.js'
 
 type SignedIn = Extract<Caller, { ok: true }>
@@ -52,7 +53,13 @@ const PUBLIC_COLUMNS = 'id, firm_id, student_id, linked_by, drive_folder_id, fol
 
 type PublicFolderRow = Pick<FolderRow, 'id' | 'student_id' | 'linked_by' | 'folder_name' | 'drive_url' | 'status' | 'last_synced_at' | 'last_error' | 'progress_done' | 'progress_total' | 'skipped' | 'missing_file_ids' | 'removed_here_count'>
 
-const folderFor = (row: PublicFolderRow, caller: SignedIn): LinkedFolder => ({
+/** Drive file names can say a lot ("Tax return 2025.pdf"). They are kept short, and shown only to the linker and the owner. */
+const NAME_MAX = 200
+
+const folderFor = (row: PublicFolderRow, caller: SignedIn, readableMissing?: string[]): LinkedFolder => {
+  const trusted = row.linked_by === caller.userId || caller.role === 'owner'
+  const skipped = ((row.skipped as unknown as SkippedFile[]) ?? []).map((s) => ({ name: trusted ? s.name.slice(0, NAME_MAX) : '', reason: s.reason }))
+  return {
   id: row.id,
   studentId: row.student_id,
   name: row.folder_name,
@@ -62,11 +69,27 @@ const folderFor = (row: PublicFolderRow, caller: SignedIn): LinkedFolder => ({
   lastError: row.last_error ?? undefined,
   done: row.progress_done,
   total: row.progress_total,
-  skipped: (row.skipped as unknown as SkippedFile[]) ?? [],
-  missingFileIds: row.missing_file_ids,
+  // Anyone else gets the reasons with a count, never the names.
+  skipped: trusted ? skipped : [...new Map(skipped.map((s) => [s.reason, s])).values()],
+  skippedCount: skipped.filter((s) => trusted || s.reason).length,
+  // Only the Drive ids of files this person can read anyway.
+  missingFileIds: readableMissing ?? (trusted ? row.missing_file_ids : []),
   removedHere: row.removed_here_count,
   mine: row.linked_by === caller.userId,
-})
+  }
+}
+
+/** The "No longer in Drive" ids this caller may be told about: those of documents they can read. */
+async function readableMissing(caller: SignedIn, rows: PublicFolderRow[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const all = [...new Set(rows.flatMap((r) => r.missing_file_ids))]
+  if (all.length === 0) return out
+  // Read as the caller: row level security leaves out what only the owner may see.
+  const { data, error } = await caller.client.from('documents').select('drive_file_id, student_id').eq('firm_id', caller.firmId).in('drive_file_id', all.slice(0, 500))
+  if (error) throw failed('reading the stored Drive files failed', error)
+  for (const row of rows) out.set(row.id, row.missing_file_ids.filter((id) => data.some((d) => d.drive_file_id === id && d.student_id === row.student_id)))
+  return out
+}
 
 const failed = (doing: string, error: { message: string }) => new Error(`${doing}: ${error.message}`)
 const folders = () => serviceClient().from('student_drive_folders')
@@ -95,7 +118,8 @@ export interface Imported {
  */
 export async function importDriveFile(caller: SignedIn, input: { fileId: string; studentId?: string; today?: string }): Promise<Imported> {
   const db = caller.client
-  const file = await getDriveFile(caller.userId, input.fileId)
+  const who: Who = { userId: caller.userId, firmId: caller.firmId }
+  const file = await getDriveFile(who, input.fileId)
   if (file.mimeType === GOOGLE_FOLDER) throw new GoogleError('refused', 'That is a folder. Open it and choose files, or link it to a student.', 400)
 
   // The same Drive file again: the copy already here is the answer.
@@ -105,7 +129,7 @@ export async function importDriveFile(caller: SignedIn, input: { fileId: string;
   if (found.error) throw failed('looking for an earlier copy failed', found.error)
   if (found.data[0]) return { document: found.data[0], already: true }
 
-  const got = await downloadDriveFile(caller.userId, file)
+  const got = await downloadDriveFile(who, file)
   if (!got.ok) throw new GoogleError('refused', got.reason, 400)
   if (sniffMime(got.bytes) !== got.mime) throw new GoogleError('refused', REASON.wrongContents, 415)
 
@@ -137,10 +161,15 @@ export async function importDriveFile(caller: SignedIn, input: { fileId: string;
 // ── Linked folders ──────────────────────────────────────────────────────────
 
 export async function listFolders(caller: SignedIn, studentId: string): Promise<LinkedFolder[]> {
-  // Read as the caller: the policy on the table decides, and only the public columns are asked for.
-  const { data, error } = await caller.client.from('student_drive_folders').select(PUBLIC_COLUMNS).eq('firm_id', caller.firmId).eq('student_id', studentId).order('created_at')
+  // The student is read as the caller first, so this answers only about a student of their own firm.
+  const student = await caller.client.from('students').select('id').eq('id', studentId).eq('firm_id', caller.firmId).maybeSingle()
+  if (student.error) throw failed('reading the student failed', student.error)
+  if (!student.data) return []
+  // File names and Drive ids are not granted to signed-in people on this table: they are read here and cut down per person.
+  const { data, error } = await folders().select(PUBLIC_COLUMNS).eq('firm_id', caller.firmId).eq('student_id', studentId).order('created_at')
   if (error) throw failed('reading linked folders failed', error)
-  return data.map((row) => folderFor(row, caller))
+  const missing = await readableMissing(caller, data)
+  return data.map((row) => folderFor(row, caller, missing.get(row.id)))
 }
 
 /** Ties a Drive folder to a student. The first sync is the browser's next call. */
@@ -148,7 +177,7 @@ export async function linkFolder(caller: SignedIn, input: { folderId: string; st
   const student = await caller.client.from('students').select('id').eq('id', input.studentId).eq('firm_id', caller.firmId).maybeSingle()
   if (student.error) throw failed('reading the student failed', student.error)
   if (!student.data) throw new FileError('That student was not found.', 404)
-  const folder = await getDriveFile(caller.userId, input.folderId)
+  const folder = await getDriveFile({ userId: caller.userId, firmId: caller.firmId }, input.folderId)
   if (folder.mimeType !== GOOGLE_FOLDER) throw new GoogleError('refused', 'Choose a folder to link, not a file.', 400)
 
   const { data, error } = await folders()
@@ -228,7 +257,7 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
     .select('*')
   if (leased.error) throw failed('starting the sync failed', leased.error)
   const row = leased.data[0]
-  if (!row) return { folder: folderFor(before, caller), more: true, busy: true, documents: [] }
+  if (!row) return { folder: folderFor(before, caller, (await readableMissing(caller, [before])).get(before.id)), more: true, busy: true, documents: [] }
 
   const touched: string[] = []
   let state = (row.sync_state ?? {}) as SyncState
@@ -245,7 +274,8 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
 
   try {
     if (!row.linked_by) throw new GoogleError('reconnect', 'The person who linked this folder has left the firm. Unlink it and link it again.', 409)
-    const linker = row.linked_by
+    // The linker's connection, and only as a connection of this firm: someone who has left it syncs nothing.
+    const linker: Who = { userId: row.linked_by, firmId: row.firm_id }
 
     // ── Decide what to do, unless a sync is already part-way ──
     if (input.restart || row.status !== 'syncing' || !state.queue?.length) {
@@ -278,7 +308,16 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
     const skipped = [...((patch.skipped ?? row.skipped) as unknown as SkippedFile[])]
     while (goOn(taken)) {
       const item = queue[taken++]
-      const outcome = await importQueued(row, linker, item, input.today)
+      let outcome: { documentId?: string; skipped?: string }
+      try {
+        outcome = await importQueued(row, linker, item, input.today)
+      } catch (error) {
+        // Google needing a reconnect, or being unreachable, stops the sync where it is. Anything else is this one
+        // file's problem: it is listed as left out and the sync moves on, so one bad file never blocks a folder.
+        if (error instanceof GoogleError) throw error
+        console.error('[google] one file could not be imported:', error instanceof Error ? error.message : 'unknown')
+        outcome = { skipped: REASON.failed }
+      }
       done++
       if (outcome.documentId) touched.push(outcome.documentId)
       if (outcome.skipped) skipped.push({ name: item.name, reason: outcome.skipped })
@@ -305,7 +344,8 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
   }
 
   const after = await folders().select(PUBLIC_COLUMNS).eq('id', row.id).eq('firm_id', caller.firmId).maybeSingle()
-  const folder = folderFor(after.data ?? row, caller)
+  const shown = after.data ?? row
+  const folder = folderFor(shown, caller, (await readableMissing(caller, [shown])).get(shown.id))
   // Read as the caller: a file that went where only the owner can open it is not handed to anyone else.
   const documents = touched.length ? ((await caller.client.from('documents').select('*').eq('firm_id', caller.firmId).in('id', touched)).data ?? []) : []
   return { folder, more: folder.status === 'syncing' && folder.done < folder.total, busy: false, documents }
@@ -315,30 +355,39 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
 export const isDuplicate = (hash: string, held: { content_hash: string | null; drive_file_id: string | null; file_status: string | null }[], driveFileId: string) =>
   held.some((d) => d.content_hash === hash && d.drive_file_id !== driveFileId && d.file_status !== 'uploading')
 
+/** A stored object's path must be this firm's and this document's before the service role writes to it. */
+const ownPath = (doc: { id: string; firm_id: string; storage_path: string | null }) => {
+  const parts = (doc.storage_path ?? '').split('/')
+  return parts.length === 4 && parts[0] === doc.firm_id && parts[2] === doc.id
+}
+
 /**
- * One file of a sync: a new file is stored, checked and filed; a changed one
- * replaces the stored copy and keeps its folder and title. Returns the document
- * it wrote, or why the file was left out.
+ * One file of a sync: a new file is checked, its folder decided, and only then
+ * stored, already filed; a changed one replaces the stored copy and keeps its
+ * folder and title. Returns the document it wrote, or why the file was left out.
  */
-async function importQueued(folder: FolderRow, linker: string, item: QueueItem, today?: string): Promise<{ documentId?: string; skipped?: string }> {
+async function importQueued(folder: FolderRow, linker: Who, item: QueueItem, today?: string): Promise<{ documentId?: string; skipped?: string }> {
   const db = serviceClient()
   const got = await downloadDriveFile(linker, item)
   if (!got.ok) return { skipped: got.reason }
+  // The checks every upload gets, on the bytes in hand: within the size limit, and really the type it claims.
+  if (got.bytes.length > MAX_FILE_BYTES) return { skipped: REASON.tooLarge }
   if (sniffMime(got.bytes) !== got.mime) return { skipped: REASON.wrongContents }
   const hash = sha256(got.bytes)
 
   if (item.change === 'changed' && item.documentId) {
-    const current = await db.from('documents').select('*').eq('id', item.documentId).eq('firm_id', folder.firm_id).maybeSingle()
+    // Only the very row this sync is about: this firm, this student, this Drive file.
+    const current = await db.from('documents').select('*').eq('id', item.documentId).eq('firm_id', folder.firm_id).eq('student_id', folder.student_id).eq('drive_file_id', item.id).maybeSingle()
     if (current.error) throw failed('reading the stored copy failed', current.error)
     const doc = current.data
-    // Deleted here in the meantime: it stays deleted.
-    if (!doc || !doc.storage_path) return {}
-    if (doc.content_hash !== hash) {
+    // Deleted here in the meantime, or no longer the row it was: it is left alone.
+    if (!doc || !doc.storage_path || !ownPath(doc)) return {}
+    const changed = doc.content_hash !== hash
+    if (changed) {
       const stored = await db.storage.from(DOCUMENTS_BUCKET).upload(doc.storage_path, got.bytes, { contentType: got.mime, upsert: true })
       if (stored.error) throw failed('replacing the stored copy failed', stored.error)
     }
     // A replaced copy shows as new again, in the folder and under the title it already had.
-    const changed = doc.content_hash !== hash
     const updated = await db
       .from('documents')
       .update({ drive_modified_at: item.modifiedTime ?? null, ...(changed ? { size_bytes: got.bytes.length, content_hash: hash, mime_type: got.mime, opened_at: null } : {}) })
@@ -353,35 +402,31 @@ async function importQueued(folder: FolderRow, linker: string, item: QueueItem, 
   if (held.error) throw failed('checking for the same file failed', held.error)
   if (isDuplicate(hash, held.data, item.id)) return { skipped: REASON.duplicate }
 
-  const row = { ...uploadingRow({ firmId: folder.firm_id, studentId: folder.student_id, filename: storedName(item), size: got.bytes.length, mime: got.mime, by: 'counselor', userId: linker, today: plausibleDay(today) }), ...driveColumns(item) }
-  let inserted = await db.from('documents').insert(row).select('*').single()
-  if (inserted.error?.code === '23505') {
-    // A row for this Drive file is already there. If a call that died left it half-made, it goes
-    // (with whatever part of the object arrived) and the file is done again. Otherwise it is already imported.
-    const there = await db.from('documents').select('id, storage_path, file_status').eq('firm_id', folder.firm_id).eq('student_id', folder.student_id).eq('drive_file_id', item.id).maybeSingle()
-    if (there.error) throw failed('reading the earlier copy failed', there.error)
-    if (there.data?.file_status !== 'uploading') return {}
-    if (there.data.storage_path) await removeObjects(db, [there.data.storage_path]).catch(() => undefined)
+  // A row for this Drive file already there? Half-made by a call that died: it goes and the file is done again.
+  // Otherwise it is already imported (another request got there first).
+  const there = await db.from('documents').select('id, firm_id, storage_path, file_status').eq('firm_id', folder.firm_id).eq('student_id', folder.student_id).eq('drive_file_id', item.id).maybeSingle()
+  if (there.error) throw failed('reading the earlier copy failed', there.error)
+  if (there.data && there.data.file_status !== 'uploading') return {}
+  if (there.data) {
+    if (ownPath(there.data)) await removeObjects(db, [there.data.storage_path!]).catch(() => undefined)
     await db.from('documents').delete().eq('id', there.data.id).eq('firm_id', folder.firm_id).eq('file_status', 'uploading')
-    inserted = await db.from('documents').insert(row).select('*').single()
   }
-  if (inserted.error) throw failed('creating the imported file failed', inserted.error)
-  const stored = await db.storage.from(DOCUMENTS_BUCKET).upload(row.storage_path, got.bytes, { contentType: got.mime, upsert: false })
-  if (stored.error) {
-    await db.from('documents').delete().eq('id', row.id).eq('firm_id', folder.firm_id)
-    throw failed('storing the imported file failed', stored.error)
+
+  // Decide the folder first, from the bytes in memory. Nothing is stored yet, so nobody can read it yet.
+  const draft = { ...uploadingRow({ firmId: folder.firm_id, studentId: folder.student_id, filename: storedName(item), size: got.bytes.length, mime: got.mime, by: 'counselor', userId: linker.userId, today: plausibleDay(today) }), ...driveColumns(item) }
+  const filing = await decideFiling(db, draft as unknown as DocumentRow, got.bytes, item.hint)
+
+  // The object first, then the row, written once and already filed: who may read it is settled from its first moment.
+  const stored = await db.storage.from(DOCUMENTS_BUCKET).upload(draft.storage_path, got.bytes, { contentType: got.mime, upsert: false })
+  if (stored.error) throw failed('storing the imported file failed', stored.error)
+  const inserted = await db.from('documents').insert({ ...draft, ...filing.patch, size_bytes: got.bytes.length, content_hash: hash, file_status: 'filed', sorted_by: 'auto' }).select('id, firm_id').single()
+  if (inserted.error) {
+    await removeObjects(db, [draft.storage_path]).catch(() => undefined)
+    // Already here (another request got there first): nothing more to do.
+    if (inserted.error.code === '23505') return {}
+    throw failed('creating the imported file failed', inserted.error)
   }
-  try {
-    // The checks every upload gets, on the bytes just stored.
-    await confirmUpload(db, inserted.data, got.bytes)
-  } catch (error) {
-    if (error instanceof FileError) return { skipped: error.message }
-    throw error
-  }
-  const sorting = await db.from('documents').update({ size_bytes: got.bytes.length, content_hash: hash, file_status: 'sorting' }).eq('id', row.id).eq('file_status', 'uploading')
-  if (sorting.error) throw failed('saving the imported file failed', sorting.error)
-  await logEvent(db, inserted.data, { kind: 'counselor', user: linker }, 'uploaded', { by: 'counselor', source: 'google_drive' })
-  // Filed with nobody watching, like a student's own upload. If the sorter is cut off, the row is settled the next time documents load.
-  await sortStudentDrop(folder.firm_id, row.id, got.bytes, item.hint).catch((error) => console.error('[google] sorting an imported file failed:', error instanceof Error ? error.message : 'unknown'))
-  return { documentId: row.id }
+  await logEvent(db, inserted.data, { kind: 'counselor', user: linker.userId }, 'uploaded', { by: 'counselor', source: 'google_drive' })
+  await logEvent(db, inserted.data, { kind: 'system' }, 'auto_sorted', filing.detail)
+  return { documentId: draft.id }
 }
