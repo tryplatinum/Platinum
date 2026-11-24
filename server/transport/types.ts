@@ -9,6 +9,8 @@ export type TransportSend = {
   body: string
   language: QueueLanguage
   subject?: string
+  /** The user who approved the message (outbox.approved_by). Email through Gmail is sent from their mailbox. */
+  senderUserId?: string
 }
 
 export type TransportResult = {

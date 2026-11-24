@@ -5,7 +5,15 @@
 // No keys and no network. This checks the payload rules in shared/outbox.ts
 // and the allowlist / address / placeholder / expiry helpers in shared/dispatch.ts.
 // It does not run the SQL in queue_message or cancel_message.
+//
+// It also checks email through Gmail: the subject rule, per-channel routing,
+// how a message is encoded, and the dispatcher in front of GmailTransport.
+// There Google is the invented one in server/google/fakeDrive.ts and the
+// database is the in-memory stand-in in scripts/fakeSupabase.ts. Nothing is sent.
 
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   STUDENT_LINK_PLACEHOLDER,
   STUDENT_LINK_PREVIEW,
@@ -18,7 +26,18 @@ import {
   previewStudentLink,
   resolveAddress,
 } from '../shared/dispatch.js'
-import { UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
+import { emailSubject } from '../shared/emailSubject.js'
+import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
+import { QUEUE_KINDS, QUEUE_LANGUAGES, UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
+import { dispatchFirm } from '../server/dispatch.js'
+import { google } from '../server/google/config.js'
+import { forgetAccessTokens } from '../server/google/connection.js'
+import { fakeGoogle } from '../server/google/fakeDrive.js'
+import { encryptToken } from '../server/google/secrets.js'
+import { GmailTransport, buildMessage } from '../server/transport/gmail.js'
+import { getTransport } from '../server/transport/index.js'
+import { LogTransport } from '../server/transport/log.js'
+import { FAKE_SUPABASE_URL, fakeSupabase } from './fakeSupabase.js'
 
 let failed = 0
 function check(name: string, pass: boolean, detail = ''): void {
@@ -119,6 +138,217 @@ check('a null expiry never expires', !linkIsExpired(null))
 check('an undefined expiry never expires', !linkIsExpired(undefined))
 check('a future expiry is still valid', !linkIsExpired(new Date(Date.now() + 60_000).toISOString()))
 check('a past expiry is rejected', linkIsExpired(new Date(Date.now() - 1000).toISOString()))
+
+// ── Email subject ───────────────────────────────────────────────────────────
+
+check('an English parent report gets an English subject', emailSubject('parent_report', 'en') === 'Progress update')
+check('a Simplified Chinese reminder gets a Simplified subject', emailSubject('reminder_late', 'zh-Hans') === '提醒：已逾期')
+check('a Traditional Chinese recap gets a Traditional subject', emailSubject('meeting_recap', 'zh-Hant') === '會議紀要')
+check('Simplified and Traditional differ where the characters do', emailSubject('weekly_text', 'zh-Hans') === '本周安排' && emailSubject('weekly_text', 'zh-Hant') === '本週安排')
+check('every kind has a subject in every language', QUEUE_KINDS.every((kind) => QUEUE_LANGUAGES.every((language) => emailSubject(kind, language).length > 0 && emailSubject(kind, language).length <= 40)))
+check('an unknown kind gets a plain fallback, not a crash', emailSubject('newsletter', 'zh-Hant') === '來自升學顧問的訊息' && emailSubject('__proto__', 'en') === 'A message from your counselor')
+check('an unknown language falls back to English', emailSubject('parent_report', 'fr') === 'Progress update')
+
+// ── Transport routing ───────────────────────────────────────────────────────
+
+const routed = (channel: 'email' | 'text' | 'line' | 'wechat' | undefined, emailSetting: string | undefined, setting?: string) => {
+  const before = { email: process.env.TRANSPORT_EMAIL, all: process.env.TRANSPORT }
+  if (emailSetting === undefined) delete process.env.TRANSPORT_EMAIL
+  else process.env.TRANSPORT_EMAIL = emailSetting
+  if (setting === undefined) delete process.env.TRANSPORT
+  else process.env.TRANSPORT = setting
+  const warn = console.warn
+  console.warn = () => {}
+  try {
+    return getTransport(channel)
+  } finally {
+    console.warn = warn
+    if (before.email === undefined) delete process.env.TRANSPORT_EMAIL
+    else process.env.TRANSPORT_EMAIL = before.email
+    if (before.all === undefined) delete process.env.TRANSPORT
+    else process.env.TRANSPORT = before.all
+  }
+}
+check('email stays on the log transport when TRANSPORT_EMAIL is unset', routed('email', undefined) instanceof LogTransport)
+check('email goes through Gmail when TRANSPORT_EMAIL=gmail', routed('email', 'gmail') instanceof GmailTransport)
+check('…whatever the case or spacing', routed('email', ' Gmail ') instanceof GmailTransport)
+check('a mis-set TRANSPORT_EMAIL stays on the log transport', routed('email', 'gmial') instanceof LogTransport && routed('email', 'resend') instanceof LogTransport && routed('email', '') instanceof LogTransport)
+check('text is unchanged by TRANSPORT_EMAIL', routed('text', 'gmail') instanceof LogTransport)
+check('LINE is unchanged by TRANSPORT_EMAIL', routed('line', 'gmail') instanceof LogTransport)
+check('WeChat is unchanged by TRANSPORT_EMAIL', routed('wechat', 'gmail') instanceof LogTransport)
+check('TRANSPORT alone never selects Gmail', routed('email', undefined, 'gmail') instanceof LogTransport && routed('text', undefined, 'gmail') instanceof LogTransport)
+check('no channel given behaves as before', routed(undefined, 'gmail') instanceof LogTransport)
+
+// ── The Gmail message ───────────────────────────────────────────────────────
+
+/** Reads a message back the way a mail program would: encoded words in headers, base64 in the body. */
+function readMessage(message: string): { headers: Record<string, string>; body: string; lines: string[] } {
+  const [head, ...rest] = message.split('\r\n\r\n')
+  const headers: Record<string, string> = {}
+  for (const line of head.replace(/\r\n /g, ' ').split('\r\n')) {
+    const colon = line.indexOf(':')
+    headers[line.slice(0, colon).toLowerCase()] = line
+      .slice(colon + 1)
+      .trim()
+      .replace(/=\?UTF-8\?B\?([^?]*)\?=(\s+(?==\?))?/g, (_all, word: string) => Buffer.from(word, 'base64').toString('utf8'))
+  }
+  return { headers, body: Buffer.from(rest.join('\r\n\r\n').replace(/\r\n/g, ''), 'base64').toString('utf8'), lines: message.split('\r\n') }
+}
+
+const hant = readMessage(buildMessage({ fromName: '林老師', fromAddress: 'counselor@example.com', to: 'parent@example.com', subject: '近期進展：陳怡安的申請文書與截止日期提醒，請您過目', body: '陳媽媽您好：\n\n怡安這週完成了個人陳述的第三稿。\n下次會議在週四下午四點。\n\n林老師' }))
+check('a Traditional Chinese subject survives encoding', hant.headers.subject === '近期進展：陳怡安的申請文書與截止日期提醒，請您過目')
+check('a Traditional Chinese From name survives encoding', hant.headers.from === '林老師 <counselor@example.com>')
+check('a Traditional Chinese body survives encoding', hant.body === '陳媽媽您好：\r\n\r\n怡安這週完成了個人陳述的第三稿。\r\n下次會議在週四下午四點。\r\n\r\n林老師')
+const hans = readMessage(buildMessage({ fromName: '张老师', fromAddress: 'counselor@example.com', to: 'parent@example.com', subject: '提醒：即将到期', body: '张先生您好，凯文的税表还没有上传，周五前请帮忙处理。😊' }))
+check('Simplified Chinese survives too, with an emoji', hans.headers.subject === '提醒：即将到期' && hans.headers.from === '张老师 <counselor@example.com>' && hans.body.endsWith('周五前请帮忙处理。😊'))
+check('the message says it is UTF-8 plain text', hans.headers['content-type'] === 'text/plain; charset=UTF-8' && hans.headers['content-transfer-encoding'] === 'base64' && hans.headers['mime-version'] === '1.0')
+check('no line is longer than mail allows', hant.lines.every((line) => line.length <= 78))
+check('no encoded word is longer than 75 characters', (buildMessage({ fromName: 'A', fromAddress: 'a@example.com', to: 'b@example.com', subject: '會議紀要'.repeat(30), body: 'x' }).match(/=\?UTF-8\?B\?[^?]*\?=/g) ?? []).every((word) => word.length <= 75))
+check('a long subject is not cut inside a character', readMessage(buildMessage({ fromName: 'A', fromAddress: 'a@example.com', to: 'b@example.com', subject: '會議紀要😊'.repeat(20), body: 'x' })).headers.subject === '會議紀要😊'.repeat(20))
+const injected = buildMessage({ fromName: 'Dana\r\nBcc: someone@example.com', fromAddress: 'a@example.com', to: 'b@example.com', subject: 'Hello\r\nBcc: other@example.com', body: 'x' })
+check('a line break in a name or subject cannot add a header', !/^Bcc:/m.test(injected) && injected.split('\r\n\r\n')[0].split('\r\n').length === 6)
+check('an English name is quoted, not encoded', buildMessage({ fromName: 'Dana "D" Whitfield', fromAddress: 'a@example.com', to: 'b@example.com', subject: 'Progress update', body: 'x' }).startsWith('From: "Dana D Whitfield" <a@example.com>\r\nTo: <b@example.com>\r\nSubject: Progress update\r\n'))
+
+// ── GmailTransport, and the dispatcher in front of it ───────────────────────
+// Google is the invented one (server/google/fakeDrive.ts); the database is the
+// in-memory stand-in. A request to any real address fails the run.
+
+process.env.VITE_SUPABASE_URL = FAKE_SUPABASE_URL
+process.env.VITE_SUPABASE_ANON_KEY = 'anon'
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'service'
+process.env.GOOGLE_CLIENT_ID = 'test-client-id'
+process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
+process.env.GOOGLE_TOKEN_KEY = 'test key for the outbox checks'
+delete process.env.GOOGLE_FAKE
+delete process.env.TRANSPORT
+delete process.env.TRANSPORT_EMAIL
+const driveState = join(mkdtempSync(join(tmpdir(), 'platinum-outbox-')), 'google.json')
+writeFileSync(driveState, '{}')
+process.env.GOOGLE_FAKE_STATE = driveState
+
+const db = fakeSupabase()
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const answer = await db.fetch(input, init)
+  if (answer) return answer
+  throw new Error(`An offline test tried to reach ${new URL(input instanceof Request ? input.url : String(input)).origin}`)
+}) as typeof fetch
+
+/** Every message handed to "Gmail" in this run. */
+const gmailSends: { authorization: string | null; message: ReturnType<typeof readMessage> }[] = []
+google.fetch = (url, init) => {
+  if (new URL(url).hostname === 'gmail.googleapis.com') {
+    const raw = (JSON.parse(String(init?.body)) as { raw: string }).raw
+    gmailSends.push({ authorization: new Headers(init?.headers).get('authorization'), message: readMessage(Buffer.from(raw, 'base64url').toString('utf8')) })
+  }
+  return fakeGoogle(url, init)
+}
+
+const FIRM = '44444444-4444-4444-8444-444444444444'
+const LIN = '55555555-5555-4555-8555-555555555551'
+const NO_GMAIL = '55555555-5555-4555-8555-555555555552'
+const DRIVE_ONLY = '55555555-5555-4555-8555-555555555553'
+const KEY = process.env.GOOGLE_TOKEN_KEY
+db.table('firm_members').push({ firm_id: FIRM, user_id: LIN, role: 'owner', display_name: '林老師' }, { firm_id: FIRM, user_id: NO_GMAIL, role: 'counselor', display_name: 'Priya Raman' }, { firm_id: FIRM, user_id: DRIVE_ONLY, role: 'counselor', display_name: 'Sam Okafor' })
+db.table('google_connections').push(
+  { user_id: LIN, firm_id: FIRM, google_address: 'sample.counselor@example.com', scopes: [DRIVE_SCOPE, GMAIL_SEND_SCOPE], refresh_token_encrypted: encryptToken('fake-refresh-token-gmail', LIN, KEY), last_error: null },
+  { user_id: DRIVE_ONLY, firm_id: FIRM, google_address: 'sam@example.com', scopes: [DRIVE_SCOPE], refresh_token_encrypted: encryptToken('fake-refresh-token', DRIVE_ONLY, KEY), last_error: null },
+)
+
+const gmail = new GmailTransport()
+const reasonOf = async (work: () => Promise<unknown>) => {
+  try {
+    await work()
+    return 'sent'
+  } catch (error) {
+    return error instanceof Error ? error.message : 'unknown'
+  }
+}
+const mail = { channel: 'email' as const, to: 'allowed@example.com', body: '您好', language: 'zh-Hant' as const, subject: '近期進展' }
+
+const sentOne = await gmail.send({ ...mail, senderUserId: LIN })
+check('Gmail sends as the approving counselor and returns Google’s message id', sentOne.providerMessageId.startsWith('fake-gmail-') && gmailSends.length === 1)
+check('…from their display name and connected address', gmailSends[0].message.headers.from === '林老師 <sample.counselor@example.com>')
+check('…to the recipient, with the subject and body given', gmailSends[0].message.headers.to === '<allowed@example.com>' && gmailSends[0].message.headers.subject === '近期進展' && gmailSends[0].message.body === '您好')
+check('a message with no counselor fails plainly', (await reasonOf(() => gmail.send(mail))) === 'No counselor on this message')
+check('a counselor who has not connected Google fails plainly', (await reasonOf(() => gmail.send({ ...mail, senderUserId: NO_GMAIL }))) === 'Gmail not connected for Priya Raman')
+check('a counselor connected for Drive only fails the same way', (await reasonOf(() => gmail.send({ ...mail, senderUserId: DRIVE_ONLY }))) === 'Gmail not connected for Sam Okafor')
+check('Gmail refuses anything that is not email', (await reasonOf(() => gmail.send({ ...mail, channel: 'text', to: '+15551234567', senderUserId: LIN }))) === 'Gmail sends email only')
+check('an address that is not an email address is refused', (await reasonOf(() => gmail.send({ ...mail, to: 'a@example.com\r\nBcc: b@example.com', senderUserId: LIN }))) === 'not a valid email address')
+check('none of those reached Gmail', gmailSends.length === 1)
+
+// The dispatcher, with rows as queue_message leaves them.
+const STUDENT = '66666666-6666-4666-8666-666666666661'
+const ALLOWED_PARENT = '66666666-6666-4666-8666-666666666662'
+const OTHER_PARENT = '66666666-6666-4666-8666-666666666663'
+db.table('students').push({ id: STUDENT, firm_id: FIRM, phone: '+1 555 000 0001', email: 'student@example.com' })
+db.table('parents').push({ id: ALLOWED_PARENT, firm_id: FIRM, student_id: STUDENT, phone: '+15551234567', email: 'Allowed@example.com' }, { id: OTHER_PARENT, firm_id: FIRM, student_id: STUDENT, phone: '+15559999999', email: 'stranger@example.com' })
+let rowNumber = 0
+const queue = (row: Record<string, unknown>) => {
+  const rowId = `77777777-7777-4777-8777-${String(++rowNumber).padStart(12, '0')}`
+  db.table('outbox').push({ id: rowId, firm_id: FIRM, student_id: STUDENT, to_kind: 'parent', to_name: '陳媽媽', parent_id: ALLOWED_PARENT, channel: 'email', language: 'zh-Hant', kind: 'parent_report', body: '陳媽媽您好，怡安本週進度良好。', body_en: null, status: 'queued', send_after: new Date(Date.now() - 1000).toISOString(), approved_by: LIN, error: null, provider_message_id: null, ...row })
+  return rowId
+}
+const rowOf = (rowId: string) => db.table('outbox').find((r) => r.id === rowId)!
+/** Runs the dispatcher with the log transport's printing kept out of the test output. */
+async function dispatch(settings: { email?: string; allowlist: string }) {
+  if (settings.email === undefined) delete process.env.TRANSPORT_EMAIL
+  else process.env.TRANSPORT_EMAIL = settings.email
+  process.env.SEND_ALLOWLIST = settings.allowlist
+  const { log, error } = console
+  console.log = () => {}
+  console.error = () => {}
+  try {
+    return await dispatchFirm(FIRM)
+  } finally {
+    console.log = log
+    console.error = error
+    delete process.env.TRANSPORT_EMAIL
+    delete process.env.SEND_ALLOWLIST
+  }
+}
+const ALLOW = 'allowed@example.com, +15551234567'
+
+const viaLog = queue({})
+await dispatch({ allowlist: ALLOW })
+check('with TRANSPORT_EMAIL unset the dispatcher keeps email on the log transport', rowOf(viaLog).status === 'sent' && String(rowOf(viaLog).provider_message_id).startsWith('log_') && gmailSends.length === 1)
+
+const good = queue({})
+const offList = queue({ parent_id: OTHER_PARENT, to_name: 'Stranger' })
+const noApprover = queue({ approved_by: null })
+const notConnected = queue({ approved_by: NO_GMAIL })
+const text = queue({ channel: 'text' })
+const line = queue({ channel: 'line' })
+const summary = await dispatch({ email: 'gmail', allowlist: ALLOW })
+check('with TRANSPORT_EMAIL=gmail an allowlisted email goes out through Gmail', rowOf(good).status === 'sent' && String(rowOf(good).provider_message_id).startsWith('fake-gmail-') && gmailSends.length === 2)
+check('…as the row’s approved_by, with a subject from its kind and language', gmailSends[1].message.headers.from === '林老師 <sample.counselor@example.com>' && gmailSends[1].message.headers.subject === '近期進展' && gmailSends[1].message.headers.to === '<Allowed@example.com>')
+check('…carrying the body the dispatcher passed', gmailSends[1].message.body === '陳媽媽您好，怡安本週進度良好。')
+check('an off-allowlist recipient fails at the allowlist', rowOf(offList).status === 'failed' && rowOf(offList).error === 'recipient not on allowlist')
+check('…and never reaches GmailTransport', !gmailSends.some((s) => s.message.headers.to.includes('stranger')) && gmailSends.length === 2)
+check('a row with no approved_by fails with “No counselor on this message”', rowOf(noApprover).status === 'failed' && rowOf(noApprover).error === 'No counselor on this message')
+check('a counselor without Gmail fails with their name', rowOf(notConnected).status === 'failed' && rowOf(notConnected).error === 'Gmail not connected for Priya Raman')
+check('text still goes through the log transport', rowOf(text).status === 'sent' && String(rowOf(text).provider_message_id).startsWith('log_'))
+check('LINE still fails as not connected', rowOf(line).status === 'failed' && rowOf(line).error === 'channel not connected yet.')
+check('the dispatcher’s count matches', summary.processed === 6 && summary.sent === 2 && summary.failed === 4)
+check('with an empty allowlist nothing reaches Gmail', await (async () => {
+  const blocked = queue({})
+  await dispatch({ email: 'gmail', allowlist: '' })
+  return rowOf(blocked).status === 'failed' && rowOf(blocked).error === 'recipient not on allowlist' && gmailSends.length === 2
+})())
+
+// Consent expired (every 7 days while the Google project is in testing).
+writeFileSync(driveState, JSON.stringify({ expired: true }))
+forgetAccessTokens()
+const expired = queue({})
+await dispatch({ email: 'gmail', allowlist: ALLOW })
+check('when the grant has expired the row fails with “Reconnect Gmail for <name>”', rowOf(expired).status === 'failed' && rowOf(expired).error === 'Reconnect Gmail for 林老師')
+check('…the connection records it, so Settings shows “Reconnect Gmail”', db.table('google_connections').find((c) => c.user_id === LIN)?.last_error === 'reconnect')
+check('…and nothing was sent', gmailSends.length === 2)
+const after = queue({})
+writeFileSync(driveState, '{}')
+await dispatch({ email: 'gmail', allowlist: ALLOW })
+check('…and it keeps failing that way until they reconnect', rowOf(after).error === 'Reconnect Gmail for 林老師' && gmailSends.length === 2)
+check('no failure reason holds a token or Google’s raw answer', db.table('outbox').every((r) => !/token|invalid_grant|Bearer|\{/.test(String(r.error ?? ''))))
+check('every message handed to Gmail carried a bearer token in the header only', gmailSends.every((s) => s.authorization === 'Bearer fake-access-token' && !JSON.stringify(s.message).includes('fake-access-token')))
 
 if (failed > 0) {
   console.error(`${failed} failed`)

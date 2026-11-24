@@ -30,7 +30,9 @@ export function GoogleAccount() {
       setBusy(false)
     }
   }
-  const connect = () => run(() => startGoogleConnect())
+  // Reconnecting asks again for everything this connection had, so sending from Gmail is not lost.
+  const connect = () => run(() => startGoogleConnect({ gmail: status.gmail }))
+  const turnOnGmail = () => run(() => startGoogleConnect({ gmail: true }))
   const disconnect = () => {
     if (!window.confirm('Disconnect Google? Files already imported stay. Linked Drive folders stop syncing until you connect again.')) return
     void run(async () => {
@@ -58,7 +60,7 @@ export function GoogleAccount() {
         <div className="flex flex-wrap gap-2">
           {status.connected && status.reconnect && (
             <Button variant="primary" disabled={busy} onClick={() => void connect()}>
-              Reconnect Google
+              {status.gmail ? 'Reconnect Gmail' : 'Reconnect Google'}
             </Button>
           )}
           {status.connected ? (
@@ -77,8 +79,28 @@ export function GoogleAccount() {
       </p>
       {status.connected && status.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Google has ended this connection. Reconnect to browse Drive and to sync linked folders again. Files already imported are not affected.
+          Google has ended this connection. Reconnect to browse Drive and to sync linked folders again{status.gmail ? ', and so that approved emails can be sent from your Gmail' : ''}. Files already imported are not affected.
         </p>
+      )}
+      {status.connected && !status.reconnect && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+          <p className="min-w-0 flex-1 text-[13px] text-ink-soft">
+            {status.gmail ? (
+              <>
+                <span className="font-semibold text-heading">Sending from Gmail is on.</span> Emails you approve can be sent from {status.address}. Platinum can send mail from this account; it cannot read your mail.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-heading">Sending from Gmail is off.</span> Turn it on to let emails you approve be sent from this address. Platinum would be able to send mail; it could not read your mail. Drive keeps working either way.
+              </>
+            )}
+          </p>
+          {!status.gmail && (
+            <Button disabled={busy} onClick={() => void turnOnGmail()}>
+              Turn on sending from Gmail
+            </Button>
+          )}
+        </div>
       )}
       {error && (
         <p role="alert" className="rounded-lg border border-bad-line bg-bad-tint px-3 py-2 text-[13px] text-bad">
