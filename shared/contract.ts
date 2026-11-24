@@ -343,3 +343,31 @@ export interface AiStatus {
   hasAuth: boolean
   model: string
 }
+
+// ── Sorting a stored file into a folder ─────────────────────────────────────
+// Not one of the /api/ai features: the file is read from storage on the server
+// (server/documentSorting.ts), so the browser never sends it.
+
+/**
+ * What the model returns for one file. `typeId` and `alternatives` can only be
+ * the firm's own folder ids. There is no field for a student: the model reports
+ * the name printed on the document and our code matches it to the roster.
+ */
+export const fileClassification = (typeIds: [string, ...string[]]) =>
+  z.object({
+    typeId: z.enum(typeIds),
+    /** A short title, e.g. "SAT score report, Aug 2026". */
+    title: z.string(),
+    /** The school year printed on the document, e.g. "2025-26", or null. */
+    schoolYear: z.string().nullable(),
+    /** The student's name as printed on the document, or null. */
+    studentName: z.string().nullable(),
+    /** One line on why it belongs in that folder. */
+    reason: z.string(),
+    /** Up to two other folders it could be. */
+    alternatives: z.array(z.enum(typeIds)),
+    /** False when the folder is a guess. */
+    sure: z.boolean(),
+  })
+
+export type FileClassification = z.infer<ReturnType<typeof fileClassification>>

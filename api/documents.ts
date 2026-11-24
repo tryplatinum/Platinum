@@ -10,6 +10,18 @@
 // File contents never pass through here on upload: the browser sends a file
 // straight to storage. Nothing here logs file contents, signed URLs or keys.
 
+import {
+  FileError,
+  deleteStoredFiles,
+  fileDocument,
+  finishCounselorUpload,
+  openDocument,
+  renameDocument,
+  settleFiles,
+  startCounselorUpload,
+  suggestForCounselor,
+  type DeleteScope,
+} from '../server/documentSorting.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, type Caller } from '../server/supabase.js'
 
@@ -29,7 +41,30 @@ const fail = (code: string, message: string, status: number) => json({ ok: false
 type SignedIn = Extract<Caller, { ok: true }>
 
 /** One function per action. Each gets the verified caller and the request body. */
-const ACTIONS: Record<string, (caller: SignedIn, body: Record<string, unknown>) => Promise<unknown>> = {}
+const ACTIONS: Record<string, (caller: SignedIn, body: Record<string, unknown>) => Promise<unknown>> = {
+  /** Makes the row a file is uploaded against. The browser then sends the file straight to storage. */
+  start: (caller, body) => startCounselorUpload(caller, body),
+  /** After the upload: checks the real file, records its hash. */
+  finish: (caller, body) => finishCounselorUpload(caller, body.documentId),
+  /** Asks the AI where the file belongs. The file then waits for the counselor. */
+  suggest: (caller, body) => suggestForCounselor(caller, body.documentId),
+  /** A person files it: "Yes, put it there", Save, or a later change of folder. */
+  file: (caller, body) => fileDocument(caller, body),
+  rename: (caller, body) => renameDocument(caller, body),
+  /** A signed URL to view or download, valid for 60 seconds. */
+  open: (caller, body) => openDocument(caller, body),
+  /** Removes stored files, objects first: one document, one student's, or the whole firm's. */
+  delete: (caller, body) => deleteStoredFiles(caller, deleteScope(body)),
+  /** Finishes files whose background sorting was cut off, and returns the rows asked about. */
+  settle: (caller, body) => settleFiles(caller, body),
+}
+
+function deleteScope(body: Record<string, unknown>): DeleteScope {
+  if (typeof body.documentId === 'string') return { documentId: body.documentId }
+  if (typeof body.studentId === 'string') return { studentId: body.studentId }
+  if (body.firm === true) return { firm: true }
+  throw new FileError('Say what to delete.')
+}
 
 export async function POST(request: Request): Promise<Response> {
   // Fail closed: if sign-ins cannot be checked, the endpoint does nothing.
@@ -56,6 +91,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     return json({ ok: true, data: await action(caller, body) })
   } catch (error) {
+    if (error instanceof FileError) return fail('refused', error.message, error.status)
     console.error('[documents]', error instanceof Error ? error.message : error)
     return fail('server', 'Something went wrong. Please try again.', 500)
   }

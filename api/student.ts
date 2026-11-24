@@ -3,6 +3,9 @@
 //   GET   returns the student's page (see server/studentLink.ts for exactly what).
 //   POST  one of three writes: mark a task done or not done, leave a progress
 //         note, attach a link to a task. Returns the page again.
+//         Or one of the two steps of adding a file (start_upload, finish_upload),
+//         which return only what the upload needs. The link can add files; it can
+//         never list, open or download one.
 //
 // A student has no login. The token (32 random bytes, stored only as a hash)
 // is the whole credential, so an unknown token and a revoked one get the same
@@ -10,9 +13,10 @@
 // reveals which of the two it was.
 
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
-import { STUDENT_TOKEN, STUDENT_WRITE } from '../shared/student.js'
+import { STUDENT_TOKEN, STUDENT_UPLOAD, STUDENT_WRITE } from '../shared/student.js'
+import { inBackground } from '../server/documentSorting.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
-import { StudentLinkError, findLink, hashToken, studentPage, studentWrite, type Link } from '../server/studentLink.js'
+import { StudentLinkError, findLink, finishStudentUpload, hashToken, startStudentUpload, studentPage, studentWrite, type Link } from '../server/studentLink.js'
 import { serviceConfigured } from '../server/supabase.js'
 
 export const config = { maxDuration: 30 }
@@ -50,6 +54,17 @@ async function respond(request: Request, write: boolean): Promise<Response> {
         body = JSON.parse(raw)
       } catch {
         return fail('The request was not valid.', 400)
+      }
+      // Adding a file: two actions that answer with their own small result, never the page.
+      const action = (body as { action?: unknown } | null)?.action
+      if (action === 'start_upload' || action === 'finish_upload') {
+        const upload = STUDENT_UPLOAD.safeParse(body)
+        if (!upload.success) return fail('The request was not valid.', 400)
+        if (upload.data.action === 'start_upload') return json({ ok: true, upload: await startStudentUpload(link, upload.data) })
+        const done = await finishStudentUpload(link, upload.data.documentId)
+        // The student gets their answer now; sorting carries on after the response.
+        inBackground(done.sort())
+        return json({ ok: true, added: { name: done.name } })
       }
       const parsed = STUDENT_WRITE.safeParse(body)
       if (!parsed.success) {
