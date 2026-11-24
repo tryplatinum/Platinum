@@ -521,6 +521,9 @@ export type Database = {
           content_hash: string | null
           created_at: string
           drafts: Json | null
+          drive_file_id: string | null
+          drive_modified_at: string | null
+          drive_url: string | null
           essay_group: string | null
           essay_prompt: string | null
           feedback: Json | null
@@ -538,13 +541,10 @@ export type Database = {
           seq: number
           size_bytes: number | null
           sorted_by: string | null
+          source: string | null
           status: string | null
           storage_path: string | null
           student_id: string | null
-          source: string | null
-          drive_file_id: string | null
-          drive_url: string | null
-          drive_modified_at: string | null
           student_link_id: string | null
           target: string | null
           task_id: string | null
@@ -566,6 +566,9 @@ export type Database = {
           content_hash?: string | null
           created_at?: string
           drafts?: Json | null
+          drive_file_id?: string | null
+          drive_modified_at?: string | null
+          drive_url?: string | null
           essay_group?: string | null
           essay_prompt?: string | null
           feedback?: Json | null
@@ -583,13 +586,10 @@ export type Database = {
           seq?: number
           size_bytes?: number | null
           sorted_by?: string | null
+          source?: string | null
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
-          source?: string | null
-          drive_file_id?: string | null
-          drive_url?: string | null
-          drive_modified_at?: string | null
           student_link_id?: string | null
           target?: string | null
           task_id?: string | null
@@ -611,6 +611,9 @@ export type Database = {
           content_hash?: string | null
           created_at?: string
           drafts?: Json | null
+          drive_file_id?: string | null
+          drive_modified_at?: string | null
+          drive_url?: string | null
           essay_group?: string | null
           essay_prompt?: string | null
           feedback?: Json | null
@@ -628,13 +631,10 @@ export type Database = {
           seq?: number
           size_bytes?: number | null
           sorted_by?: string | null
+          source?: string | null
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
-          source?: string | null
-          drive_file_id?: string | null
-          drive_url?: string | null
-          drive_modified_at?: string | null
           student_link_id?: string | null
           target?: string | null
           task_id?: string | null
@@ -691,39 +691,6 @@ export type Database = {
             referencedColumns: ["firm_id", "id"]
           },
         ]
-      }
-      google_connections: {
-        Row: {
-          connected_at: string
-          firm_id: string
-          google_address: string
-          last_error: string | null
-          refresh_token_encrypted: string
-          scopes: string[]
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          connected_at?: string
-          firm_id: string
-          google_address: string
-          last_error?: string | null
-          refresh_token_encrypted: string
-          scopes?: string[]
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          connected_at?: string
-          firm_id?: string
-          google_address?: string
-          last_error?: string | null
-          refresh_token_encrypted?: string
-          scopes?: string[]
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
       firm_members: {
         Row: {
@@ -789,6 +756,47 @@ export type Database = {
           weekly_text_day?: number
         }
         Relationships: []
+      }
+      google_connections: {
+        Row: {
+          connected_at: string
+          firm_id: string
+          google_address: string
+          last_error: string | null
+          refresh_token_encrypted: string
+          scopes: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          firm_id: string
+          google_address: string
+          last_error?: string | null
+          refresh_token_encrypted: string
+          scopes?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          firm_id?: string
+          google_address?: string
+          last_error?: string | null
+          refresh_token_encrypted?: string
+          scopes?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_connections_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meetings: {
         Row: {
@@ -1302,7 +1310,22 @@ export type Database = {
           sync_state?: Json
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "student_drive_folders_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_drive_folders_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       student_links: {
         Row: {
