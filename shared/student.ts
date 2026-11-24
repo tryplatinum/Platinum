@@ -28,5 +28,32 @@ export const STUDENT_WRITE = z.discriminatedUnion('action', [
 
 export type StudentWrite = z.infer<typeof STUDENT_WRITE>
 
+/**
+ * Adding a file from the link, in two steps. The file itself never passes
+ * through the server function: start_upload returns a one-time upload token for
+ * one exact path, and the browser sends the file straight to storage.
+ */
+export const STUDENT_UPLOAD = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('start_upload'),
+    filename: z.string().min(1).max(300),
+    /** The size and type the browser reports. Both are checked again against the real file. */
+    size: z.number().int().positive(),
+    type: z.string().max(200),
+    today: isoDate,
+  }),
+  z.object({ action: z.literal('finish_upload'), documentId: z.uuid() }),
+])
+
+export type StudentUpload = z.infer<typeof STUDENT_UPLOAD>
+
+/** What start_upload answers with. */
+export interface StudentUploadTicket {
+  documentId: string
+  path: string
+  /** Good for one upload to that path. */
+  token: string
+}
+
 /** Tokens are 32 random bytes in base64url: 43 characters. */
 export const STUDENT_TOKEN = z.string().regex(/^[A-Za-z0-9_-]{43}$/)

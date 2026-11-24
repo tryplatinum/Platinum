@@ -7,6 +7,8 @@
 import type { ISODate } from './lib/dates'
 
 export type ID = string
+/** A moment, as an ISO string ending in Z. */
+export type ISODateTime = string
 
 export type Language = 'en' | 'zh-Hans' | 'zh-Hant'
 export type Channel = 'email' | 'wechat' | 'line' | 'text'
@@ -224,12 +226,21 @@ export interface CollegeApp {
   id: ID
   studentId: ID
   name: string
-  plan: ApplicationPlan
-  deadline: ISODate
+  /** Not set yet on a college added from the directory or from a draft. */
+  plan?: ApplicationPlan
+  /** Not set yet on a college added from the directory or from a draft. */
+  deadline?: ISODate
   status: CollegeStatus
-  fit: 'Reach' | 'Target' | 'Likely'
+  fit: CollegeFit
   note?: string
+  /** The college_directory row this is linked to (the federal UNITID). Absent on free-text rows. */
+  directoryUnitid?: number
+  /** Why it has the band it has, in words. */
+  fitReason?: string
+  fitSetBy?: 'rule' | 'counselor'
 }
+
+export type CollegeFit = 'Reach' | 'Target' | 'Likely'
 
 // ── Documents and essays ────────────────────────────────────────────────────
 
@@ -266,11 +277,13 @@ export interface EssayFeedback {
 }
 
 /**
- * A file, a link, or an essay. `kind: 'essay'` documents carry the essay
- * fields and live in the Essays tab; everything else is filed by `category`.
+ * A stored file, a link, or an essay. `kind: 'essay'` documents carry the essay
+ * fields and live in the Essays tab. A stored file has `storagePath` and
+ * `fileStatus` and is filed under a folder (`typeId`).
  */
 export interface StudentDocument {
   id: ID
+  /** '' only on a counselor's upload that has not been given a student yet (it is waiting to be filed). */
   studentId: ID
   name: string
   kind: DocumentKind
@@ -293,6 +306,243 @@ export interface StudentDocument {
   /** Oldest first. The last entry is the current draft. Word count is computed from it. */
   drafts?: EssayDraft[]
   feedback?: EssayFeedback
+
+  // Stored files only (see "Files" below). Absent on essays and on older name-or-link rows,
+  // except typeId, which older rows also have so they group under a folder.
+  typeId?: ID
+  title?: string
+  originalFilename?: string
+  /** {firm_id}/{student_id or _}/{document_id}/{safe name}. Set once, never changed. */
+  storagePath?: string
+  sizeBytes?: number
+  mimeType?: string
+  /** Hex SHA-256 of the file. */
+  contentHash?: string
+  collegeId?: ID
+  schoolYear?: string
+  uploadedByKind?: 'counselor' | 'student_link'
+  uploadedByUser?: ID
+  /** The student link a file was dropped through. Absent on counselor uploads and on older drops. */
+  studentLinkId?: ID
+  fileStatus?: FileStatus
+  sortedBy?: 'person' | 'auto'
+  needsCheck?: boolean
+  aiSuggestion?: FileSuggestion
+  /** When a counselor first opened it. Absent shows as "New". */
+  openedAt?: ISODateTime
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+/** uploading: the row exists, the file is on its way. sorting: the AI is deciding. suggested: waiting for a counselor. filed: under a folder. */
+export type FileStatus = 'uploading' | 'sorting' | 'suggested' | 'filed'
+
+/** standard: any member of the firm. restricted and firm_only: the firm's owner only, once filed. */
+export type FolderSensitivity = 'standard' | 'restricted' | 'firm_only'
+
+/** A folder files are sorted into. The database calls it a document type; the interface always says "folder". */
+export interface DocumentType {
+  id: ID
+  name: string
+  /** One line. Shown to counselors and given to the model that sorts files. */
+  description: string
+  sensitivity: FolderSensitivity
+  position: number
+  /** Archived folders take no new files. Files already in them stay. */
+  archivedAt?: ISODateTime
+}
+
+/** What the model proposed for a file. Kept after filing. */
+export interface FileSuggestion {
+  typeId: ID
+  title: string
+  schoolYear?: string
+  /** The name printed on the document, if any. The model never picks a student: code matches this to the roster. */
+  studentName?: string
+  reason: string
+  /** Up to two other folders it could be. */
+  alternatives: ID[]
+  sure: boolean
+  model: string
+  at: ISODateTime
+}
+
+export type DocumentAction = 'uploaded' | 'auto_sorted' | 'suggested' | 'approved' | 'typed' | 'renamed' | 'viewed' | 'downloaded' | 'deleted'
+
+/** One line of a document's log. Insert only. */
+export interface DocumentEvent {
+  id: ID
+  documentId: ID
+  actorKind: 'counselor' | 'student_link' | 'system'
+  actorUser?: ID
+  action: DocumentAction
+  detail: Record<string, unknown>
+  at: ISODateTime
+}
+
+// ── College directory and list drafts ───────────────────────────────────────
+
+export type TestPolicy = 'required' | 'optional' | 'not_required' | 'blind' | 'unknown'
+
+/** Where a group of figures came from and which year it describes. */
+export interface DataSource {
+  source: string
+  year: string
+}
+
+/** One institution in the shared directory. A missing figure is absent, never 0. */
+export interface DirectoryCollege {
+  unitid: number
+  name: string
+  aliases: string[]
+  city?: string
+  state?: string
+  region?: string
+  lat?: number
+  lon?: number
+  url?: string
+  control?: 'public' | 'private_nonprofit' | 'private_for_profit'
+  level?: string
+  locale?: string
+  undergradSize?: number
+  /** 0 to 1. */
+  admitRate?: number
+  satEbrw25?: number
+  satEbrw50?: number
+  satEbrw75?: number
+  satMath25?: number
+  satMath50?: number
+  satMath75?: number
+  act25?: number
+  act50?: number
+  act75?: number
+  pctSubmittingSat?: number
+  pctSubmittingAct?: number
+  testPolicy?: TestPolicy
+  tuitionInState?: number
+  tuitionOutOfState?: number
+  avgNetPrice?: number
+  /** 0 to 1. */
+  completionRate?: number
+  medianEarnings?: number
+  openAdmissions?: boolean
+  isActive: boolean
+  /** Keyed by field group: admissions, tests, cost, outcomes, ... */
+  sources: Record<string, DataSource>
+}
+
+/** Undergraduates: small is under 5,000, medium 5,000 to 14,999, large 15,000 or more (SIZE_BANDS in lib/collegeBands.ts). */
+export type SizeBand = 'small' | 'medium' | 'large'
+
+/** How many colleges a draft aims for in each band. */
+export type ListMix = Record<CollegeFit, number>
+
+/** A directory college named in a draft's preferences. The name is kept so the form can show it without a lookup. */
+export interface CollegeRef {
+  unitid: number
+  name: string
+}
+
+/**
+ * What the counselor asked for in a draft list. Every field is optional: an
+ * empty filter means "any". normalizePreferences in lib/collegeListDraft.ts
+ * fills in the defaults.
+ */
+export interface CollegeListPreferences {
+  /** Intended majors as typed, for the AI to read. The filter itself is `programs`. */
+  majors?: string[]
+  /** Bachelor's programs a college must offer at least one of, by four-digit CIP code. */
+  programs?: { cipCode: string; cipTitle: string }[]
+  /** Two-letter state codes. A college passes when it is in one of these states or one of `regions`. */
+  states?: string[]
+  regions?: string[]
+  control?: ('public' | 'private_nonprofit' | 'private_for_profit')[]
+  sizes?: SizeBand[]
+  /** Highest average net price, in dollars. Colleges with none on record are left out when set. */
+  maxNetPrice?: number
+  /** Open-admission colleges are left out unless this is true. */
+  includeOpenAdmission?: boolean
+  mix?: ListMix
+  /** Always in the draft, banded by the same rules, even when they fail a filter. */
+  mustInclude?: CollegeRef[]
+  exclude?: CollegeRef[]
+}
+
+/** Which rule in lib/collegeBands.ts placed a college in its band. */
+export type BandRule = 'admit_rate_under_reach' | 'at_or_above_75th' | 'below_25th' | 'between' | 'admit_rate_alone' | 'open_admission' | 'no_figures'
+
+/**
+ * The figures and the rule behind a band, computed in code (bandCollege in
+ * lib/collegeBands.ts), never by the model. `summary` is the "why this band"
+ * line; it is copied to the list row as its fit reason when the draft is added.
+ */
+export interface FitBasis {
+  summary?: string
+  /** True when the band rests on less than the full rule: no test score on file, or figures the college did not report. */
+  limitedData?: boolean
+  /** What was missing, in words. */
+  limitedReason?: string
+  rule?: BandRule
+  /** The band the rule gave. Differs from the item's band once a counselor has changed it. */
+  ruleFit?: CollegeFit
+  /** The rule's own "why" line, kept when a counselor changes the band. */
+  ruleSummary?: string
+  /** The student's figures the rule read. The GPA is recorded for context only: no rule uses it. */
+  student?: { test?: 'SAT' | 'ACT'; score?: number; gpa?: number; gpaWeighted?: number }
+  /** The college's figures the rule read. test25 and test75 are for the same test as the student's score. */
+  college?: { admitRate?: number; openAdmissions?: boolean; test25?: number; test75?: number }
+  /** The data year of each figure above. */
+  years?: { admissions?: string; tests?: string }
+  /** The thresholds in force when the band was set. */
+  thresholds?: Record<string, number>
+  /** Titles of the college's programs that matched the draft's program filter. */
+  programs?: string[]
+  /** Set on a college the counselor added to the draft from the directory. */
+  addedBy?: 'counselor'
+}
+
+/** What a draft's `source` also records about how it was made. All counts are ours, not the model's. */
+export interface ListDraftRun {
+  at?: ISODateTime
+  /** Colleges that passed the filters. */
+  matched?: number
+  /** Of those, how many were banded and shown to the model (at most 300). */
+  considered?: number
+  /** Model reasons thrown away by the server's check. */
+  rejectedReasons?: number
+  /** Colleges added with the stock reason because too few of the model's picks survived. */
+  filled?: number
+  /** True when the model was asked a second time. */
+  askedTwice?: boolean
+}
+
+export interface CollegeListDraft {
+  id: ID
+  studentId: ID
+  createdBy?: ID
+  preferences: CollegeListPreferences
+  /** The model's one overall note. */
+  note?: string
+  source?: AiSource
+  status: 'draft' | 'approved' | 'discarded'
+  approvedBy?: ID
+  approvedByName?: string
+  approvedAt?: ISODateTime
+  createdAt: ISODateTime
+}
+
+export interface CollegeListDraftItem {
+  id: ID
+  draftId: ID
+  unitid: number
+  fit: CollegeFit
+  fitBasis: FitBasis
+  fitSetBy: 'rule' | 'counselor'
+  reason: string
+  /** False when the reason is the stock "Matches your filters", not the model's. */
+  aiExplained: boolean
+  kept: boolean
+  position: number
 }
 
 // ── Meetings and AI drafts ──────────────────────────────────────────────────
@@ -541,6 +791,8 @@ export interface Firm {
   name: string
   /** The day each week's texts to students start: 0 = Sunday … 6 = Saturday. */
   weeklyTextDay: number
+  /** "Sort files automatically". Off: uploads land under Other to be checked, and nothing is sent to the model. */
+  sortFilesAutomatically: boolean
   counselorName: string
   counselorFirstName: string
 }
@@ -560,4 +812,9 @@ export interface AppData {
   weeklyTexts: WeeklyText[]
   /** Oldest first. */
   personalNotes: PersonalNote[]
+  /** The firm's folders, in the firm's order. */
+  documentTypes: DocumentType[]
+  /** Oldest first. */
+  collegeListDrafts: CollegeListDraft[]
+  collegeListDraftItems: CollegeListDraftItem[]
 }

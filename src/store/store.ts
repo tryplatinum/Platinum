@@ -47,6 +47,8 @@ import type {
   WeeklyText,
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
+import { clearStoredFiles, fileActions, type FileActions } from './files'
+import { listDraftActions, type ListDraftActions } from './listDrafts'
 
 /** Where versions before accounts kept everything. Read once, to offer an import. */
 const LEGACY_STORAGE_KEY = 'platinum-v0'
@@ -97,9 +99,11 @@ interface Actions {
   /** Adds the invented sample caseload to the firm, with dates relative to today. */
   loadSample: () => void
   /** Deletes the firm's data and loads the sample caseload again. */
-  resetDemo: () => void
+  /** Resolves true once the caseload is replaced, false when it was refused or failed (nothing changed, and the person was told why). */
+  resetDemo: () => Promise<boolean>
   /** Deletes the firm's data, for a counselor entering their own students. */
-  startEmpty: () => void
+  /** As resetDemo: true once the caseload is cleared, false when nothing was changed. */
+  startEmpty: () => Promise<boolean>
   /** True when this browser still holds data saved by a version before accounts. */
   hasLegacyData: () => boolean
   /** Copies that saved data into the firm, then removes it from the browser. */
@@ -108,7 +112,12 @@ interface Actions {
   /** Makes a secret link for a student and returns its token. The token cannot be read again later. */
   createStudentLink: (studentId: ID) => Promise<string>
   revokeStudentLink: (linkId: ID) => Promise<void>
-  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay'>>) => void
+  updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay' | 'sortFilesAutomatically'>>) => void
+  /**
+   * Takes in rows the server has already saved (a file it sorted, a draft list it made):
+   * memory changes, nothing is written back. Never use it for a change the person made.
+   */
+  absorb: (fn: (data: AppData) => AppData) => void
 
   // Students and families
   addStudent: (student: NewStudent) => ID
@@ -205,6 +214,12 @@ interface Actions {
    */
   sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
 }
+
+/** Stored files and folders: see store/files.ts. Their rows are changed through the server and taken in with `absorb`. */
+interface Actions extends FileActions {}
+
+/** Draft college lists: see store/listDrafts.ts. */
+interface Actions extends ListDraftActions {}
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
@@ -312,6 +327,9 @@ function emptyData(firm: Firm): AppData {
     activity: [],
     weeklyTexts: [],
     personalNotes: [],
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }
 
@@ -332,7 +350,10 @@ function merged(base: AppData, add: AppData): AppData {
   }
 }
 
-const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, counselorName: '', counselorFirstName: '' }
+/** Why the caseload was not cleared. A refusal over owner-only files already says nothing was changed. */
+const notCleared = (error: unknown) => (/Nothing was changed\.$/.test(reasonOf(error)) ? reasonOf(error) : `Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`)
+
+const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, sortFilesAutomatically: true, counselorName: '', counselorFirstName: '' }
 
 // ── Writing changes to the database ─────────────────────────────────────────
 // Writes run one at a time, in the order the changes were made.
@@ -429,7 +450,8 @@ export const useStore = create<State & Actions>()((set, get) => {
   /** Replaces or extends the firm's data in one transaction. */
   const install = (add: AppData | undefined, clear: boolean) => {
     const before = get().data
-    const base = clear ? emptyData(before.firm) : before
+    // Clearing removes the caseload. The firm's folders are settings and stay.
+    const base = clear ? { ...emptyData(before.firm), documentTypes: before.documentTypes } : before
     const after = add ? merged(base, add) : base
     const changes: Changes = (add && diffData(emptyData(before.firm), merged(emptyData(before.firm), add))) || { upsert: {}, delete: {} }
     changes.clear = clear
@@ -477,14 +499,45 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (quiet && (startedAt !== revision || pendingWrites > 0)) return
         if (get().account.status !== 'ready' || get().mode !== 'firm') return
         set({ data, studentLinks, load: 'ready', loadError: undefined })
+        // Files still being sorted when this loaded: bring them up to date, and let the server finish any it was cut off on.
+        void get().refreshFiles()
       } catch (error) {
         if (!quiet) set({ load: 'error', loadError: reasonOf(error) })
       }
     },
 
-    loadSample: () => install(sample(), false),
-    resetDemo: () => install(sample(), true),
-    startEmpty: () => install(undefined, true),
+    // The sample's invented PDFs are uploaded once its students are saved. Clearing the
+    // caseload first removes every stored file through the server (objects, then rows):
+    // apply_changes removes rows only and would leave the objects behind.
+    loadSample: () => {
+      const data = sample()
+      install(data, false)
+      void writes.then(() => get().addSampleFiles(data.students))
+    },
+    resetDemo: () =>
+      clearStoredFiles(get()).then(
+        () => {
+          const data = sample()
+          install(data, true)
+          void writes.then(() => get().addSampleFiles(data.students))
+          return true
+        },
+        (error) => {
+          notify(notCleared(error))
+          return false
+        },
+      ),
+    startEmpty: () =>
+      clearStoredFiles(get()).then(
+        () => {
+          install(undefined, true)
+          return true
+        },
+        (error) => {
+          notify(notCleared(error))
+          return false
+        },
+      ),
 
     hasLegacyData: () => legacyData() !== undefined,
     importLegacyData: () => {
@@ -506,6 +559,14 @@ export const useStore = create<State & Actions>()((set, get) => {
     revokeStudentLink: async (linkId) => {
       await revokeStudentLink(linkId)
       set((s) => ({ studentLinks: s.studentLinks.filter((l) => l.id !== linkId) }))
+    },
+
+    absorb: (fn) => {
+      const before = get().data
+      const after = fn(before)
+      if (after === before || get().mode === 'student_link') return
+      revision++
+      set({ data: after })
     },
 
     updateFirm: (firm) =>
@@ -664,7 +725,14 @@ export const useStore = create<State & Actions>()((set, get) => {
 
     updateDocument: (docId, patch) => change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, ...patch })) })),
 
-    removeDocument: (docId) => change((data) => ({ ...data, documents: data.documents.filter((d) => d.id !== docId) })),
+    removeDocument: (docId) => {
+      // A stored file goes through the server, which removes the object and the row together.
+      if (get().data.documents.find((d) => d.id === docId)?.storagePath) {
+        get().deleteFile(docId).catch((error) => notify(`That file was not deleted. ${reasonOf(error)}`))
+        return
+      }
+      change((data) => ({ ...data, documents: data.documents.filter((d) => d.id !== docId) }))
+    },
 
     saveEssayDraft: (docId, text, asNew) =>
       change((data) => ({
@@ -1057,6 +1125,10 @@ export const useStore = create<State & Actions>()((set, get) => {
       }),
 
     sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
+
+    ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
+
+    ...listDraftActions({ get, absorb: (fn) => get().absorb(fn), change, saved: () => writes }),
   }
 })
 

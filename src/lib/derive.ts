@@ -153,10 +153,11 @@ export interface Deadline {
 export const collegeIsPending = (c: CollegeApp) => c.status === 'considering' || c.status === 'in_progress'
 
 /** "NYU (Tandon) ED2", but plain "UC Berkeley" when the plan is just the UC application. */
-export const collegeLabel = (c: CollegeApp) => (c.plan === 'UC' ? c.name : `${c.name} ${c.plan}`)
+export const collegeLabel = (c: CollegeApp) => (!c.plan || c.plan === 'UC' ? c.name : `${c.name} ${c.plan}`)
 
 export function collegesFor(data: AppData, studentId: ID): CollegeApp[] {
-  return data.colleges.filter((c) => c.studentId === studentId).sort((a, b) => a.deadline.localeCompare(b.deadline))
+  // Colleges with no deadline set yet come last.
+  return data.colleges.filter((c) => c.studentId === studentId).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999'))
 }
 
 /** Open tasks and unsubmitted applications, soonest first. Includes late tasks. UC campuses count as one application. */
@@ -167,6 +168,8 @@ export function deadlinesFor(data: AppData, studentId: ID): Deadline[] {
     .map((t) => ({ id: t.id, studentId, date: t.dueDate, label: t.title, kind: 'task', late: isLate(t, today) }))
   const fromColleges: Deadline[] = []
   for (const c of collegesFor(data, studentId).filter(collegeIsPending)) {
+    // A college with no deadline set yet has nothing to count down to.
+    if (!c.deadline) continue
     const label = c.plan === 'UC' ? 'UC application' : `${collegeLabel(c)} application`
     if (!fromColleges.some((d) => d.label === label && d.date === c.deadline)) {
       fromColleges.push({ id: c.id, studentId, date: c.deadline, label, kind: 'college', late: c.deadline < today })
@@ -436,9 +439,9 @@ export function summarize(data: AppData, student: Student): StudentSummary {
   const blockedOnParent = late.find((t) => t.owner === 'parent')
   if (blockedOnParent) reasons.push(`Waiting on ${ownerLabel(blockedOnParent, student)}: ${blockedOnParent.title}`)
   const soonCollege = collegesFor(data, student.id).find(
-    (c) => collegeIsPending(c) && daysBetween(today, c.deadline) >= 0 && daysBetween(today, c.deadline) <= COLLEGE_DEADLINE_WARNING_DAYS,
+    (c) => collegeIsPending(c) && c.deadline !== undefined && daysBetween(today, c.deadline) >= 0 && daysBetween(today, c.deadline) <= COLLEGE_DEADLINE_WARNING_DAYS,
   )
-  if (soonCollege) {
+  if (soonCollege?.deadline) {
     const n = daysFromToday(soonCollege.deadline)
     reasons.push(`${collegeLabel(soonCollege)} application due ${n === 0 ? 'today' : `in ${n} ${n === 1 ? 'day' : 'days'}`}`)
   }

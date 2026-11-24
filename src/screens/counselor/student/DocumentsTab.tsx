@@ -1,95 +1,102 @@
-// A student's files and links, filed by category. Essay drafts are not listed
-// here: they live in the Essays tab. v0 records names and links only; no file
-// is stored.
+// A student's files, grouped by folder in the firm's order. Files a counselor
+// or the student uploaded are stored for real; older rows are a name or a link
+// only. Essay drafts are not listed here: they live in the Essays tab.
+//
+// A counselor's upload appears here only once a person has filed it. Until
+// then it waits on the firm-wide Documents screen.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FileRow } from '../../../components/files/FileRow'
+import { UploadWindow, useFileDrop } from '../../../components/files/UploadWindow'
 import { ReminderComposer } from '../../../components/ReminderComposer'
-import { Button, Card, CardHeader, Empty, FilterChips, Pill, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { Button, Card, CardHeader, Empty, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
-import { DOC_CATEGORIES, daysLate, documentsByCategory, documentsFor, fileType, missingRequestedDocuments, ownerLabel } from '../../../lib/derive'
+import { daysLate, missingRequestedDocuments, ownerLabel } from '../../../lib/derive'
+import { catchAllFolder, folderOf, foldersInOrder, isSorting, isWaiting, needsCheck, openFolders, studentFiles } from '../../../lib/files'
 import { useData, useStore } from '../../../store/store'
-import type { Actor, DocCategory, Student } from '../../../types'
-
-type Filter = DocCategory | 'all'
+import type { Student } from '../../../types'
 
 export default function DocumentsTab({ student }: { student: Student }) {
   const data = useData()
-  const { addDocument, removeDocument, updateDocument } = useStore.getState()
-  const [filter, setFilter] = useState<Filter>('all')
-  const [adding, setAdding] = useState<DocCategory>()
+  const { addDocument, refreshFiles } = useStore.getState()
+  const [uploading, setUploading] = useState<File[]>()
+  const [linking, setLinking] = useState(false)
   const [reminding, setReminding] = useState<string>()
-  const [f, setF] = useState({ name: '', url: '' })
-  const docs = documentsFor(data, student.id)
-  const groups = documentsByCategory(docs)
+  const [f, setF] = useState({ name: '', url: '', typeId: '' })
+  const docs = studentFiles(data, student.id)
   const missing = missingRequestedDocuments(data, student.id)
-  const who = (by: Actor) => (by === 'student' ? student.firstName : by === 'parent' ? 'Parent' : 'You')
-  const taskTitle = (id?: string) => data.tasks.find((t) => t.id === id)?.title
+  const sorting = docs.filter(isSorting)
+  const toCheck = docs.filter(needsCheck)
+  const other = catchAllFolder(data)
+  const waiting = data.documents.filter((d) => isWaiting(d) && d.studentId === student.id).length
+  const drop = useFileDrop((files) => setUploading(files))
 
-  const addForm = (category: DocCategory) => (
-    <form
-      className="flex flex-wrap items-end gap-3 rounded-lg bg-canvas p-4"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!f.name.trim()) return
-        addDocument({ studentId: student.id, name: f.name.trim(), kind: 'other', category, addedBy: 'counselor', url: f.url.trim() || undefined })
-        setF({ name: '', url: '' })
-        setAdding(undefined)
-      }}
-    >
-      <label className="min-w-[12rem] flex-1">
-        <SectionLabel className="mb-1">Name</SectionLabel>
-        <input className={cx(inputBase, 'w-full')} autoFocus required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Transcript, grades 9 to 11.pdf" />
-      </label>
-      <label className="min-w-[12rem] flex-1">
-        <SectionLabel className="mb-1">Link (optional)</SectionLabel>
-        <input className={cx(inputBase, 'w-full')} type="url" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} placeholder="https://…" />
-      </label>
-      <label>
-        <SectionLabel className="mb-1">Category</SectionLabel>
-        <select className={inputBase} value={category} onChange={(e) => setAdding(e.target.value as DocCategory)}>
-          {DOC_CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-canvas">
-        <input
-          type="file"
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) setF({ ...f, name: file.name })
-            e.target.value = ''
-          }}
-        />
-        Choose a file
-      </label>
-      <Button onClick={() => setAdding(undefined)}>Cancel</Button>
-      <Button type="submit" variant="primary">
-        Add
-      </Button>
-      <p className="w-full text-xs text-muted">v0 records the file’s name only. The file itself is not uploaded or stored.</p>
-    </form>
-  )
+  // A student's upload shows as "Sorting…" until the AI has filed it: look again every few seconds while one is.
+  useEffect(() => {
+    if (sorting.length === 0) return
+    const timer = setInterval(() => void refreshFiles(), 4000)
+    return () => clearInterval(timer)
+  }, [sorting.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every folder that holds something, in the firm's order. An older row with no folder goes by its category.
+  const filed = docs.filter((d) => !isSorting(d) && !needsCheck(d))
+  const groups = foldersInOrder(data)
+    .map((folder) => ({ folder, docs: filed.filter((d) => folderOf(data, d)?.id === folder.id) }))
+    .filter((g) => g.docs.length > 0)
 
   return (
-    <>
+    <div {...drop.handlers} className={cx('flex flex-col gap-6 rounded-xl', drop.over && 'outline-2 outline-dashed outline-offset-4 outline-accent')}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <FilterChips
-          label="Filter by category"
-          value={filter}
-          onChange={setFilter}
-          options={[{ value: 'all' as Filter, label: 'All', count: docs.length }, ...groups.map((g) => ({ value: g.category as Filter, label: g.label, count: g.docs.length }))]}
-        />
-        <Button variant="primary" onClick={() => setAdding(filter === 'all' ? 'academic' : filter)}>
-          Upload or add a link
-        </Button>
+        <p className="text-sm text-muted">Drop files anywhere on this tab, or use the button.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setLinking(!linking)} aria-expanded={linking}>
+            Add a link
+          </Button>
+          <Button variant="primary" onClick={() => setUploading([])}>
+            Upload files
+          </Button>
+        </div>
       </div>
 
-      {adding && addForm(adding)}
+      {uploading && <UploadWindow studentId={student.id} initialFiles={uploading} onClose={() => setUploading(undefined)} />}
+
+      {linking && (
+        <form
+          className="flex flex-wrap items-end gap-3 rounded-lg bg-canvas p-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!f.name.trim()) return
+            addDocument({ studentId: student.id, name: f.name.trim(), kind: 'other', category: 'other', addedBy: 'counselor', url: f.url.trim() || undefined, typeId: f.typeId || other?.id })
+            setF({ name: '', url: '', typeId: '' })
+            setLinking(false)
+          }}
+        >
+          <label className="min-w-[12rem] flex-1">
+            <SectionLabel className="mb-1">Name</SectionLabel>
+            <input className={cx(inputBase, 'w-full')} autoFocus required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Common App essay (Google Doc)" />
+          </label>
+          <label className="min-w-[12rem] flex-1">
+            <SectionLabel className="mb-1">Link</SectionLabel>
+            <input className={cx(inputBase, 'w-full')} type="url" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} placeholder="https://…" />
+          </label>
+          <label>
+            <SectionLabel className="mb-1">Folder</SectionLabel>
+            <select className={inputBase} value={f.typeId || other?.id || ''} onChange={(e) => setF({ ...f, typeId: e.target.value })}>
+              {openFolders(data).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button onClick={() => setLinking(false)}>Cancel</Button>
+          <Button type="submit" variant="primary">
+            Add
+          </Button>
+          <p className="w-full text-xs text-muted">A link is recorded as it is; nothing is copied from it. To store a file, use “Upload files”.</p>
+        </form>
+      )}
 
       {missing.length > 0 && (
         <Card tone="bad" className="flex flex-col gap-3 p-5">
@@ -122,56 +129,63 @@ export default function DocumentsTab({ student }: { student: Student }) {
         </Card>
       )}
 
-      {docs.length === 0 && !adding ? (
+      {waiting > 0 && (
+        <Card tone="accent" className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <p className="text-sm">
+            {waiting} uploaded {waiting === 1 ? 'file is' : 'files are'} waiting to be filed for {student.firstName}. {waiting === 1 ? 'It shows' : 'They show'} here once filed.
+          </p>
+          <Link to={`/app/documents?student=${student.id}`} className="text-sm font-semibold text-accent underline">
+            Open “Waiting for you”
+          </Link>
+        </Card>
+      )}
+
+      {toCheck.length > 0 && (
         <Card>
-          <Empty title={`No documents for ${student.firstName} yet. Add a transcript, a score report or a link. Files a student attaches to a task are filed here too.`}>
-            <Button variant="primary" onClick={() => setAdding('academic')}>
-              Upload or add a link
+          <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed by the AI when it was not sure, or put under a catch-all folder. Move each one, or say it is in the right place." />
+          <ul>
+            {toCheck.map((d) => (
+              <FileRow key={d.id} doc={d} showFolder />
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {sorting.length > 0 && (
+        <Card>
+          <CardHeader className="px-5 py-4" title={`Just added by ${student.firstName}`} count={sorting.length} />
+          <ul>
+            {sorting.map((d) => (
+              <FileRow key={d.id} doc={d} />
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {docs.length === 0 ? (
+        <Card>
+          <Empty title={`No documents for ${student.firstName} yet. Upload a transcript or a score report, or add a link. Files ${student.firstName} adds from their own link are sorted into folders here.`}>
+            <Button variant="primary" onClick={() => setUploading([])}>
+              Upload files
             </Button>
           </Empty>
         </Card>
       ) : (
-        groups
-          .filter((g) => (filter === 'all' ? g.docs.length > 0 : g.category === filter))
-          .map((g) => (
-            <Card key={g.category}>
-              <CardHeader className="px-5 py-4" title={g.label} count={g.docs.length} action={<Button onClick={() => setAdding(g.category)}>Add</Button>} />
-              {g.docs.length === 0 ? (
-                <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing filed under {g.label.toLowerCase()} yet.</p>
-              ) : (
-                <ul>
-                  {g.docs.map((d) => (
-                    <li key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-5 py-3">
-                      <Pill className="w-12 justify-center rounded-md px-1 text-[11px]">{fileType(d)}</Pill>
-                      <div className="min-w-[12rem] flex-1">
-                        {d.url ? (
-                          <a href={d.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-accent underline">
-                            {d.name}
-                          </a>
-                        ) : (
-                          <span className="text-sm font-semibold">{d.name}</span>
-                        )}
-                        <div className="text-[13px] text-muted">{taskTitle(d.taskId) ? `From the task: ${taskTitle(d.taskId)}` : 'No task'}</div>
-                      </div>
-                      <div className="text-[13px] text-muted">
-                        {who(d.addedBy)} · {formatDate(d.addedOn)}
-                      </div>
-                      <select aria-label={`Category of ${d.name}`} className={inputBase} value={d.category} onChange={(e) => updateDocument(d.id, { category: e.target.value as DocCategory })}>
-                        {DOC_CATEGORIES.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-                      <Button variant="quiet" aria-label={`Remove ${d.name}`} onClick={() => window.confirm(`Remove “${d.name}”?`) && removeDocument(d.id)}>
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          ))
+        groups.map((g) => (
+          <Card key={g.folder.id}>
+            <CardHeader
+              className="px-5 py-4"
+              title={g.folder.name}
+              count={g.docs.length}
+              sub={[g.folder.archivedAt && 'Archived folder: it takes no new files.', g.folder.sensitivity !== 'standard' && 'Only the firm’s owner can open files in this folder.'].filter(Boolean).join(' ') || undefined}
+            />
+            <ul>
+              {g.docs.map((d) => (
+                <FileRow key={d.id} doc={d} />
+              ))}
+            </ul>
+          </Card>
+        ))
       )}
 
       <p className="text-[13px] text-muted">
@@ -179,8 +193,8 @@ export default function DocumentsTab({ student }: { student: Student }) {
         <Link to="?tab=essays" className="font-semibold text-accent underline">
           Essays tab
         </Link>
-        . Anything a student attaches to a task is filed here under the matching category.
+        . A link a student attaches to a task is listed here too.
       </p>
-    </>
+    </div>
   )
 }

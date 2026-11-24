@@ -7,6 +7,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
 import { RequireFirm } from './components/RequireFirm'
 import CommandCenter from './screens/counselor/CommandCenter'
+import Documents from './screens/counselor/Documents'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
@@ -14,6 +15,7 @@ import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
 import { StudentLinkLayout } from './screens/student/StudentLinkLayout'
 import { StudentHome, StudentProfile } from './screens/student/StudentView'
+import ListDraft from './screens/counselor/ListDraft'
 
 // ── Redirects from the v1 URLs, so old links and bookmarks keep working ──
 
@@ -52,6 +54,7 @@ export default function App() {
           <Route path="students/:studentId" element={<StudentPage />} />
           <Route path="meetings" element={<Meetings />} />
           <Route path="messages" element={<Messages />} />
+          <Route path="documents" element={<Documents />} />
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
           <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />
@@ -59,6 +62,7 @@ export default function App() {
           <Route path="notes" element={<Navigate to="/app/meetings?log=1" replace />} />
           <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
           <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />
+          <Route path="students/:studentId/list-draft" element={<ListDraft />} />
         </Route>
 
         <Route path="/student/:studentId" element={<StudentLayout />}>
