@@ -10,7 +10,7 @@
 // Nothing is stored here. The request carries the facts, the response carries
 // the draft, and neither is logged. This function never writes to the database.
 
-import { FEATURES, INPUTS, MAX_REQUEST_BYTES, type AiErrorCode, type AiStatus, type Feature } from '../shared/contract.js'
+import { FEATURES, INPUTS, MAX_REQUEST_BYTES, SERVER_ONLY_FEATURES, type AiErrorCode, type AiStatus, type Feature } from '../shared/contract.js'
 import { AiError, modelName, runFeature } from '../server/claude.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify } from '../server/supabase.js'
@@ -63,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return fail('bad_request', 'The request was not valid JSON.', 400)
   }
-  if (typeof body.feature !== 'string' || !FEATURES.includes(body.feature as Feature)) {
+  if (typeof body.feature !== 'string' || !FEATURES.includes(body.feature as Feature) || SERVER_ONLY_FEATURES.includes(body.feature as Feature)) {
     return fail('bad_request', 'Unknown AI feature.', 400)
   }
   const feature = body.feature as Feature

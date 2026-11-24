@@ -1,8 +1,10 @@
-// Shared UI pieces for the v2 design. Screens compose these instead of styling
-// from scratch. Sizes follow the design: page title 28, section title 18, card
-// title 16, body 14, secondary 13, labels 12. Every click target is at least
-// 44px high. Status is always shown with words, never by colour alone.
+// Shared UI pieces. Screens compose these instead of styling from scratch; the
+// README's "Design system" section has the rules. Sizes: page title 28, section
+// title 18, card title 16 (all Manrope 600), body 14, secondary 13, labels 12.
+// Every click target is at least 44px high. Status is always shown with words,
+// never by colour alone. /app/styleguide renders everything here in each state.
 
+import { Inbox, X, type LucideIcon } from 'lucide-react'
 import { notify, onNotify, type Notice } from '../lib/notify'
 import { outboxStatusLabel } from '../../shared/outbox'
 import { useStore } from '../store/store'
@@ -11,6 +13,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -21,6 +24,7 @@ import { Link, useSearchParams, type LinkProps } from 'react-router-dom'
 import { formatTimestamp, parseISODate, type ISODate } from '../lib/dates'
 import type { StudentStatus, TaskProgress } from '../lib/derive'
 import type { AiSource, Approval, OwnerType, Review } from '../types'
+import { Spark } from './Logo'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -28,11 +32,14 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 
+/** A bordered panel. No shadow: shadows are for things that float. `accent` is the AI panel. */
 export function Card({ children, className, tone }: { children: ReactNode; className?: string; tone?: 'accent' | 'bad' }) {
+  const arrived = useAiArrival() && tone === 'accent'
   return (
     <section
       className={cx(
-        'rounded-xl border',
+        'rounded-card border',
+        arrived && 'motion-fade',
         tone === 'accent' ? 'border-accent-line bg-accent-soft' : tone === 'bad' ? 'border-bad-line bg-bad-tint' : 'border-line bg-surface',
         className,
       )}
@@ -61,9 +68,9 @@ export function CardHeader({
   return (
     <div className={cx('flex flex-wrap items-center justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h2 className={cx('text-ink', size === 'section' ? 'text-lg font-bold' : 'text-base font-semibold')}>
+        <h2 className={size === 'section' ? 'text-lg font-semibold' : 'text-base font-semibold'}>
           {title}
-          {count !== undefined && <span className="ml-1.5 font-medium text-ink-soft">· {count}</span>}
+          {count !== undefined && <span className="nums ml-1.5 font-sans font-medium text-ink-soft">· {count}</span>}
         </h2>
         {sub && <p className="mt-0.5 text-[13px] text-muted">{sub}</p>}
       </div>
@@ -78,7 +85,7 @@ export function PageHeader({ title, above, sub, pill, actions }: { title: ReactN
       <div className="min-w-0">
         {above && <p className="mb-1 text-[13px] text-muted">{above}</p>}
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[28px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+          <h1 className="text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
           {pill}
         </div>
         {sub && <p className="mt-1 text-sm text-muted">{sub}</p>}
@@ -94,9 +101,10 @@ export function SectionLabel({ children, className }: { children: ReactNode; cla
 }
 
 /** An empty list, with the action that fills it. */
-export function Empty({ title, children }: { title: ReactNode; children?: ReactNode }) {
+export function Empty({ title, children, icon: Icon = Inbox }: { title: ReactNode; children?: ReactNode; icon?: LucideIcon }) {
   return (
     <div className="flex flex-col items-center gap-3 px-5 py-8 text-center">
+      <Icon size={20} strokeWidth={1.75} className="text-muted" aria-hidden />
       <p className="text-sm text-muted">{title}</p>
       {children}
     </div>
@@ -107,13 +115,13 @@ export function Empty({ title, children }: { title: ReactNode; children?: ReactN
 
 type Variant = 'primary' | 'secondary' | 'remind' | 'quiet' | 'danger'
 
-const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 const BUTTON_VARIANT: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent-hover',
-  secondary: 'border border-line-strong bg-surface text-ink hover:bg-canvas',
+  primary: 'bg-primary text-on-primary hover:bg-primary-hover',
+  secondary: 'border border-line-strong bg-surface text-heading hover:bg-surface-2',
   remind: 'border border-accent bg-surface text-accent hover:bg-accent-soft',
   quiet: 'text-accent hover:bg-accent-soft',
-  danger: 'border border-bad-line bg-surface text-bad hover:bg-bad-tint',
+  danger: 'border border-bad bg-surface text-bad hover:bg-bad-tint',
 }
 
 export function Button({ variant = 'secondary', className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
@@ -125,9 +133,9 @@ export function LinkButton({ variant = 'secondary', className, ...rest }: LinkPr
   return <Link {...rest} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)} />
 }
 
-/** Input styling without a width. */
+/** Input styling without a width. Focus shows a 2px accent ring and the border changes with it. */
 export const inputBase =
-  'min-h-11 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none disabled:bg-canvas'
+  'min-h-11 rounded-control border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:bg-surface-2'
 /** Full-width input. */
 export const inputClass = `${inputBase} w-full`
 /** Textareas need vertical padding that a fixed-height input does not. */
@@ -185,7 +193,17 @@ export function AiTag({ source, children }: { source?: AiSource; children?: Reac
       </span>
     )
   }
-  return <Pill tone="accent">{children ?? (source ? `AI draft · ${source.model}` : 'AI draft')}</Pill>
+  return (
+    <Pill tone="accent" className="pl-1">
+      <AiSpark />
+      {children ?? (source ? `AI draft · ${source.model}` : 'AI draft')}
+    </Pill>
+  )
+}
+
+/** The spark beside an AI tag. It turns once when the draft has just arrived, and is still otherwise. */
+function AiSpark() {
+  return <Spark size={14} motion={useAiArrival() ? 'turn' : undefined} />
 }
 
 /** One line explaining a placeholder, for the top of a draft. */
@@ -200,7 +218,9 @@ export function PlaceholderNote({ source }: { source?: AiSource }) {
 
 /** The review state of an AI draft. */
 export function ReviewTag({ review, approvedLabel = 'Approved' }: { review: Review; approvedLabel?: string }) {
-  if (review === 'approved') return <Pill tone="good">{approvedLabel}</Pill>
+  // Fades in when a draft is approved while it is on screen, not for drafts approved earlier.
+  const first = useRef(review)
+  if (review === 'approved') return <Pill tone="good" className={first.current !== 'approved' ? 'motion-fade' : undefined}>{approvedLabel}</Pill>
   if (review === 'dismissed') return <Pill tone="neutral">Dismissed</Pill>
   return <Pill tone="accent">Needs approval</Pill>
 }
@@ -231,9 +251,9 @@ export function AiErrorNote({ message }: { message?: string }) {
 export function DateChip({ date, tone = 'neutral' }: { date: ISODate; tone?: Tone }) {
   const d = parseISODate(date)
   return (
-    <div className={cx('min-w-[60px] shrink-0 rounded-lg px-2 py-1.5 text-center', TONE[tone])}>
+    <div className={cx('nums min-w-[60px] shrink-0 rounded-control px-2 py-1.5 text-center', TONE[tone])}>
       <div className="text-[11px] font-semibold uppercase">{d.toLocaleDateString('en-US', { month: 'short' })}</div>
-      <div className="text-xl font-bold leading-none">{d.getDate()}</div>
+      <div className="text-xl font-semibold leading-none">{d.getDate()}</div>
     </div>
   )
 }
@@ -242,7 +262,7 @@ function Bar({ progress, status }: { progress: TaskProgress; status: StudentStat
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
   return (
     <div role="img" aria-label={`${progress.done} of ${progress.total} tasks done`} className="h-2 overflow-hidden rounded-full bg-track">
-      <div className={cx('h-2', STATUS_BAR[status])} style={{ width: `${pct}%` }} />
+      <div className={cx('motion-progress h-2', STATUS_BAR[status])} style={{ width: `${pct}%` }} />
     </div>
   )
 }
@@ -251,7 +271,7 @@ function Bar({ progress, status }: { progress: TaskProgress; status: StudentStat
 export function ProgressWithCount({ progress, status, text, long = false }: { progress: TaskProgress; status: StudentStatus; text: string; long?: boolean }) {
   return (
     <div>
-      <div className="mb-1.5 flex justify-between gap-2 text-[13px] font-semibold">
+      <div className="nums mb-1.5 flex justify-between gap-2 text-[13px] font-semibold">
         <span>{long ? `${progress.done} of ${progress.total} done` : `${progress.done}/${progress.total} tasks`}</span>
         <span className={STATUS_TEXT[status]}>{text}</span>
       </div>
@@ -260,9 +280,10 @@ export function ProgressWithCount({ progress, status, text, long = false }: { pr
   )
 }
 
-const CHECK = (
+/** The check mark is always there, and is drawn (see `motion-check`) when the task is ticked. */
+const check = (done: boolean) => (
   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M2.5 6.5l2.5 2.5 4.5-5" />
+    <path className="motion-check" data-done={done} d="M2.5 6.5l2.5 2.5 4.5-5" />
   </svg>
 )
 
@@ -274,11 +295,11 @@ export function CheckCircle({ done, late, label, onToggle }: { done: boolean; la
   const circle = (
     <span
       className={cx(
-        'flex h-6 w-6 items-center justify-center rounded-full border-2 text-white',
+        'flex h-6 w-6 items-center justify-center rounded-full border-2 text-surface',
         done ? 'border-good-bar bg-good-bar' : late ? 'border-bad-bar bg-surface' : 'border-line-strong bg-surface',
       )}
     >
-      {done && CHECK}
+      {check(done)}
     </span>
   )
   if (!onToggle) return <span className="flex h-6 w-6 shrink-0 items-center justify-center">{circle}</span>
@@ -347,11 +368,11 @@ export function Tabs<T extends string>({ tabs, param = 'tab', label }: { tabs: T
           onClick={() => select(t.key)}
           className={cx(
             '-mb-px min-h-11 whitespace-nowrap border-b-2 px-3 text-sm',
-            current === t.key ? 'border-accent font-semibold text-accent' : 'border-transparent font-medium text-muted hover:text-ink',
+            current === t.key ? 'border-accent font-semibold text-accent' : 'border-transparent font-medium text-muted hover:text-heading',
           )}
         >
           {t.label}
-          {t.count !== undefined && t.count > 0 && <span className="ml-1.5 rounded-full bg-accent-soft-2 px-1.5 text-xs font-semibold text-accent-hover">{t.count}</span>}
+          {t.count !== undefined && t.count > 0 && <span className="nums ml-1.5 rounded-full bg-accent-soft-2 px-1.5 text-xs font-semibold text-accent-hover">{t.count}</span>}
         </button>
       ))}
     </div>
@@ -361,7 +382,7 @@ export function Tabs<T extends string>({ tabs, param = 'tab', label }: { tabs: T
 /** A small set of exclusive choices. Arrow keys move between them. */
 export function SegmentedControl<T extends string>({ options, value, onChange, label }: { options: { value: T; label: string }[]; value: T; onChange: (value: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5" onKeyDown={(e) => arrowNav(e, options.map((o) => o.value), value, onChange)}>
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-control border border-line-strong bg-surface p-0.5" onKeyDown={(e) => arrowNav(e, options.map((o) => o.value), value, onChange)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -371,7 +392,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           aria-checked={value === o.value}
           tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
-          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-ink text-white' : 'text-ink-soft hover:bg-canvas')}
+          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-primary text-on-primary' : 'text-ink-soft hover:bg-surface-2')}
         >
           {o.label}
         </button>
@@ -391,8 +412,8 @@ export function FilterChips<T extends string>({ options, value, onChange, label 
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={cx(
-            'min-h-11 rounded-full border px-4 text-[13px] font-semibold',
-            value === o.value ? 'border-accent-line bg-accent-soft-2 text-accent-hover' : 'border-line-strong bg-surface text-ink-soft hover:bg-canvas',
+            'nums min-h-11 rounded-control border px-3 text-[13px] font-semibold',
+            value === o.value ? 'border-accent bg-accent-soft-2 text-accent-hover' : 'border-line-strong bg-surface text-ink-soft hover:bg-surface-2',
           )}
         >
           {o.label}
@@ -420,13 +441,13 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
   const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   const open = Date.parse(sendAfter) > now
   return (
-    <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-lg bg-ink px-4 py-3 text-sm font-medium text-white shadow-lg">
+    <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
       <span>{label}</span>
       {open && (
         <button
           type="button"
           disabled={busy}
-          className="min-h-11 rounded-md bg-white px-3 font-semibold text-ink"
+          className="min-h-11 rounded-control bg-surface px-3 font-semibold text-ink"
           onClick={() => {
             setBusy(true)
             void useStore
@@ -474,7 +495,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
         {toasts.map((t) =>
           t.kind === 'text' ? (
-            <div key={t.id} className="pointer-events-auto max-w-md rounded-lg bg-ink px-4 py-3 text-sm font-medium text-white shadow-lg">
+            <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
               {t.message}
             </div>
           ) : (
@@ -500,12 +521,12 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
       ref={ref}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
-      className={cx('m-auto w-[calc(100%-2rem)] rounded-xl border border-line bg-surface p-0 text-ink shadow-xl', wide ? 'max-w-2xl' : 'max-w-lg')}
+      className={cx('m-auto w-[calc(100%-2rem)] rounded-modal border border-line bg-surface p-0 text-ink shadow-float', wide ? 'max-w-2xl' : 'max-w-lg')}
     >
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-        <h2 className="text-lg font-bold">{title}</h2>
-        <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 items-center justify-center rounded-lg text-xl text-muted hover:bg-canvas">
-          ×
+        <h2 className="min-w-0 text-lg font-semibold">{title}</h2>
+        <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading">
+          <X size={20} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
       <div className="p-5">{children}</div>
@@ -515,10 +536,37 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 
 // ── AI helpers ──────────────────────────────────────────────────────────────
 
-export function Thinking({ label = 'AI is drafting…' }: { label?: string }) {
+/** When the AI last finished. A draft that appears just after this has "arrived". */
+let aiFinishedAt = 0
+const ARRIVAL_MS = 1500
+
+/**
+ * True for a piece mounted just after the AI finished: the panel fades in and
+ * the spark turns once. A draft that was already there when the page opened
+ * does not animate.
+ */
+function useAiArrival(): boolean {
+  const [arrived, setArrived] = useState(false)
+  useLayoutEffect(() => {
+    if (Date.now() - aiFinishedAt < ARRIVAL_MS) setArrived(true)
+  }, [])
+  return arrived
+}
+
+/**
+ * Shown while the AI works: the spark pulsing slowly, and what it is doing in
+ * words. `inline` is the small version for a line inside a row.
+ */
+export function Thinking({ label = 'AI is drafting…', inline }: { label?: string; inline?: boolean }) {
+  useLayoutEffect(
+    () => () => {
+      aiFinishedAt = Date.now()
+    },
+    [],
+  )
   return (
-    <div role="status" className="flex items-center gap-2 py-3 text-sm font-medium text-accent">
-      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+    <div role="status" className={cx('flex items-center gap-2 font-medium text-accent', inline ? 'text-[13px]' : 'py-3 text-sm')}>
+      <Spark size={inline ? 14 : 16} motion="pulse" />
       {label}
     </div>
   )
@@ -539,6 +587,7 @@ export function useAi(): { busy: boolean; error?: string; run: (work: () => Prom
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
     } finally {
+      aiFinishedAt = Date.now()
       setBusy(false)
     }
   }

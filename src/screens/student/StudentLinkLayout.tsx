@@ -33,10 +33,10 @@ export function StudentLinkLayout() {
   }, [token])
 
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col gap-4 px-4 py-6">
+    <main className="student-scale mx-auto flex min-h-full max-w-md flex-col gap-4 px-4 py-6">
       {error ? (
         <Card className="p-5">
-          <h1 className="text-lg font-bold">This page is not available</h1>
+          <h1 className="text-lg font-semibold">This page is not available</h1>
           <p className="mt-1 text-sm text-ink-soft">{error}</p>
         </Card>
       ) : ready && student ? (

@@ -1094,7 +1094,7 @@ export function buildSeed(): AppData {
   })
 
   return {
-    firm: { name: 'Alder & Vine College Counseling', weeklyTextDay: 0, counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },
+    firm: { name: 'Alder & Vine College Counseling', weeklyTextDay: 0, sortFilesAutomatically: true, counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },
     students: [kevin, emily, sophia, jason, aarav, mia, daniel, chloe, ethan, grace].map(finishStudent),
     tasks,
     meetings,
@@ -1106,5 +1106,59 @@ export function buildSeed(): AppData {
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     weeklyTexts: [],
     personalNotes,
+    // Folders belong to the firm and are made with it, not with the sample.
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }
+
+/**
+ * Invented files for the sample caseload. They are not rows in the data above:
+ * each is made as a small PDF in the browser (shared/files.ts, tinyPdf) and
+ * uploaded through the same path a counselor's upload takes, already filed
+ * under `folder`, once the sample students are saved. The student's name is
+ * added to each. Loading them makes no AI request.
+ */
+export const SAMPLE_FILES: { studentFirstName: string; folder: string; title: string; filename: string; heading: string; lines: string[] }[] = [
+  {
+    studentFirstName: 'Kevin',
+    folder: 'Transcripts and grades',
+    title: 'Transcript, grades 9 to 11',
+    filename: 'transcript-grades-9-11.pdf',
+    heading: 'Unofficial High School Transcript',
+    lines: ['Grades 9 to 11', 'AP Calculus BC: A', 'AP Physics C: A-', 'English 11 Honors: B+', 'Cumulative GPA (unweighted): 3.8'],
+  },
+  {
+    studentFirstName: 'Kevin',
+    folder: 'Test scores',
+    title: 'SAT score report, Aug 2026',
+    filename: 'sat-score-report.pdf',
+    heading: 'SAT Score Report',
+    lines: ['Test date: August 2026', 'Evidence-Based Reading and Writing: 710', 'Math: 780', 'Total: 1490'],
+  },
+  {
+    studentFirstName: 'Kevin',
+    folder: 'Activities and resume',
+    title: 'Activities resume',
+    filename: 'resume.pdf',
+    heading: 'Activities Resume',
+    lines: ['Robotics team, build lead (grades 10 to 12)', 'Math tutoring, volunteer (grades 11 to 12)', 'Summer research program in engineering'],
+  },
+  {
+    studentFirstName: 'Emily',
+    folder: 'Test scores',
+    title: 'AP score report, Jul 2026',
+    filename: 'ap-scores.pdf',
+    heading: 'AP Score Report',
+    lines: ['July 2026', 'AP Biology: 5', 'AP English Language: 4', 'AP US History: 4'],
+  },
+  {
+    studentFirstName: 'Sophia',
+    folder: 'Recommendations',
+    title: 'Brag sheet for recommenders',
+    filename: 'brag-sheet.pdf',
+    heading: 'Brag Sheet',
+    lines: ['Three things I am proud of', 'One class that changed how I think', 'What I hope a teacher would say about me'],
+  },
+]

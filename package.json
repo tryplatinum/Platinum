@@ -14,14 +14,26 @@
     "test:outbox": "node --import tsx scripts/test-outbox.ts",
     "test:isolation": "node --env-file-if-exists=.env.local --import tsx scripts/test-isolation.ts",
     "db:push": "supabase db push --remote",
-    "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts"
+    "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
+    "import:colleges": "node --env-file-if-exists=.env.local --import tsx scripts/import-colleges.ts",
+    "test:files": "node --import tsx scripts/test-files.ts",
+    "test:bands": "node --import tsx scripts/test-bands.ts",
+    "build:brand": "node --import tsx scripts/build-brand-assets.ts",
+    "build:programs": "node --env-file-if-exists=.env.local --import tsx scripts/build-cip-programs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
     "@supabase/supabase-js": "^2.119.2",
+    "@vercel/functions": "^3.11.3",
+    "heic-convert": "^2.1.0",
+    "lucide-react": "^1.79.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.6",
+    "sharp": "^0.35.5",
     "zod": "^4.6.7",
     "zustand": "^5.1.0"
   },

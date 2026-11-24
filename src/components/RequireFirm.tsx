@@ -6,14 +6,18 @@ import { useEffect, type ReactNode } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { leaveStudentLink, retrySession, signOut } from '../store/session'
 import { useStore } from '../store/store'
+import { Logo } from './Logo'
 import { Button } from './ui'
 
-/** A centred message on the sign-in background, for loading and for failures. */
-export function Splash({ children }: { children: ReactNode }) {
+/**
+ * A centred message under the logo, on the canvas: sign-in, loading and
+ * failures. `reveal` is for the sign-in screen only: the logo fades and rises once.
+ */
+export function Splash({ children, reveal }: { children: ReactNode; reveal?: boolean }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-sidebar px-4 py-12">
+    <div className="flex min-h-full items-center justify-center bg-canvas px-4 py-12">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
-        <p className="text-2xl font-bold text-white">Platinum</p>
+        <Logo width={200} className={reveal ? 'motion-logo' : undefined} />
         {children}
       </div>
     </div>
@@ -23,8 +27,8 @@ export function Splash({ children }: { children: ReactNode }) {
 function Problem({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Splash>
-      <div className="flex w-full flex-col gap-3 rounded-xl bg-surface p-6 text-left">
-        <h1 className="text-lg font-bold text-ink">Could not load your workspace</h1>
+      <div className="flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-6 text-left">
+        <h1 className="text-lg font-semibold">Could not load your workspace</h1>
         <p className="text-sm text-ink-soft">{message}</p>
         <div className="flex gap-2">
           <Button variant="primary" onClick={onRetry}>
@@ -53,7 +57,7 @@ export function RequireFirm() {
 
   const loading = (
     <Splash>
-      <p role="status" className="text-sm text-sidebar-muted">
+      <p role="status" className="text-sm text-muted">
         Loading your workspace…
       </p>
     </Splash>

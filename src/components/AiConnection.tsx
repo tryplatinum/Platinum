@@ -28,9 +28,9 @@ export function AiConnection() {
         : status.model
 
   return (
-    <div className="rounded-lg border border-white/15 px-3 py-2.5">
-      <p className="flex items-center gap-2 text-sm font-semibold text-white">
-        <span className={cx('h-2 w-2 rounded-full', live ? 'bg-[#4ade80]' : 'bg-[#fbbf24]')} aria-hidden />
+    <div className="rounded-control border border-line bg-surface px-3 py-2.5">
+      <p className="flex items-center gap-2 text-sm font-semibold text-heading">
+        <span className={cx('h-2 w-2 rounded-full', live ? 'bg-good' : 'bg-warn')} aria-hidden />
         AI: {live ? 'connected' : 'placeholders'}
       </p>
       <p className="mt-0.5 text-[13px] leading-relaxed text-sidebar-muted">{detail}</p>

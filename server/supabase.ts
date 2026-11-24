@@ -1,11 +1,11 @@
 // Supabase on the server. Two clients, kept apart on purpose:
 //
 //   * asUser(token): acts as the signed-in person. Row level security applies,
-//     so it can only see what that person can. Used by /api/ai to check who is
-//     asking.
+//     so it can only see what that person can. identify() returns it to the
+//     server functions, which do their reading and writing with it.
 //   * serviceClient(): the service role, which bypasses row level security.
-//     Used ONLY by the student link (server/studentLink.ts), where there is no
-//     signed-in person, and always filtered by the link's firm and student.
+//     Used ONLY where there is no signed-in person (the student link), always
+//     filtered by the link's firm and student, and by scripts run by hand.
 //
 // The service role key is read from the environment, never logged, and never
 // sent to the browser.
@@ -33,7 +33,16 @@ export function serviceClient(): SupabaseClient<Database> {
   return service
 }
 
-export type Caller = { ok: true; userId: string; firmId: string } | { ok: false; reason: 'unauthorized' | 'no_firm' }
+export type Caller =
+  | {
+      ok: true
+      userId: string
+      firmId: string
+      role: 'owner' | 'counselor'
+      /** Acts as this person: row level security applies to everything done with it. */
+      client: SupabaseClient<Database>
+    }
+  | { ok: false; reason: 'unauthorized' | 'no_firm' }
 
 /**
  * Who is making this request. The access token is verified with Supabase (not
@@ -46,7 +55,7 @@ export async function identify(request: Request): Promise<Caller> {
   const client = asUser(token)
   const { data, error } = await client.auth.getUser(token)
   if (error || !data.user) return { ok: false, reason: 'unauthorized' }
-  const member = await client.from('firm_members').select('firm_id').eq('user_id', data.user.id).maybeSingle()
+  const member = await client.from('firm_members').select('firm_id, role').eq('user_id', data.user.id).maybeSingle()
   if (member.error || !member.data) return { ok: false, reason: 'no_firm' }
-  return { ok: true, userId: data.user.id, firmId: member.data.firm_id }
+  return { ok: true, userId: data.user.id, firmId: member.data.firm_id, role: member.data.role === 'owner' ? 'owner' : 'counselor', client }
 }

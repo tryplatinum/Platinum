@@ -9,13 +9,17 @@
 //     touches one task the student owns and records it as done by the student.
 
 import { createHash, randomUUID } from 'node:crypto'
-import type { StudentWrite } from '../shared/student.js'
+import { STUDENT_FILES_PER_DAY, STUDENT_TOTAL_BYTES, DOCUMENTS_BUCKET } from '../shared/files.js'
+import type { StudentUpload, StudentUploadTicket, StudentWrite } from '../shared/student.js'
 import type { AppData, Attachment, CollegeApp, EssayFeedback, Meeting, Recap, StudentDocument, Task } from '../src/types.js'
+import { FileError, checkDeclared, confirmUpload, removeAbandonedUploads, sortStudentDrop, uploadingRow } from './documentSorting.js'
 import { serviceClient } from './supabase.js'
 
 export interface Link {
   firmId: string
   studentId: string
+  /** The student_links row. Recorded on each file dropped through the link. */
+  id?: string
 }
 
 /** Thrown for anything the student should simply be told did not work. */
@@ -36,9 +40,9 @@ export const hashToken = (token: string) => createHash('sha256').update(token).d
 
 /** The student a token opens, or undefined when it is unknown or revoked. Lookup is by hash only. */
 export async function findLink(token: string): Promise<Link | undefined> {
-  const { data, error } = await serviceClient().from('student_links').select('firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
+  const { data, error } = await serviceClient().from('student_links').select('id, firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
   if (error) throw new Error(`student link lookup failed: ${error.message}`)
-  return data ? { firmId: data.firm_id, studentId: data.student_id } : undefined
+  return data ? { firmId: data.firm_id, studentId: data.student_id, id: data.id } : undefined
 }
 
 /** Done tasks stay on the page this long. */
@@ -125,7 +129,7 @@ export async function studentPage(link: Link): Promise<AppData> {
   })
 
   return {
-    firm: { name: firm.data!.name, weeklyTextDay: 0, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
+    firm: { name: firm.data!.name, weeklyTextDay: 0, sortFilesAutomatically: false, counselorName: counselor, counselorFirstName: counselor.trim().split(/\s+/)[0] || 'Your counselor' },
     students: [
       {
         id: s.id,
@@ -147,7 +151,7 @@ export async function studentPage(link: Link): Promise<AppData> {
     tasks: taskList,
     meetings,
     colleges: colleges.data!.map(
-      (c): CollegeApp => ({ id: c.id, studentId: s.id, name: c.name, plan: c.plan as CollegeApp['plan'], deadline: c.deadline, status: c.status as CollegeApp['status'], fit: c.fit as CollegeApp['fit'] }),
+      (c): CollegeApp => ({ id: c.id, studentId: s.id, name: c.name, plan: (c.plan ?? undefined) as CollegeApp['plan'], deadline: c.deadline ?? undefined, status: c.status as CollegeApp['status'], fit: c.fit as CollegeApp['fit'] }),
     ),
     documents,
     reports: [],
@@ -157,6 +161,10 @@ export async function studentPage(link: Link): Promise<AppData> {
     weeklyTexts: [],
     // Things to remember are the counselor's. No query in this file reads personal_notes.
     personalNotes: [],
+    // Folders and draft college lists are the firm's. No query in this file reads them.
+    documentTypes: [],
+    collegeListDrafts: [],
+    collegeListDraftItems: [],
   }
 }
 
@@ -219,4 +227,79 @@ export async function studentWrite(link: Link, write: StudentWrite): Promise<voi
     p_document: document as never,
   })
   if (error) throw new Error(`student write failed: ${error.message}`)
+}
+
+// ── Adding a file ───────────────────────────────────────────────────────────
+// The link can add files and nothing else: no query here lists, opens or
+// downloads one, and studentPage() above returns no stored file.
+
+const asLinkError = (error: unknown): never => {
+  throw error instanceof FileError ? new StudentLinkError(error.message, error.status) : error
+}
+
+/**
+ * Step 1. Checks the declared size and type and the link's limits, creates the
+ * documents row (file_status 'uploading') and returns a one-time signed upload
+ * token for that row's exact path. Uploads this student abandoned over an hour
+ * ago are removed first, with their objects.
+ */
+export async function startStudentUpload(link: Link, upload: Extract<StudentUpload, { action: 'start_upload' }>): Promise<StudentUploadTicket> {
+  const db = serviceClient()
+  const declared = (() => {
+    try {
+      return checkDeclared(upload.filename, upload.size, upload.type)
+    } catch (error) {
+      return asLinkError(error)
+    }
+  })()
+  await removeAbandonedUploads(db, link.firmId, link.studentId)
+
+  const existing = await db.from('documents').select('size_bytes, created_at, uploaded_by_kind').eq('firm_id', link.firmId).eq('student_id', link.studentId).not('storage_path', 'is', null)
+  if (existing.error) throw new Error(`student upload lookup failed: ${existing.error.message}`)
+  const dayAgo = Date.now() - 86_400_000
+  const today = existing.data.filter((d) => d.uploaded_by_kind === 'student_link' && new Date(d.created_at).getTime() > dayAgo).length
+  if (today >= STUDENT_FILES_PER_DAY) throw new StudentLinkError(`You have added ${STUDENT_FILES_PER_DAY} files today, which is the limit. Add the rest tomorrow, or send them to your counselor.`, 429)
+  const stored = existing.data.reduce((sum, d) => sum + (d.size_bytes ?? 0), 0)
+  if (stored + declared.size > STUDENT_TOTAL_BYTES) throw new StudentLinkError('There is no room left for more files. Ask your counselor to make space.', 413)
+
+  const day = [daysFromNow(-1), daysFromNow(0), daysFromNow(1)].includes(upload.today) ? upload.today : daysFromNow(0)
+  // The cap above is per student. Which link the file came through is recorded for the counselor to see.
+  const row = { ...uploadingRow({ firmId: link.firmId, studentId: link.studentId, ...declared, by: 'student_link', today: day }), student_link_id: link.id ?? null }
+  const made = await db.from('documents').insert(row)
+  if (made.error) throw new Error(`student upload row failed: ${made.error.message}`)
+  const signed = await db.storage.from(DOCUMENTS_BUCKET).createSignedUploadUrl(row.storage_path)
+  if (signed.error || !signed.data?.token) {
+    await db.from('documents').delete().eq('id', row.id).eq('firm_id', link.firmId)
+    throw new Error(`student upload URL failed: ${signed.error?.message ?? 'no token'}`)
+  }
+  return { documentId: row.id, path: row.storage_path, token: signed.data.token }
+}
+
+/**
+ * Step 2. Confirms the object exists, checks its real size and its real type
+ * from its first bytes, and records its hash; a file that fails is removed with
+ * its row. Then writes the 'uploaded' event and an activity entry as done by
+ * the student, and returns at once. `sort` files the document; the caller runs
+ * it after the response, so the student never waits on the model.
+ */
+export async function finishStudentUpload(link: Link, documentId: string): Promise<{ name: string; sort: () => Promise<void> }> {
+  const db = serviceClient()
+  const found = await db.from('documents').select('*').eq('id', documentId).eq('firm_id', link.firmId).eq('student_id', link.studentId).eq('uploaded_by_kind', 'student_link').eq('file_status', 'uploading').maybeSingle()
+  if (found.error) throw new Error(`student upload lookup failed: ${found.error.message}`)
+  const row = found.data
+  if (!row) throw new StudentLinkError('That upload was not found. Add the file again.', 404)
+
+  const { bytes, hash } = await confirmUpload(db, row).catch(asLinkError)
+  const saved = await db.from('documents').update({ size_bytes: bytes.length, content_hash: hash, file_status: 'sorting' }).eq('id', row.id).eq('file_status', 'uploading')
+  if (saved.error) throw new Error(`student upload save failed: ${saved.error.message}`)
+
+  const student = await db.from('students').select('first_name').eq('firm_id', link.firmId).eq('id', link.studentId).single()
+  // The activity line names no file: activity is readable by the whole firm, and the file may be sorted where only the owner can open it.
+  const [event, activity] = await Promise.all([
+    db.from('document_events').insert({ firm_id: link.firmId, document_id: row.id, actor_kind: 'student_link', action: 'uploaded', detail: { by: 'student_link' } }),
+    db.from('activity').insert({ firm_id: link.firmId, student_id: link.studentId, at: new Date().toISOString(), actor: 'student', text: `${student.data?.first_name ?? 'The student'} added a file` }),
+  ])
+  if (event.error ?? activity.error) console.error('[student] upload log not written:', (event.error ?? activity.error)!.message)
+
+  return { name: row.original_filename ?? row.name, sort: () => sortStudentDrop(link.firmId, row.id, bytes) }
 }

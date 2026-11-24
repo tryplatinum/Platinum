@@ -81,9 +81,10 @@ export function buildFacts(data: AppData, student: Student): StudentFacts {
     recentlyDone: tasks
       .filter((t) => t.status === 'done' && t.completedOn && daysBetween(t.completedOn, today) <= RECENT_DAYS)
       .map((t) => ({ title: t.title, completedOn: t.completedOn! })),
+    // Only colleges with a plan and a deadline: the AI's facts are about what is due.
     colleges: data.colleges
       .filter((c) => c.studentId === student.id)
-      .map((c) => ({ name: c.name, plan: c.plan, deadline: c.deadline, status: c.status, daysUntilDeadline: daysBetween(today, c.deadline) })),
+      .flatMap((c) => (c.plan && c.deadline ? [{ name: c.name, plan: c.plan, deadline: c.deadline, status: c.status, daysUntilDeadline: daysBetween(today, c.deadline) }] : [])),
     nextMeeting: next && { title: next.title, date: next.date },
     lastMeeting: last && { title: last.title, date: last.date },
   }
@@ -155,7 +156,13 @@ export function briefFacts(data: AppData, meeting: Meeting, student: Student): B
     if (isOpen(t) && t.createdOn >= since) changes.push(`New task for ${ownerLabel(t, student)}: ${t.title}`)
   }
   for (const d of data.documents) {
-    if (d.studentId === student.id && d.addedOn >= since) changes.push(`New document: ${d.name}`)
+    if (d.studentId !== student.id || d.addedOn < since) continue
+    // A stored file counts once it is filed, and only when its folder is open to every
+    // member: a brief is sent to the model and saved where the whole firm can read it.
+    if (d.storagePath && d.fileStatus !== 'filed') continue
+    // The same goes for an older name or link kept under an owner-only folder.
+    if (d.kind !== 'essay' && (data.documentTypes.find((t) => t.id === d.typeId)?.sensitivity ?? 'standard') !== 'standard') continue
+    changes.push(`New document: ${d.title ?? d.name}`)
   }
   for (const c of data.colleges) {
     if (c.studentId === student.id && (c.status === 'admitted' || c.status === 'deferred' || c.status === 'denied')) {
@@ -227,10 +234,11 @@ export function reportFacts(data: AppData, student: Student, parentId: ID): stri
       `Needed from this parent, ${late > 0 ? `overdue by ${late} ${late === 1 ? 'day' : 'days'} (was due ${formatDate(t.dueDate)})` : `by ${formatDate(t.dueDate)}`}: ${t.title}`,
     )
   }
-  for (const c of data.colleges.filter((x) => x.studentId === student.id).sort((a, b) => a.deadline.localeCompare(b.deadline))) {
-    if (c.status === 'in_progress') facts.push(`Application in progress: ${c.name} (${c.plan}), deadline ${formatDate(c.deadline)}`)
-    else if (c.status === 'submitted') facts.push(`Application submitted: ${c.name} (${c.plan})`)
-    else if (c.status !== 'considering') facts.push(`Decision from ${c.name} (${c.plan}): ${c.status}`)
+  for (const c of data.colleges.filter((x) => x.studentId === student.id).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999'))) {
+    const plan = c.plan ? ` (${c.plan})` : ''
+    if (c.status === 'in_progress') facts.push(`Application in progress: ${c.name}${plan}${c.deadline ? `, deadline ${formatDate(c.deadline)}` : ''}`)
+    else if (c.status === 'submitted') facts.push(`Application submitted: ${c.name}${plan}`)
+    else if (c.status !== 'considering') facts.push(`Decision from ${c.name}${plan}: ${c.status}`)
   }
   const next = nextMeeting(data, student.id)
   facts.push(next ? `Next meeting: ${formatDate(next.date)}` : 'No next meeting is scheduled yet')

@@ -284,7 +284,7 @@ function Row({
                   href={ready && !over ? `sms:${smsNumber(phone)}?&body=${encodeURIComponent(text)}` : undefined}
                   aria-disabled={!ready || over}
                   className={cx(
-                    'inline-flex min-h-11 items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-canvas',
+                    'inline-flex min-h-11 items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-surface-2',
                     (!ready || over) && 'pointer-events-none opacity-50',
                   )}
                   onClick={() => {

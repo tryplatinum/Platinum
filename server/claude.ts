@@ -75,25 +75,86 @@ export async function runFeature<F extends Feature>(feature: F, input: FeatureIn
     }
     return { draft: response.parsed_output as FeatureOutput<F>, model: response.model }
   } catch (error) {
-    if (error instanceof AiError) throw error
-    // Most specific first. Never pass the upstream message through: it can contain request details.
-    if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
-      throw new AiError('no_key', 'The server’s Anthropic API key was rejected. Check ANTHROPIC_API_KEY.', 503)
-    }
-    if (error instanceof Anthropic.NotFoundError) {
-      throw new AiError('upstream', `The model “${model}” was not found. Check ANTHROPIC_MODEL.`)
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      throw new AiError('rate_limited', 'Claude is rate-limiting this account. Wait a moment and try again.', 429)
-    }
-    if (error instanceof Anthropic.APIConnectionError) {
-      throw new AiError('upstream', 'The server could not reach Claude. Please try again.')
-    }
-    if (error instanceof Anthropic.APIError) {
-      console.error('[ai] Claude API error', error.status, error.message)
-      throw new AiError('upstream', `Claude returned an error (${error.status ?? 'unknown'}). Please try again.`)
-    }
-    console.error('[ai] unexpected error', error)
-    throw new AiError('server', 'Something went wrong while drafting. Please try again.', 500)
+    throw toAiError(error, model, 'ANTHROPIC_MODEL')
+  }
+}
+
+/** Turns anything a Claude call threw into an AiError the caller can show. Shared by every call in this file. */
+function toAiError(error: unknown, model: string, setting: string): AiError {
+  if (error instanceof AiError) return error
+  // Most specific first. Never pass the upstream message through: it can contain request details.
+  if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
+    return new AiError('no_key', 'The server’s Anthropic API key was rejected. Check ANTHROPIC_API_KEY.', 503)
+  }
+  if (error instanceof Anthropic.NotFoundError) {
+    return new AiError('upstream', `The model “${model}” was not found. Check ${setting}.`)
+  }
+  if (error instanceof Anthropic.RateLimitError) {
+    return new AiError('rate_limited', 'Claude is rate-limiting this account. Wait a moment and try again.', 429)
+  }
+  if (error instanceof Anthropic.APIConnectionError) {
+    return new AiError('upstream', 'The server could not reach Claude. Please try again.')
+  }
+  if (error instanceof Anthropic.APIError) {
+    console.error('[ai] Claude API error', error.status, error.message)
+    return new AiError('upstream', `Claude returned an error (${error.status ?? 'unknown'}). Please try again.`)
+  }
+  console.error('[ai] unexpected error', error instanceof Error ? error.message : 'unknown')
+  return new AiError('server', 'Something went wrong while drafting. Please try again.', 500)
+}
+
+// ── A call with a file ──────────────────────────────────────────────────────
+// Used to sort an uploaded file into a folder (server/documentSorting.ts). The
+// file goes inline in the request as a document or image block, never through
+// the Files API, so nothing is left stored at Anthropic.
+
+/** The cheapest current model that reads PDFs and images. Sorting is a small, frequent job. */
+export const DEFAULT_SORT_MODEL = 'claude-haiku-5-5'
+
+/** Set ANTHROPIC_SORT_MODEL to sort files with another model. */
+export const sortModelName = () => process.env.ANTHROPIC_SORT_MODEL?.trim() || DEFAULT_SORT_MODEL
+
+export const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY?.trim())
+
+/** A file as the model takes it: base64, with no line breaks. */
+export type FileContent = { kind: 'pdf'; base64: string } | { kind: 'image'; mediaType: 'image/jpeg' | 'image/png'; base64: string }
+
+/** Enough for a short structured answer and the little thinking a low-effort call does. */
+const FILE_MAX_TOKENS = 4_000
+/** An upload never waits long on this: past it, the file is settled without the model. */
+const FILE_TIMEOUT_MS = 40_000
+
+export async function runWithFile<Schema extends import('zod').ZodType>(request: {
+  system: string
+  text: string
+  file?: FileContent
+  schema: Schema
+  effort: 'low' | 'medium' | 'high'
+}): Promise<{ output: import('zod').infer<Schema>; model: string }> {
+  client ??= new Anthropic()
+  const model = sortModelName()
+  const file: Anthropic.ContentBlockParam[] = !request.file
+    ? []
+    : request.file.kind === 'pdf'
+      ? [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: request.file.base64 } }]
+      : [{ type: 'image', source: { type: 'base64', media_type: request.file.mediaType, data: request.file.base64 } }]
+  try {
+    // The file comes before the text, as the API recommends. Thinking is left at the model's default.
+    const response = await client.messages.parse(
+      {
+        model,
+        max_tokens: FILE_MAX_TOKENS,
+        system: request.system,
+        messages: [{ role: 'user', content: [...file, { type: 'text', text: request.text }] }],
+        output_config: { effort: request.effort, format: zodOutputFormat(request.schema) },
+      },
+      { timeout: FILE_TIMEOUT_MS, maxRetries: 0 },
+    )
+    if (response.stop_reason === 'refusal') throw new AiError('refusal', 'Claude declined to read this file.', 422)
+    if (response.stop_reason === 'max_tokens') throw new AiError('max_tokens', 'The answer was cut off before it was finished.', 422)
+    if (!response.parsed_output) throw new AiError('upstream', 'Claude returned an answer that did not match the expected shape.')
+    return { output: response.parsed_output, model: response.model }
+  } catch (error) {
+    throw toAiError(error, model, 'ANTHROPIC_SORT_MODEL')
   }
 }

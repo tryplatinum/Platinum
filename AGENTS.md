@@ -33,6 +33,9 @@ React, Vite, TypeScript, Tailwind, Zustand, and Zod in the browser. Supabase (Po
 - Every outbound message goes through approval and the outbox, and is never sent directly.
 - Only invented people, schools, hospitals, and organizations in seed data.
 - Schema changes are new migration files, never edits to old ones.
+- Before writing a migration, run `npx supabase migration list` and name the file after the latest remote version.
+- Never edit a migration that has been applied remotely.
+- Only one person or agent pushes migrations at a time.
 - No new state libraries, UI kits, or ORMs without approval.
 - Don't touch files outside the current task's scope.
 

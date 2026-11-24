@@ -15,6 +15,9 @@ import type {
   ActivityEvent,
   AppData,
   CollegeApp,
+  CollegeListDraft,
+  CollegeListDraftItem,
+  DocumentType,
   Firm,
   ID,
   Meeting,
@@ -35,7 +38,7 @@ type Row<T extends keyof Tables> = Tables[T]['Row']
 /** A row as sent to apply_changes: the database supplies firm_id and its own bookkeeping columns. */
 type Out<T extends keyof Tables> = Omit<Row<T>, 'firm_id' | 'seq' | 'created_at' | 'updated_at'>
 
-type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity' | 'weekly_texts' | 'personal_notes'
+type DataTable = 'students' | 'parents' | 'meetings' | 'tasks' | 'colleges' | 'documents' | 'reports' | 'outbox' | 'activity' | 'weekly_texts' | 'personal_notes' | 'college_list_drafts'
 
 /** A failed read or write, with a message fit to show the counselor. */
 export class RepoError extends Error {}
@@ -141,16 +144,20 @@ const collegeFrom = (r: Row<'colleges'>): CollegeApp => ({
   id: r.id,
   studentId: r.student_id,
   name: r.name,
-  plan: r.plan as CollegeApp['plan'],
-  deadline: r.deadline,
+  plan: u(r.plan) as CollegeApp['plan'],
+  deadline: u(r.deadline),
   status: r.status as CollegeApp['status'],
   fit: r.fit as CollegeApp['fit'],
   note: u(r.note),
+  directoryUnitid: u(r.directory_unitid),
+  fitReason: u(r.fit_reason),
+  fitSetBy: u(r.fit_set_by) as CollegeApp['fitSetBy'],
 })
 
-const documentFrom = (r: Row<'documents'>): StudentDocument => ({
+export const documentFrom = (r: Row<'documents'>): StudentDocument => ({
   id: r.id,
-  studentId: r.student_id,
+  // Null only on a counselor's upload that is still waiting for a student.
+  studentId: r.student_id ?? '',
   name: r.name,
   kind: r.kind as StudentDocument['kind'],
   category: r.category as StudentDocument['category'],
@@ -167,6 +174,59 @@ const documentFrom = (r: Row<'documents'>): StudentDocument => ({
   status: u(r.status) as StudentDocument['status'],
   drafts: from<StudentDocument['drafts']>(r.drafts),
   feedback: from<StudentDocument['feedback']>(r.feedback),
+  typeId: u(r.type_id),
+  title: u(r.title),
+  originalFilename: u(r.original_filename),
+  storagePath: u(r.storage_path),
+  sizeBytes: u(r.size_bytes),
+  mimeType: u(r.mime_type),
+  contentHash: u(r.content_hash),
+  collegeId: u(r.college_id),
+  schoolYear: u(r.school_year),
+  uploadedByKind: u(r.uploaded_by_kind) as StudentDocument['uploadedByKind'],
+  uploadedByUser: u(r.uploaded_by_user),
+  studentLinkId: u(r.student_link_id),
+  fileStatus: u(r.file_status) as StudentDocument['fileStatus'],
+  sortedBy: u(r.sorted_by) as StudentDocument['sortedBy'],
+  needsCheck: r.needs_check || undefined,
+  aiSuggestion: from<StudentDocument['aiSuggestion']>(r.ai_suggestion),
+  openedAt: r.opened_at ? stamp(r.opened_at) : undefined,
+})
+
+export const documentTypeFrom = (r: Row<'document_types'>): DocumentType => ({
+  id: r.id,
+  name: r.name,
+  description: r.description,
+  sensitivity: r.sensitivity as DocumentType['sensitivity'],
+  position: r.position,
+  archivedAt: r.archived_at ? stamp(r.archived_at) : undefined,
+})
+
+export const listDraftFrom = (r: Row<'college_list_drafts'>): CollegeListDraft => ({
+  id: r.id,
+  studentId: r.student_id,
+  createdBy: u(r.created_by),
+  preferences: from<CollegeListDraft['preferences']>(r.preferences) ?? {},
+  note: u(r.note),
+  source: from<CollegeListDraft['source']>(r.source),
+  status: r.status as CollegeListDraft['status'],
+  approvedBy: u(r.approved_by),
+  approvedByName: u(r.approved_by_name),
+  approvedAt: r.approved_at ? stamp(r.approved_at) : undefined,
+  createdAt: stamp(r.created_at),
+})
+
+export const listDraftItemFrom = (r: Row<'college_list_draft_items'>): CollegeListDraftItem => ({
+  id: r.id,
+  draftId: r.draft_id,
+  unitid: r.unitid,
+  fit: r.fit as CollegeListDraftItem['fit'],
+  fitBasis: from<CollegeListDraftItem['fitBasis']>(r.fit_basis) ?? {},
+  fitSetBy: r.fit_set_by as CollegeListDraftItem['fitSetBy'],
+  reason: r.reason,
+  aiExplained: r.ai_explained,
+  kept: r.kept,
+  position: r.position,
 })
 
 const reportFrom = (r: Row<'reports'>): ParentReport => ({
@@ -339,16 +399,19 @@ const collegeRow = (c: CollegeApp): Out<'colleges'> => ({
   id: c.id,
   student_id: c.studentId,
   name: c.name,
-  plan: c.plan,
-  deadline: c.deadline,
+  plan: n(c.plan),
+  deadline: n(c.deadline),
   status: c.status,
   fit: c.fit,
   note: n(c.note),
+  directory_unitid: n(c.directoryUnitid),
+  fit_reason: n(c.fitReason),
+  fit_set_by: n(c.fitSetBy),
 })
 
 const documentRow = (d: StudentDocument): Out<'documents'> => ({
   id: d.id,
-  student_id: d.studentId,
+  student_id: d.studentId || null,
   name: d.name,
   kind: d.kind,
   category: d.category,
@@ -365,6 +428,59 @@ const documentRow = (d: StudentDocument): Out<'documents'> => ({
   status: n(d.status),
   drafts: json(d.drafts),
   feedback: json(d.feedback),
+  type_id: n(d.typeId),
+  title: n(d.title),
+  original_filename: n(d.originalFilename),
+  storage_path: n(d.storagePath),
+  size_bytes: n(d.sizeBytes),
+  mime_type: n(d.mimeType),
+  content_hash: n(d.contentHash),
+  college_id: n(d.collegeId),
+  school_year: n(d.schoolYear),
+  uploaded_by_kind: n(d.uploadedByKind),
+  uploaded_by_user: n(d.uploadedByUser),
+  student_link_id: n(d.studentLinkId),
+  file_status: n(d.fileStatus),
+  sorted_by: n(d.sortedBy),
+  needs_check: Boolean(d.needsCheck),
+  ai_suggestion: json(d.aiSuggestion),
+  opened_at: n(d.openedAt),
+})
+
+// Only the firm's owner may write folders: row level security refuses anyone else.
+const documentTypeRow = (t: DocumentType): Omit<Out<'document_types'>, 'archived_at'> & { archived_at: string | null } => ({
+  id: t.id,
+  name: t.name,
+  description: t.description,
+  sensitivity: t.sensitivity,
+  position: t.position,
+  archived_at: n(t.archivedAt),
+})
+
+const listDraftRow = (d: CollegeListDraft): Out<'college_list_drafts'> => ({
+  id: d.id,
+  student_id: d.studentId,
+  created_by: n(d.createdBy),
+  preferences: json(d.preferences),
+  note: n(d.note),
+  source: json(d.source),
+  status: d.status,
+  approved_by: n(d.approvedBy),
+  approved_by_name: n(d.approvedByName),
+  approved_at: n(d.approvedAt),
+})
+
+const listDraftItemRow = (i: CollegeListDraftItem): Out<'college_list_draft_items'> => ({
+  id: i.id,
+  draft_id: i.draftId,
+  unitid: i.unitid,
+  fit: i.fit,
+  fit_basis: json(i.fitBasis),
+  fit_set_by: i.fitSetBy,
+  reason: i.reason,
+  ai_explained: i.aiExplained,
+  kept: i.kept,
+  position: i.position,
 })
 
 const reportRow = (r: ParentReport): Out<'reports'> => ({
@@ -425,11 +541,11 @@ const ruleRow = (r: ReminderRule) => ({ rule: r.id, days: r.days, mode: r.mode }
 
 // ── Changes ─────────────────────────────────────────────────────────────────
 
-type WriteTable = DataTable | 'reminder_rules'
+type WriteTable = DataTable | 'reminder_rules' | 'document_types' | 'college_list_drafts' | 'college_list_draft_items'
 
 /** One batch for apply_changes. See supabase/migrations/…_apply_changes.sql. */
 export interface Changes {
-  firm?: { name?: string; displayName?: string; weeklyTextDay?: number }
+  firm?: { name?: string; displayName?: string; weeklyTextDay?: number; sortFilesAutomatically?: boolean }
   /** Remove everything the firm has before applying the rest. */
   clear?: boolean
   upsert: Partial<Record<WriteTable, object[]>>
@@ -468,8 +584,14 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
     any = true
   }
 
-  if (before.firm.name !== after.firm.name || before.firm.counselorName !== after.firm.counselorName || before.firm.weeklyTextDay !== after.firm.weeklyTextDay) {
+  if (
+    before.firm.name !== after.firm.name ||
+    before.firm.counselorName !== after.firm.counselorName ||
+    before.firm.weeklyTextDay !== after.firm.weeklyTextDay ||
+    before.firm.sortFilesAutomatically !== after.firm.sortFilesAutomatically
+  ) {
     changes.firm = {}
+    if (before.firm.sortFilesAutomatically !== after.firm.sortFilesAutomatically) changes.firm.sortFilesAutomatically = after.firm.sortFilesAutomatically
     if (before.firm.weeklyTextDay !== after.firm.weeklyTextDay) changes.firm.weeklyTextDay = after.firm.weeklyTextDay
     if (before.firm.name !== after.firm.name) changes.firm.name = after.firm.name
     if (before.firm.counselorName !== after.firm.counselorName) changes.firm.displayName = after.firm.counselorName
@@ -498,6 +620,10 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   appended('colleges', before.colleges, after.colleges, collegeRow)
   appended('personal_notes', before.personalNotes, after.personalNotes, personalNoteRow)
   appended('weekly_texts', before.weeklyTexts, after.weeklyTexts, weeklyTextRow)
+  appended('college_list_drafts', before.collegeListDrafts, after.collegeListDrafts, listDraftRow)
+  appended('college_list_draft_items', before.collegeListDraftItems, after.collegeListDraftItems, listDraftItemRow)
+  // Folders are archived, never deleted.
+  put('document_types', diffList(before.documentTypes, after.documentTypes).changed.map(documentTypeRow))
 
   // Lists the app adds to at the front (newest first). Rows are sent oldest
   // first, so insertion order in the database matches and loading can reverse it.
@@ -568,8 +694,8 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes] = await Promise.all([
-    supabase.from('firms').select('name, weekly_text_day').eq('id', firmId).single(),
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems] = await Promise.all([
+    supabase.from('firms').select('name, weekly_text_day, sort_files_automatically').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
     all('parents', firmId, false),
@@ -583,15 +709,20 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     supabase.from('reminder_rules').select('rule, days, mode').eq('firm_id', firmId),
     all('weekly_texts', firmId, false),
     all('personal_notes', firmId, false),
+    supabase.from('document_types').select('*').eq('firm_id', firmId).order('position').order('name'),
+    all('college_list_drafts', firmId, false),
+    supabase.from('college_list_draft_items').select('*').eq('firm_id', firmId).order('position').limit(5000),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
   if (rules.error) fail(rules.error, 'Could not load your reminder rules')
+  if (documentTypes.error) fail(documentTypes.error, 'Could not load your folders')
+  if (listDraftItems.error) fail(listDraftItems.error, 'Could not load your draft lists')
 
   const parentsOf = new Map<ID, Parent[]>()
   for (const p of parents) parentsOf.set(p.student_id, [...(parentsOf.get(p.student_id) ?? []), parentFrom(p)])
   const saved = new Map(rules.data.map((r) => [r.rule, r]))
-  const info: Firm = { name: firm.data.name, weeklyTextDay: firm.data.weekly_text_day, counselorName: member.data.display_name, counselorFirstName: firstNameOf(member.data.display_name) }
+  const info: Firm = { name: firm.data.name, weeklyTextDay: firm.data.weekly_text_day, sortFilesAutomatically: firm.data.sort_files_automatically, counselorName: member.data.display_name, counselorFirstName: firstNameOf(member.data.display_name) }
 
   return {
     firm: info,
@@ -610,6 +741,9 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     activity: activity.map(activityFrom),
     weeklyTexts: weeklyTexts.map(weeklyTextFrom),
     personalNotes: personalNotes.map(personalNoteFrom),
+    documentTypes: documentTypes.data.map(documentTypeFrom),
+    collegeListDrafts: listDrafts.map(listDraftFrom),
+    collegeListDraftItems: listDraftItems.data.map(listDraftItemFrom),
   }
 }
 
@@ -681,4 +815,44 @@ export async function cancelMessage(id: ID): Promise<Queued> {
 export async function revokeStudentLink(id: ID): Promise<void> {
   const { error } = await supabase.from('student_links').update({ revoked_at: new Date().toISOString() }).eq('id', id)
   if (error) fail(error, 'Could not revoke the link')
+}
+
+// ── College list drafts ─────────────────────────────────────────────────────
+// A draft is created by the server (server/collegeListDrafts.ts) and added to
+// the list by a database function, so these read what was saved for the store
+// to take in with `absorb`. Review edits are ordinary changes (diffData above).
+
+/** One draft and its colleges, as the server saved them. */
+export async function loadListDraft(draftId: ID): Promise<{ draft: CollegeListDraft; items: CollegeListDraftItem[] }> {
+  const [draft, items] = await Promise.all([
+    supabase.from('college_list_drafts').select('*').eq('id', draftId).single(),
+    supabase.from('college_list_draft_items').select('*').eq('draft_id', draftId).order('position'),
+  ])
+  if (draft.error) fail(draft.error, 'Could not load the draft list')
+  if (items.error) fail(items.error, 'Could not load the draft list')
+  return { draft: listDraftFrom(draft.data), items: items.data.map(listDraftItemFrom) }
+}
+
+/**
+ * "Add to list": one database function writes the draft's kept colleges into
+ * the student's list (skipping any already there), marks the draft approved
+ * with who and when, and logs it. Returns how many were added.
+ */
+export async function addDraftToCollegeList(draftId: ID): Promise<number> {
+  const { data, error } = await supabase.rpc('add_draft_to_college_list', { draft: draftId })
+  if (error) fail(error, 'Could not add the draft to the list')
+  return data
+}
+
+/** What add_draft_to_college_list changed for one student: their list, the draft, and the latest activity. */
+export async function loadAfterListApproval(studentId: ID, draftId: ID): Promise<{ colleges: CollegeApp[]; draft: CollegeListDraft; activity: ActivityEvent[] }> {
+  const [colleges, draft, activity] = await Promise.all([
+    supabase.from('colleges').select('*').eq('student_id', studentId).order('seq'),
+    supabase.from('college_list_drafts').select('*').eq('id', draftId).single(),
+    supabase.from('activity').select('*').eq('student_id', studentId).order('seq', { ascending: false }).limit(5),
+  ])
+  if (colleges.error) fail(colleges.error, 'Could not load the college list')
+  if (draft.error) fail(draft.error, 'Could not load the draft list')
+  if (activity.error) fail(activity.error, 'Could not load the activity log')
+  return { colleges: colleges.data.map(collegeFrom), draft: listDraftFrom(draft.data), activity: activity.data.map(activityFrom) }
 }

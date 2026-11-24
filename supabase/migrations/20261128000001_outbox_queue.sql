@@ -46,8 +46,10 @@ revoke insert, update, delete on table public.outbox from authenticated;
 -- The raw token was readable by every firm member. Lookup already uses the hash.
 alter table public.student_links drop column token;
 
--- apply_changes, same as 20261125000001, except a batch that names the outbox
--- is rejected and the outbox is no longer in the upsert list.
+-- apply_changes from 20261127000001, plus one refusal: a batch that names the
+-- outbox is rejected, and the outbox is no longer in the upsert list. Everything
+-- else (folders, college-list drafts, the owner-only delete guard, sortFilesAutomatically)
+-- is unchanged.
 
 create or replace function public.apply_changes(firm uuid, changes jsonb)
 returns void
@@ -56,13 +58,17 @@ security invoker
 set search_path = ''
 as $$
 declare
-  upsert_order constant text[] := array['students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'reminder_rules', 'activity', 'personal_notes', 'weekly_texts'];
-  delete_order constant text[] := array['weekly_texts', 'personal_notes', 'documents', 'reports', 'colleges', 'tasks', 'meetings', 'parents', 'students'];
+  -- Parents before children, so foreign keys hold inside the batch.
+  upsert_order constant text[] := array['document_types', 'students', 'parents', 'meetings', 'tasks', 'colleges', 'documents', 'reports', 'reminder_rules', 'activity', 'personal_notes', 'weekly_texts', 'college_list_drafts', 'college_list_draft_items'];
+  -- The log tables (outbox, activity) are never deleted from row by row, and
+  -- folders (document_types) are archived, not deleted.
+  delete_order constant text[] := array['college_list_draft_items', 'college_list_drafts', 'weekly_texts', 'personal_notes', 'documents', 'reports', 'colleges', 'tasks', 'meetings', 'parents', 'students'];
   t text;
   items jsonb;
   cols text;
   vals text;
   sets text;
+  blocked integer := 0;
 begin
   if not public.is_firm_member(firm) then
     raise exception 'You are not a member of this firm.' using errcode = '42501';
@@ -70,6 +76,24 @@ begin
 
   if (changes -> 'upsert') ? 'outbox' or (changes -> 'delete') ? 'outbox' then
     raise exception 'Messages are queued with queue_message, not saved with other edits.' using errcode = '42501';
+  end if;
+
+  -- Deleting a student, or clearing the caseload, takes the student's documents
+  -- with it. When any of those is owner-only, only the owner may do it.
+  if not public.is_firm_owner(firm) then
+    if coalesce((changes ->> 'clear')::boolean, false) then
+      blocked := public.owner_only_file_count(firm);
+    elsif jsonb_typeof(changes -> 'delete' -> 'students') = 'array' and jsonb_array_length(changes -> 'delete' -> 'students') > 0 then
+      blocked := public.owner_only_file_count(
+        firm, array(select value::uuid from jsonb_array_elements_text(changes -> 'delete' -> 'students')));
+    end if;
+    if blocked > 0 then
+      raise exception '% in the way: only the firm''s owner can open %, so only the owner can %. Nothing was changed.',
+        case blocked when 1 then '1 owner-only file is' else blocked || ' owner-only files are' end,
+        case blocked when 1 then 'it' else 'them' end,
+        case when coalesce((changes ->> 'clear')::boolean, false) then 'clear the caseload' else 'delete this student' end
+        using errcode = '42501';
+    end if;
   end if;
 
   if changes -> 'firm' ? 'name' then
@@ -93,7 +117,15 @@ begin
     end if;
   end if;
 
+  if changes -> 'firm' ? 'sortFilesAutomatically' then
+    update public.firms set sort_files_automatically = (changes -> 'firm' ->> 'sortFilesAutomatically')::boolean where id = firm;
+    if not found then
+      raise exception 'Only the firm''s owner can change firm settings.' using errcode = '42501';
+    end if;
+  end if;
+
   if coalesce((changes ->> 'clear')::boolean, false) then
+    -- Everything that belongs to a student goes with the student.
     delete from public.students where firm_id = firm;
     delete from public.reminder_rules where firm_id = firm;
   end if;

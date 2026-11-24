@@ -114,7 +114,7 @@ function ByStudent({ summaries, onModal }: { summaries: StudentSummary[]; onModa
                         type="button"
                         aria-current={active}
                         onClick={() => select(s.student.id)}
-                        className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-canvas')}
+                        className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
                       >
                         <span className="flex items-center justify-between gap-2">
                           <span className="text-sm font-semibold">{fullName(s.student)}</span>
