@@ -2,10 +2,12 @@
 // camelCase shapes in src/types.ts; this file maps them to and from the
 // snake_case rows, loads a firm's data, and writes changes back.
 //
-// Writes go through one database function, apply_changes, which applies a batch
-// of inserts, updates and deletes in a single transaction under the signed-in
+// Most writes go through apply_changes, one transaction under the signed-in
 // person's own permissions. The store works out the batch with diffData().
+// Outbox rows are the exception: queue_message and cancel_message are the only
+// writes, and apply_changes rejects a batch that names the outbox.
 
+import type { QueuePayload } from '../../shared/outbox'
 import { DEFAULT_REMINDER_RULES } from './seed'
 import type { Database, Json } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
@@ -262,6 +264,12 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
   note: u(r.note),
   approval: from<OutboxMessage['approval']>(r.approval),
   dedupeKey: u(r.dedupe_key),
+  status: (r.status as OutboxMessage['status']) ?? 'queued',
+  sendAfter: stamp(r.send_after),
+  approvedBy: u(r.approved_by),
+  approvedAt: r.approved_at ? stamp(r.approved_at) : undefined,
+  providerMessageId: u(r.provider_message_id),
+  error: u(r.error),
 })
 
 const activityFrom = (r: Row<'activity'>): ActivityEvent => ({
@@ -303,7 +311,6 @@ const personalNoteFrom = (r: Row<'personal_notes'>): PersonalNote => ({
 const linkFrom = (r: Row<'student_links'>): StudentLink => ({
   id: r.id,
   studentId: r.student_id,
-  token: u(r.token),
   createdAt: stamp(r.created_at),
   revokedAt: r.revoked_at ? stamp(r.revoked_at) : undefined,
 })
@@ -494,25 +501,6 @@ const reportRow = (r: ParentReport): Out<'reports'> => ({
   approval: json(r.approval),
 })
 
-const outboxRow = (o: OutboxMessage): Out<'outbox'> => ({
-  id: o.id,
-  student_id: o.studentId,
-  sent_at: o.sentAt,
-  to_kind: o.toKind,
-  to_name: o.toName,
-  parent_id: n(o.parentId),
-  channel: o.channel,
-  language: o.language,
-  kind: o.kind,
-  body: o.body,
-  body_en: n(o.bodyEn),
-  trigger: o.trigger,
-  task_id: n(o.taskId),
-  note: n(o.note),
-  approval: json(o.approval),
-  dedupe_key: n(o.dedupeKey),
-})
-
 const activityRow = (e: ActivityEvent): Out<'activity'> => ({
   id: e.id,
   student_id: e.studentId,
@@ -646,8 +634,7 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   }
   prepended('documents', before.documents, after.documents, documentRow, true)
   prepended('reports', before.reports, after.reports, reportRow, true)
-  // The two logs are only ever added to. (Memory keeps the latest activity only; older rows stay stored.)
-  prepended('outbox', before.outbox, after.outbox, outboxRow, false)
+  // Activity is only ever added to. The outbox is not in this batch: queue_message writes it.
   prepended('activity', before.activity, after.activity, activityRow, false)
 
   put('reminder_rules', diffList(before.reminderRules, after.reminderRules).changed.map(ruleRow))
@@ -770,22 +757,59 @@ export async function listStudentLinks(firmId: ID): Promise<StudentLink[]> {
   return data.map(linkFrom)
 }
 
+const newToken = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+const hashToken = async (token: string) => toHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))
+
 /**
- * Makes a new link for a student. The database keeps the token (readable by the
- * firm's members, so the link can go into a weekly text) and its SHA-256 hash,
- * which is what the server looks a link up by.
+ * Makes a new link for a student. Only the SHA-256 hash is stored. `token` is
+ * returned once so the counselor can copy it, and cannot be read back.
  */
 export async function createStudentLink(firmId: ID, studentId: ID, userId: ID): Promise<{ link: StudentLink; token: string }> {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  const hash = toHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))
+  const token = newToken()
   const { data, error } = await supabase
     .from('student_links')
-    .insert({ firm_id: firmId, student_id: studentId, token_hash: hash, token, created_by: userId })
+    .insert({ firm_id: firmId, student_id: studentId, token_hash: await hashToken(token), created_by: userId })
     .select('*')
     .single()
   if (error) fail(error, 'Could not create the link')
   return { link: linkFrom(data), token }
+}
+
+/** Replaces the hash. The previous token stops working. The new token is returned once. */
+export async function rotateStudentLink(id: ID): Promise<{ link: StudentLink; token: string }> {
+  const token = newToken()
+  const { data, error } = await supabase.from('student_links').update({ token_hash: await hashToken(token) }).eq('id', id).select('*').single()
+  if (error) fail(error, 'Could not replace the link')
+  return { link: linkFrom(data), token }
+}
+
+interface Queued {
+  message: OutboxMessage
+  activity: ActivityEvent
+}
+
+function queuedFrom(data: Json): Queued {
+  const body = data as { message?: Row<'outbox'>; activity?: Row<'activity'> }
+  if (!body?.message || !body.activity) throw new RepoError('Could not queue the message: the server returned an unexpected result.')
+  return { message: outboxFrom(body.message), activity: activityFrom(body.activity) }
+}
+
+/** The only insert into the outbox. The database records the approver and the 60-second hold. */
+export async function queueMessage(payload: QueuePayload): Promise<Queued> {
+  const { data, error } = await supabase.rpc('queue_message', { payload: payload as unknown as Json })
+  if (error) fail(error, 'Could not queue the message')
+  return queuedFrom(data)
+}
+
+/** Undoes a queued message while its send time is still in the future. */
+export async function cancelMessage(id: ID): Promise<Queued> {
+  const { data, error } = await supabase.rpc('cancel_message', { id })
+  if (error) fail(error, 'Could not undo the message')
+  return queuedFrom(data)
 }
 
 export async function revokeStudentLink(id: ID): Promise<void> {

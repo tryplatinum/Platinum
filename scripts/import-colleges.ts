@@ -300,7 +300,7 @@ async function fetchPage(key: string, page: number): Promise<{ total: number; re
 
   for (let attempt = 1; ; attempt++) {
     let status = 0
-    let wait = 0
+    let wait: number
     try {
       // The key travels in a header, so it is in no URL that an error could print.
       const res = await fetch(url, { headers: { 'x-api-key': key, accept: 'application/json' }, signal: AbortSignal.timeout(120_000) })
@@ -360,7 +360,7 @@ async function main(): Promise<void> {
 
   // 1. Fetch every page.
   const fetched: ApiRow[] = []
-  let total = 0
+  let total: number
   for (let page = 0; ; page++) {
     const body = await fetchPage(key, page)
     total = body.total

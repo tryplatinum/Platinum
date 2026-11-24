@@ -823,19 +823,25 @@ export type Database = {
       outbox: {
         Row: {
           approval: Json | null
+          approved_at: string | null
+          approved_by: string | null
           body: string
           body_en: string | null
           channel: string
           created_at: string
           dedupe_key: string | null
+          error: string | null
           firm_id: string
           id: string
           kind: string
           language: string
           note: string | null
           parent_id: string | null
+          provider_message_id: string | null
+          send_after: string
           sent_at: string
           seq: number
+          status: string
           student_id: string
           task_id: string | null
           to_kind: string
@@ -845,19 +851,25 @@ export type Database = {
         }
         Insert: {
           approval?: Json | null
+          approved_at?: string | null
+          approved_by?: string | null
           body: string
           body_en?: string | null
           channel: string
           created_at?: string
           dedupe_key?: string | null
+          error?: string | null
           firm_id: string
           id?: string
           kind: string
           language: string
           note?: string | null
           parent_id?: string | null
+          provider_message_id?: string | null
+          send_after: string
           sent_at?: string
           seq?: number
+          status?: string
           student_id: string
           task_id?: string | null
           to_kind: string
@@ -867,19 +879,25 @@ export type Database = {
         }
         Update: {
           approval?: Json | null
+          approved_at?: string | null
+          approved_by?: string | null
           body?: string
           body_en?: string | null
           channel?: string
           created_at?: string
           dedupe_key?: string | null
+          error?: string | null
           firm_id?: string
           id?: string
           kind?: string
           language?: string
           note?: string | null
           parent_id?: string | null
+          provider_message_id?: string | null
+          send_after?: string
           sent_at?: string
           seq?: number
+          status?: string
           student_id?: string
           task_id?: string | null
           to_kind?: string
@@ -1183,7 +1201,6 @@ export type Database = {
           id: string
           revoked_at: string | null
           student_id: string
-          token: string | null
           token_hash: string
           updated_at: string
         }
@@ -1194,7 +1211,6 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id: string
-          token?: string | null
           token_hash: string
           updated_at?: string
         }
@@ -1205,7 +1221,6 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id?: string
-          token?: string | null
           token_hash?: string
           updated_at?: string
         }
@@ -1507,6 +1522,7 @@ export type Database = {
         Args: { changes: Json; firm: string }
         Returns: undefined
       }
+      cancel_message: { Args: { id: string }; Returns: Json }
       create_firm: {
         Args: { display_name: string; name: string }
         Returns: string
@@ -1540,6 +1556,7 @@ export type Database = {
         Returns: number
       }
       path_uuid: { Args: { path: string; segment: number }; Returns: string }
+      queue_message: { Args: { payload: Json }; Returns: Json }
       seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {
         Args: {

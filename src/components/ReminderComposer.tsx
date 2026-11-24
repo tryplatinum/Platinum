@@ -14,7 +14,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../services/ai'
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
-import { AiErrorNote, AiTag, Button, PlaceholderNote, SENT_NOTE, SectionLabel, Thinking, textareaClass, useToast } from './ui'
+import { AiErrorNote, AiTag, Button, PlaceholderNote, SectionLabel, Thinking, textareaClass } from './ui'
 
 const CHANNEL_NOUN = { text: 'text message', email: 'email', wechat: 'WeChat message', line: 'LINE message' } as const
 
@@ -34,7 +34,6 @@ const sameRecipient = (a: Pick<Draft, 'toKind' | 'parentId'>, b: Pick<Draft, 'to
 export function ReminderComposer({ student, task, onDone }: { student: Student; task: Task; onDone: () => void }) {
   const data = useData()
   const sendMessage = useStore((s) => s.sendMessage)
-  const toast = useToast()
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(0)
   const [error, setError] = useState<string>()
@@ -89,7 +88,6 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
     }, d.toKind === 'student' ? d.usedNote : undefined)
-    toast(`Reminder to ${d.toName} sent. ${SENT_NOTE}`)
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()
     else setDrafts((all) => all.map((x, j) => (j === i ? { ...x, sent: true } : x)))

@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { Bilingual, recipientLine } from '../../../components/Bilingual'
-import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, Empty, Pill, PlaceholderNote, SENT_NOTE, SectionLabel, Thinking, inputClass, useAi, useToast } from '../../../components/ui'
+import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi, useToast } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { findParent, nextMeeting } from '../../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
@@ -192,7 +192,7 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
           variant="primary"
           onClick={() => {
             approveReport(report.id)
-            toast(`Report to ${parent.name} approved. ${SENT_NOTE}`)
+            toast(`Report to ${parent.name} approved.`)
           }}
         >
           Approve and send

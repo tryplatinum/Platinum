@@ -1,7 +1,6 @@
-// Create, copy and revoke the secret link that opens a student's own page on
-// their phone without a login. Links are kept so they can go into the weekly
-// text and be copied again; a link made before that was the case has no stored
-// copy and can only be revoked.
+// Create, copy and replace the secret link that opens a student's own page.
+// The token is shown once, right after it is generated. It is not stored.
+// Replacing a link changes the hash, so the previous address stops working.
 
 import { useState } from 'react'
 import { formatTimestamp } from '../lib/dates'
@@ -11,7 +10,7 @@ import { Button, Modal, SectionLabel, inputClass, useToast } from './ui'
 
 export function StudentLinkModal({ student, onClose }: { student: Student; onClose: () => void }) {
   const links = useStore((s) => s.studentLinks).filter((l) => l.studentId === student.id)
-  const { createStudentLink, revokeStudentLink } = useStore.getState()
+  const { createStudentLink, rotateStudentLink, revokeStudentLink } = useStore.getState()
   const toast = useToast()
   const [fresh, setFresh] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,12 +26,6 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
     }
   }
 
-  const create = () =>
-    attempt(async () => {
-      const token = await createStudentLink(student.id)
-      setFresh(`${window.location.origin}/s/${token}`)
-    })
-
   const copy = (url: string) =>
     attempt(async () => {
       await navigator.clipboard.writeText(url)
@@ -44,7 +37,7 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
       <div className="flex flex-col gap-4">
         <p className="text-sm leading-relaxed text-ink-soft">
           A private link that opens {student.firstName}’s own page on their phone, with no login. They see their tasks, next meeting, deadlines, and the recap and essay feedback you have approved. They can
-          mark tasks done, leave a note, and attach a link. Anyone who has the link can do the same, so send it only to {student.firstName}.
+          mark tasks done, leave a note, and attach a link. Anyone who has the link can do the same, so send it only to {student.firstName}. The link can be copied only right after it is generated.
         </p>
 
         {fresh ? (
@@ -58,11 +51,22 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
             </div>
           </div>
         ) : (
-          <div>
-            <Button variant="primary" onClick={() => void create()} disabled={busy}>
-              {links.length ? 'Create another link' : 'Create link'}
-            </Button>
-          </div>
+          links.length === 0 && (
+            <div>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void attempt(async () => {
+                    const token = await createStudentLink(student.id)
+                    setFresh(`${window.location.origin}/s/${token}`)
+                  })
+                }
+                disabled={busy}
+              >
+                Create link
+              </Button>
+            </div>
+          )
         )}
 
         <div>
@@ -72,13 +76,20 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
           ) : (
             <ul className="mt-1">
               {links.map((link) => (
-                <li key={link.id} className="flex items-center justify-between gap-3 border-t border-line py-2 text-sm first:border-t-0">
+                <li key={link.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-2 text-sm first:border-t-0">
                   <span>Created {formatTimestamp(link.createdAt)}</span>
-                  {link.token && (
-                    <Button disabled={busy} onClick={() => void copy(`${window.location.origin}/s/${link.token}`)}>
-                      Copy
-                    </Button>
-                  )}
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      void attempt(async () => {
+                        const token = await rotateStudentLink(link.id)
+                        setFresh(`${window.location.origin}/s/${token}`)
+                        toast('New link ready. The previous one has stopped working.')
+                      })
+                    }
+                  >
+                    Generate new link (the old link stops working)
+                  </Button>
                   <Button
                     variant="danger"
                     disabled={busy}

@@ -5,7 +5,9 @@
 // never by colour alone. /app/styleguide renders everything here in each state.
 
 import { Inbox, X, type LucideIcon } from 'lucide-react'
-import { onNotify } from '../lib/notify'
+import { notify, onNotify, type Notice } from '../lib/notify'
+import { outboxStatusLabel } from '../../shared/outbox'
+import { useStore } from '../store/store'
 import {
   createContext,
   useCallback,
@@ -27,9 +29,6 @@ import { Spark } from './Logo'
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
 }
-
-/** Shown after every send. Nothing is delivered in v0, and the interface says so each time. */
-export const SENT_NOTE = 'Logged in Messages sent. Delivery is not connected in v0.'
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 
@@ -432,24 +431,77 @@ const ToastContext = createContext<(message: string) => void>(() => {})
 /** Call with a message to confirm what just happened. */
 export const useToast = () => useContext(ToastContext)
 
+function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; sendAfter: string; onClose: () => void }) {
+  const [now, setNow] = useState(Date.now())
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
+  const open = Date.parse(sendAfter) > now
+  return (
+    <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
+      <span>{label}</span>
+      {open && (
+        <button
+          type="button"
+          disabled={busy}
+          className="min-h-11 rounded-control bg-surface px-3 font-semibold text-ink"
+          onClick={() => {
+            setBusy(true)
+            void useStore
+              .getState()
+              .cancelQueued(messageId)
+              .then(onClose)
+              .catch((error: unknown) => {
+                setBusy(false)
+                notify(error instanceof Error ? error.message : 'Could not undo the message.')
+              })
+          }}
+        >
+          Undo
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([])
+  const [toasts, setToasts] = useState<({ id: number } & Notice)[]>([])
   const show = useCallback((message: string) => {
     const id = Date.now() + Math.random()
-    setToasts((t) => [...t, { id, message }])
+    setToasts((t) => [...t, { id, kind: 'text', message }])
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
   }, [])
-  // The store reports failed saves through lib/notify.
-  useEffect(() => onNotify(show), [show])
+  const push = useCallback(
+    (notice: Notice) => {
+      if (notice.kind === 'text') {
+        show(notice.message)
+        return
+      }
+      const id = Date.now() + Math.random()
+      setToasts((t) => [...t, { id, ...notice }])
+      const life = Math.max(1000, Date.parse(notice.sendAfter) - Date.now() + 1500)
+      setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), life)
+    },
+    [show],
+  )
+  // The store reports failed saves and queued messages through lib/notify.
+  useEffect(() => onNotify(push), [push])
   return (
     <ToastContext.Provider value={show}>
       {children}
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
-        {toasts.map((t) => (
-          <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
-            {t.message}
-          </div>
-        ))}
+        {toasts.map((t) =>
+          t.kind === 'text' ? (
+            <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
+              {t.message}
+            </div>
+          ) : (
+            <QueueToast key={t.id} messageId={t.messageId} sendAfter={t.sendAfter} onClose={() => setToasts((all) => all.filter((x) => x.id !== t.id))} />
+          ),
+        )}
       </div>
     </ToastContext.Provider>
   )

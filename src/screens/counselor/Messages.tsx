@@ -3,9 +3,10 @@
 // rules. Rules: what is automatic and what waits.
 // v0 logs messages and does not deliver them; the page says so at the top.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Button, Card, CardHeader, Empty, Pill, SENT_NOTE, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
+import { Button, Card, CardHeader, Empty, Pill, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
+import { outboxStatusLabel } from '../../../shared/outbox'
 import { formatTimestamp } from '../../lib/dates'
 import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -46,8 +47,7 @@ export default function Messages() {
     <>
       <PageHeader title="Messages sent" />
       <p className="rounded-lg border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-        <strong className="text-ink">v0 logs messages. It does not deliver them.</strong> Every reminder, report, recap and piece of feedback you send is recorded here so you can see exactly what would go out. Use “Copy” to paste a
-        message into email, text, WeChat or LINE yourself.
+        <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. Nothing is delivered yet; that arrives in a later version. You can still copy a message into email, text, WeChat or LINE yourself.
       </p>
       <Tabs tabs={tabs} label="Messages" />
       {tab === 'sent' && <Sent />}
@@ -161,6 +161,17 @@ function Body({ body, bodyEn, language }: { body: string; bodyEn?: string; langu
   )
 }
 
+function OutboxStatus({ message }: { message: OutboxMessage }) {
+  const [now, setNow] = useState(() => Date.now())
+  const counting = message.status === 'queued' && Date.parse(message.sendAfter) > now
+  useEffect(() => {
+    if (!counting) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [counting])
+  return <span className="text-[13px] font-semibold text-ink">{outboxStatusLabel(message, now)}</span>
+}
+
 function LogRow({ message: m }: { message: OutboxMessage }) {
   const [open, setOpen] = useState(false)
   const toast = useToast()
@@ -172,6 +183,7 @@ function LogRow({ message: m }: { message: OutboxMessage }) {
           <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'neutral'}>{KIND_LABEL[m.kind]}</Pill>
           <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Automatic rule'}</Pill>
           {m.note && <Pill>{m.note}</Pill>}
+          <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
           <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
             {open ? 'Hide' : 'View'}
@@ -207,7 +219,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
   const automatic = queue.filter((r) => r.mode === 'automatic')
   const send = (items: ReminderDraft[], trigger: 'approved' | 'automatic') => {
     items.forEach((r) => sendMessage({ ...r.message, trigger }))
-    toast(`${items.length} ${items.length === 1 ? 'reminder' : 'reminders'} sent. ${SENT_NOTE}`)
+    toast(`${items.length} ${items.length === 1 ? 'reminder' : 'reminders'} approved.`)
   }
 
   if (queue.length === 0) {

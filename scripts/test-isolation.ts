@@ -78,7 +78,6 @@ async function seed(account: TestAccount): Promise<Seeded> {
       colleges: [{ id: randomUUID(), student_id: studentId, name: 'Test University', plan: 'RD', deadline: '2030-01-01', status: 'considering', fit: 'Target' }],
       documents: [{ id: randomUUID(), student_id: studentId, name: 'Essay', kind: 'essay', category: 'application', added_on: '2026-11-01', added_by: 'counselor', drafts: [{ n: 1, text: 'PRIVATE DRAFT', savedOn: '2026-11-01' }] }],
       reports: [{ id: randomUUID(), student_id: studentId, parent_id: parentId, created_on: '2026-11-01', status: 'draft', language: 'en', channel: 'email', subject: 'S', body_en: 'PRIVATE REPORT' }],
-      outbox: [{ id: randomUUID(), student_id: studentId, sent_at: new Date().toISOString(), to_kind: 'student', to_name: 'N', channel: 'text', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved' }],
       reminder_rules: [{ rule: 'student_late', days: 2, mode: 'off' }],
       activity: [{ id: randomUUID(), student_id: studentId, at: new Date().toISOString(), actor: 'counselor', text: 'seeded' }],
       personal_notes: [
@@ -95,6 +94,10 @@ async function seed(account: TestAccount): Promise<Seeded> {
   }
   const applied = await account.client.rpc('apply_changes', { firm: account.firmId, changes: changes as unknown as Json })
   if (applied.error) throw new Error(`seeding ${account.label} failed: ${applied.error.message}`)
+  const queued = await account.client.rpc('queue_message', {
+    payload: { id: randomUUID(), studentId, toKind: 'student', toName: 'N', channel: 'text', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved' },
+  })
+  if (queued.error) throw new Error(`queueing a message for ${account.label} failed: ${queued.error.message}`)
 
   const linkToken = randomBytes(32).toString('base64url')
   const link = await account.client.from('student_links').insert({ firm_id: account.firmId, student_id: studentId, token_hash: createHash('sha256').update(linkToken).digest('hex'), created_by: account.userId })
