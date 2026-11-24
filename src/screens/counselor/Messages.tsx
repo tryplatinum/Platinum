@@ -6,8 +6,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
-import { previewStudentLink } from '../../../shared/dispatch'
+import { STUDENT_LINK_PLACEHOLDER, previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
+import { HAND_SENT_NOTE, NOT_CONFIRMED, canSendByHand } from '../../../shared/phoneGateway'
+import { OpenInMessages } from '../../components/OpenInMessages'
+import { callPhone, phoneReason } from '../../services/phone'
 import { formatTimestamp } from '../../lib/dates'
 import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -74,6 +77,20 @@ function Sent() {
     setParams(next, { replace: true })
   }
   const rows = data.outbox.filter((m) => (!student || m.studentId === student) && (!kind || m.kind === kind) && (!messageId || m.id === messageId))
+
+  // While a text waits for the counselor's phone, ask the server how it is going, so the row
+  // moves on by itself (to sent, to "phone did not answer") without a page reload.
+  const reload = useStore((s) => s.reload)
+  const waitingForPhone = data.outbox.some((m) => m.status === 'sending' && m.detail === 'phone_waiting')
+  useEffect(() => {
+    if (!waitingForPhone) return
+    const timer = setInterval(() => {
+      void callPhone('status')
+        .catch(() => undefined)
+        .then(() => reload(true))
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [waitingForPhone, reload])
 
   return (
     <Card>
@@ -180,8 +197,11 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
   const [open, setOpen] = useState(startOpen)
   const toast = useToast()
   const sendMessage = useStore((s) => s.sendMessage)
+  const reload = useStore((s) => s.reload)
+  const data = useData()
+  const [busy, setBusy] = useState(false)
   const preview = previewStudentLink(m.body)
-  const retry = () => {
+  const again = (note: string | undefined) =>
     sendMessage({
       studentId: m.studentId,
       toKind: m.toKind,
@@ -194,10 +214,34 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
       bodyEn: m.bodyEn,
       trigger: 'approved',
       taskId: m.taskId,
-      note: m.note,
+      note,
       dedupeKey: m.dedupeKey,
     })
+  const retry = () => {
+    again(m.note)
     toast('Queued again. Undo is on the toast.')
+  }
+
+  // ── A text that went to the counselor's own phone ──
+  const waitingForPhone = m.status === 'sending' && m.detail === 'phone_waiting'
+  const notConfirmed = m.status === 'sending' && m.detail === 'phone_unknown'
+  /** The same text, logged later as sent by hand: this row needs nothing more. */
+  const sentByHand = data.outbox.some((o) => o.id !== m.id && o.note === HAND_SENT_NOTE && o.status !== 'cancelled' && o.studentId === m.studentId && o.toName === m.toName && o.body === m.body && o.sentAt > m.sentAt)
+  const byHand = canSendByHand(m) && !sentByHand
+  const student = findStudent(data, m.studentId)
+  const phone = (m.toKind === 'parent' ? student?.parents.find((p) => p.id === m.parentId)?.phone : student?.phone)?.trim()
+  /** The student's link is added by the server when it sends, so this text cannot be completed here. */
+  const needsLink = m.body.includes(STUDENT_LINK_PLACEHOLDER)
+  const askPhone = async (action: string, body: Record<string, unknown>) => {
+    setBusy(true)
+    try {
+      await callPhone(action, body)
+    } catch (e) {
+      toast(phoneReason(e))
+    } finally {
+      await reload(true)
+      setBusy(false)
+    }
   }
   return (
     <li className="border-t border-line px-5 py-3">
@@ -209,9 +253,14 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
           {m.note && <Pill>{m.note}</Pill>}
           <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
-          {m.status === 'failed' && (
+          {m.status === 'failed' && !sentByHand && (
             <Button variant="quiet" onClick={retry}>
               Retry
+            </Button>
+          )}
+          {waitingForPhone && (
+            <Button variant="quiet" disabled={busy} onClick={() => void askPhone('cancel', { outboxId: m.id })}>
+              Cancel
             </Button>
           )}
           <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -219,6 +268,40 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
           </Button>
         </span>
       </div>
+      {notConfirmed && (
+        <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg bg-warn-soft px-3 py-2">
+          <p className="text-[13px] text-warn">{NOT_CONFIRMED}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: true })}>
+              It was sent
+            </Button>
+            <Button disabled={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: false })}>
+              It was not sent
+            </Button>
+          </div>
+        </div>
+      )}
+      {byHand && (
+        <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2">
+          <p className="min-w-0 flex-1 text-[13px] text-ink-soft">
+            {needsLink
+              ? 'This text includes the student’s link, which is added when it is sent, so it cannot be sent by hand from here. Retry once your phone is connected.'
+              : phone
+                ? 'This text did not go out through your phone. You can send it yourself from this device.'
+                : `${m.toName} has no phone number on file, so there is nowhere to send this.`}
+          </p>
+          {!needsLink && phone && (
+            <OpenInMessages
+              phone={phone}
+              text={m.body}
+              onOpen={() => {
+                again(HAND_SENT_NOTE)
+                toast('Opening your Messages app. You can undo the queued message for 60 seconds.')
+              }}
+            />
+          )}
+        </div>
+      )}
       {open ? (
         <div className="mt-2 flex flex-col gap-2">
           <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />

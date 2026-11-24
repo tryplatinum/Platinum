@@ -2,7 +2,9 @@
 // offline tests. It answers the requests supabase-js makes for plain table
 // reads and writes (eq, neq, is, not.is, in, lt, or, order, limit, upsert) and
 // for storing, reading and removing objects. It keeps rows in memory and knows
-// the two unique rules the Google feature relies on.
+// the unique rules the Google and phone features rely on. A test can also
+// register a database function (rpc) and say which access token is which
+// person, so identify() in server/supabase.ts works.
 //
 // It does NOT apply row level security: who may read what is the database's
 // job and is checked against the real project (npm run test:isolation), not here.
@@ -18,17 +20,27 @@ const DEFAULTS: Record<string, () => Row> = {
   student_drive_folders: () => ({ status: 'idle', progress_done: 0, progress_total: 0, skipped: [], missing_file_ids: [], removed_here_count: 0, sync_state: {}, lease_until: null, last_synced_at: null, last_error: null, drive_url: null }),
   google_connections: () => ({ last_error: null, scopes: [] }),
   document_events: () => ({ detail: {} }),
+  phone_devices: () => ({ platform: 'ios_shortcut', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null }),
+  phone_send_jobs: () => ({ outbox_id: null, status: 'pending', claim_id: null, claimed_at: null, lease_expires_at: null, reported_at: null, error: null, expires_at: new Date(Date.now() + 600_000).toISOString() }),
+  phone_job_events: () => ({ at: new Date().toISOString(), from_status: null, actor_id: null, late: false }),
 }
 
 const UNIQUE: Record<string, (row: Row) => string | undefined> = {
   documents: (r) => (r.drive_file_id && r.student_id ? `${r.firm_id}|${r.student_id}|${r.drive_file_id}` : undefined),
   student_drive_folders: (r) => `${r.student_id}|${r.drive_folder_id}`,
+  // One job per outbox row; at most one phone in use per counselor.
+  phone_send_jobs: (r) => (r.outbox_id ? String(r.outbox_id) : undefined),
+  phone_devices: (r) => (r.revoked_at ? undefined : String(r.counselor_id)),
 }
 const KEY: Record<string, string> = { google_connections: 'user_id' }
 
 export function fakeSupabase() {
   const tables = new Map<string, Row[]>()
   const objects = new Map<string, Uint8Array>()
+  /** Database functions a test has registered, by name. */
+  const functions = new Map<string, (args: Row) => unknown>()
+  /** Access token to user id, for /auth/v1/user. */
+  const users = new Map<string, string>()
   const table = (name: string) => tables.get(name) ?? tables.set(name, []).get(name)!
   let seq = 0
 
@@ -172,12 +184,27 @@ export function fakeSupabase() {
     tables,
     objects,
     table,
+    users,
+    /** Registers a stand-in for a database function called with supabase.rpc(name, args). */
+    rpc(name: string, handler: (args: Row) => unknown) {
+      functions.set(name, handler)
+    },
     /** Handles a request to the fake project, or returns undefined for any other address. */
     async fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response | undefined> {
       const request = input instanceof Request ? input : undefined
       const url = new URL(request ? request.url : String(input))
       if (url.origin !== FAKE_SUPABASE_URL) return undefined
       const options: RequestInit = request ? { method: request.method, headers: request.headers, body: request.body ? await request.arrayBuffer() : undefined } : init
+      if (url.pathname.startsWith('/rest/v1/rpc/')) {
+        const handler = functions.get(url.pathname.slice('/rest/v1/rpc/'.length))
+        if (!handler) return json({ code: 'PGRST202', message: 'function not found', details: null, hint: null }, 404)
+        const body = options.body === undefined || options.body === null ? '{}' : typeof options.body === 'string' ? options.body : new TextDecoder().decode(options.body as ArrayBuffer)
+        return json(handler(JSON.parse(body || '{}') as Row))
+      }
+      if (url.pathname === '/auth/v1/user') {
+        const id = users.get(new Headers(options.headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '')
+        return id ? json({ id, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date(0).toISOString() }) : json({ message: 'invalid token' }, 401)
+      }
       if (url.pathname.startsWith('/rest/v1/')) return rest(url.pathname.slice('/rest/v1/'.length), url, options)
       if (url.pathname.startsWith('/storage/v1/object/')) return storage(url, options)
       return json({ message: 'not found' }, 404)

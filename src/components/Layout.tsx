@@ -16,6 +16,7 @@ import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
 import { FolderSettings } from './files/FolderSettings'
 import { GOOGLE_RETURN, GoogleAccount } from './google/GoogleAccount'
+import { YourPhone } from './phone/YourPhone'
 import { Logo } from './Logo'
 import { Button, Card, Field, Modal, SegmentedControl, cx, inputClass, useToast } from './ui'
 
@@ -273,6 +274,9 @@ function FirmSettings({ onClose }: { onClose: () => void }) {
       </div>
       <div className="mt-5">
         <GoogleAccount />
+      </div>
+      <div className="mt-5">
+        <YourPhone />
       </div>
     </Modal>
   )

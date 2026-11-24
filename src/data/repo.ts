@@ -275,6 +275,7 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
   approvedAt: r.approved_at ? stamp(r.approved_at) : undefined,
   providerMessageId: u(r.provider_message_id),
   error: u(r.error),
+  detail: u(r.delivery_detail) as OutboxMessage['detail'],
 })
 
 const activityFrom = (r: Row<'activity'>): ActivityEvent => ({

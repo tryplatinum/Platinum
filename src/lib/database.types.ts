@@ -883,6 +883,7 @@ export type Database = {
           channel: string
           created_at: string
           dedupe_key: string | null
+          delivery_detail: string | null
           error: string | null
           firm_id: string
           id: string
@@ -911,6 +912,7 @@ export type Database = {
           channel: string
           created_at?: string
           dedupe_key?: string | null
+          delivery_detail?: string | null
           error?: string | null
           firm_id: string
           id?: string
@@ -939,6 +941,7 @@ export type Database = {
           channel?: string
           created_at?: string
           dedupe_key?: string | null
+          delivery_detail?: string | null
           error?: string | null
           firm_id?: string
           id?: string
@@ -1119,6 +1122,138 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      phone_devices: {
+        Row: {
+          counselor_id: string
+          created_at: string
+          firm_id: string
+          first_seen_at: string | null
+          id: string
+          key_hash: string
+          label: string
+          last_seen_at: string | null
+          last_wake_at: string | null
+          notice_shown_at: string | null
+          own_phone: string | null
+          platform: string
+          revoked_at: string | null
+          wake_email: string
+        }
+        Insert: {
+          counselor_id: string
+          created_at?: string
+          firm_id: string
+          first_seen_at?: string | null
+          id?: string
+          key_hash: string
+          label: string
+          last_seen_at?: string | null
+          last_wake_at?: string | null
+          notice_shown_at?: string | null
+          own_phone?: string | null
+          platform?: string
+          revoked_at?: string | null
+          wake_email: string
+        }
+        Update: {
+          counselor_id?: string
+          created_at?: string
+          firm_id?: string
+          first_seen_at?: string | null
+          id?: string
+          key_hash?: string
+          label?: string
+          last_seen_at?: string | null
+          last_wake_at?: string | null
+          notice_shown_at?: string | null
+          own_phone?: string | null
+          platform?: string
+          revoked_at?: string | null
+          wake_email?: string
+        }
+        Relationships: []
+      }
+      phone_job_events: {
+        Row: {
+          actor: string
+          actor_id: string | null
+          at: string
+          from_status: string | null
+          id: string
+          job_id: string
+          late: boolean
+          to_status: string
+        }
+        Insert: {
+          actor: string
+          actor_id?: string | null
+          at?: string
+          from_status?: string | null
+          id?: string
+          job_id: string
+          late?: boolean
+          to_status: string
+        }
+        Update: {
+          actor?: string
+          actor_id?: string | null
+          at?: string
+          from_status?: string | null
+          id?: string
+          job_id?: string
+          late?: boolean
+          to_status?: string
+        }
+        Relationships: []
+      }
+      phone_send_jobs: {
+        Row: {
+          body: string
+          claim_id: string | null
+          claimed_at: string | null
+          created_at: string
+          device_id: string
+          error: string | null
+          expires_at: string
+          id: string
+          lease_expires_at: string | null
+          outbox_id: string | null
+          reported_at: string | null
+          status: string
+          to_phone: string
+        }
+        Insert: {
+          body: string
+          claim_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          device_id: string
+          error?: string | null
+          expires_at?: string
+          id?: string
+          lease_expires_at?: string | null
+          outbox_id?: string | null
+          reported_at?: string | null
+          status?: string
+          to_phone: string
+        }
+        Update: {
+          body?: string
+          claim_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          device_id?: string
+          error?: string | null
+          expires_at?: string
+          id?: string
+          lease_expires_at?: string | null
+          outbox_id?: string | null
+          reported_at?: string | null
+          status?: string
+          to_phone?: string
+        }
+        Relationships: []
       }
       reminder_rules: {
         Row: {
@@ -1695,6 +1830,10 @@ export type Database = {
         Returns: undefined
       }
       cancel_message: { Args: { id: string }; Returns: Json }
+      claim_phone_send_job: {
+        Args: { device: string }
+        Returns: { body: string; claim_id: string | null; claimed_at: string | null; created_at: string; device_id: string; error: string | null; expires_at: string; id: string; lease_expires_at: string | null; outbox_id: string | null; reported_at: string | null; status: string; to_phone: string }[]
+      }
       create_firm: {
         Args: { display_name: string; name: string }
         Returns: string

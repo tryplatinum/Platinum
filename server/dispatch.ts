@@ -32,6 +32,8 @@ type OutboxRow = {
   status: string
   /** Who approved it. Email through Gmail is sent from this person's mailbox. */
   approved_by: string | null
+  /** "Sent from your own phone" marks a text the counselor already sent by hand. */
+  note: string | null
 }
 
 export type DispatchSummary = {
@@ -39,6 +41,8 @@ export type DispatchSummary = {
   sent: number
   failed: number
   skipped: number
+  /** Handed to the counselor's own phone and not sent yet. Counted in `processed`, not in `sent`. */
+  waiting: number
 }
 
 const kindLabel = (kind: string) => kind.replace(/_/g, ' ')
@@ -53,10 +57,10 @@ async function activity(firmId: string, studentId: string, text: string): Promis
   if (error) console.error('[dispatch] activity not written:', error.message)
 }
 
-async function markFailed(row: OutboxRow, error: string): Promise<void> {
+async function markFailed(row: OutboxRow, error: string, detail?: string): Promise<void> {
   const { error: updateError } = await serviceClient()
     .from('outbox')
-    .update({ status: 'failed', error })
+    .update({ status: 'failed', error, ...(detail ? { delivery_detail: detail } : {}) })
     .eq('id', row.id)
     .eq('status', 'sending')
   if (updateError) console.error('[dispatch] fail update:', updateError.message)
@@ -71,6 +75,17 @@ async function markSent(row: OutboxRow, providerMessageId: string): Promise<void
     .eq('status', 'sending')
   if (error) console.error('[dispatch] sent update:', error.message)
   await activity(row.firm_id, row.student_id, `Sent a ${kindLabel(row.kind)} to ${row.to_name}.`)
+}
+
+/**
+ * The message was handed to the counselor's own phone and has not been sent
+ * yet. The row stays 'sending', so no later run picks it up; the phone's report
+ * (or the sweep in /api/phone) settles it.
+ */
+async function markWaiting(row: OutboxRow): Promise<void> {
+  const { error } = await serviceClient().from('outbox').update({ delivery_detail: 'phone_waiting', error: null }).eq('id', row.id).eq('status', 'sending')
+  if (error) console.error('[dispatch] waiting update:', error.message)
+  await activity(row.firm_id, row.student_id, `Waiting for your phone to send a ${kindLabel(row.kind)} to ${row.to_name}.`)
 }
 
 async function loadRecipient(row: OutboxRow): Promise<RecipientContact> {
@@ -120,7 +135,7 @@ async function withStudentLink(row: OutboxRow, body: string, bodyEn: string | nu
   }
 }
 
-async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllowlist>): Promise<'sent' | 'failed'> {
+async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllowlist>): Promise<'sent' | 'failed' | 'waiting'> {
   try {
     const recipient = await loadRecipient(row)
     const address = resolveAddress(row.channel as QueueChannel, recipient)
@@ -144,16 +159,24 @@ async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllo
       // The outbox has no subject yet: an email gets one from its kind, in its language.
       ...(address.channel === 'email' ? { subject: emailSubject(row.kind, row.language) } : {}),
       senderUserId: row.approved_by ?? undefined,
+      outboxId: row.id,
+      note: row.note ?? undefined,
     })
+    if (result.waiting) {
+      await markWaiting(row)
+      return 'waiting'
+    }
     await markSent(row, result.providerMessageId)
     return 'sent'
   } catch (error) {
     const message = error instanceof Error ? error.message : 'send failed'
+    // The phone transport says why a text can be sent by hand instead.
+    const detail = error instanceof Error && 'deliveryDetail' in error && typeof error.deliveryDetail === 'string' ? error.deliveryDetail : undefined
     // LogTransport and allowlist refusal never throw into here for the allowlist
     // case; a thrown error means the transport or link step failed. Do not log
     // the body (it may contain a raw student-link token).
     console.error('[dispatch] send error:', message)
-    await markFailed(row, message)
+    await markFailed(row, message, detail)
     return 'failed'
   }
 }
@@ -167,7 +190,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
   const now = new Date().toISOString()
   const { data: due, error } = await serviceClient()
     .from('outbox')
-    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by')
+    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note')
     .eq('firm_id', firmId)
     .eq('status', 'queued')
     .lte('send_after', now)
@@ -175,14 +198,14 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
 
   if (error) throw new Error(`outbox read failed: ${error.message}`)
 
-  const summary: DispatchSummary = { processed: 0, sent: 0, failed: 0, skipped: 0 }
+  const summary: DispatchSummary = { processed: 0, sent: 0, failed: 0, skipped: 0, waiting: 0 }
   for (const candidate of due ?? []) {
     const claimed = await serviceClient()
       .from('outbox')
       .update({ status: 'sending' })
       .eq('id', candidate.id)
       .eq('status', 'queued')
-      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by')
+      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note')
       .maybeSingle()
 
     if (claimed.error) throw new Error(`outbox claim failed: ${claimed.error.message}`)
@@ -194,6 +217,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
     summary.processed++
     const outcome = await processOne(claimed.data as OutboxRow, allowlist)
     if (outcome === 'sent') summary.sent++
+    else if (outcome === 'waiting') summary.waiting++
     else summary.failed++
   }
   return summary

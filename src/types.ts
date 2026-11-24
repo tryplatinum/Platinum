@@ -5,6 +5,7 @@
 // add a migration and update the mapping in data/repo.ts.
 
 import type { ISODate } from './lib/dates'
+import type { DeliveryDetail } from '../shared/phoneGateway'
 
 export type ID = string
 /** A moment, as an ISO string ending in Z. */
@@ -724,6 +725,8 @@ export interface OutboxMessage {
   approvedAt?: string
   providerMessageId?: string
   error?: string
+  /** Where a text handed to the counselor's own phone stands (outbox.delivery_detail). Unset for every other message. */
+  detail?: DeliveryDetail
 }
 
 export type ReminderMode = 'automatic' | 'needs_approval' | 'off'
