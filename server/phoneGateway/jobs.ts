@@ -103,13 +103,20 @@ export async function createJob(input: { outboxId: string | null; deviceId: stri
  * Gives up on jobs nobody answered: a waiting job past its ten minutes becomes
  * expired; a job a phone took and did not report on within two minutes becomes
  * unknown. An unknown job is never handed out again, because it may have been sent.
+ *
+ * Runs whenever a phone asks for work, whenever a counselor looks at their
+ * phone's status, and whenever the dispatcher runs. Returns how many jobs it moved.
  */
-export async function sweepJobs(): Promise<void> {
+export async function sweepJobs(): Promise<number> {
   const now = new Date().toISOString()
+  let moved = 0
   const waiting = await db().from('phone_send_jobs').select('*').eq('status', 'pending').lt('expires_at', now).limit(50)
-  for (const job of waiting.data ?? []) await moveJob(job, 'expired', { actor: 'sweep' })
+  if (waiting.error) throw new Error('could not read the waiting jobs')
+  for (const job of waiting.data ?? []) if (await moveJob(job, 'expired', { actor: 'sweep' })) moved++
   const taken = await db().from('phone_send_jobs').select('*').eq('status', 'claimed').lt('lease_expires_at', now).limit(50)
-  for (const job of taken.data ?? []) await moveJob(job, 'unknown', { actor: 'sweep' })
+  if (taken.error) throw new Error('could not read the claimed jobs')
+  for (const job of taken.data ?? []) if (await moveJob(job, 'unknown', { actor: 'sweep' })) moved++
+  return moved
 }
 
 /** True when the phone's last few finished jobs all went unanswered. No new job is made for it until a test succeeds. */

@@ -15,6 +15,7 @@
     "test:google": "node --import tsx scripts/test-google.ts",
     "test:outbox": "node --import tsx scripts/test-outbox.ts && node --import tsx scripts/test-phone.ts",
     "test:phone": "node --import tsx scripts/test-phone.ts",
+    "test:phone:db": "node --env-file-if-exists=.env.local --import tsx scripts/test-phone-claim.ts",
     "test:isolation": "node --import tsx scripts/test-isolation.ts",
     "db:push": "supabase db push --remote",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",

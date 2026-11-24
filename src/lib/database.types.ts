@@ -1332,7 +1332,15 @@ export type Database = {
           revoked_at?: string | null
           wake_email?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "phone_devices_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phone_job_events: {
         Row: {
@@ -1365,7 +1373,15 @@ export type Database = {
           late?: boolean
           to_status?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "phone_job_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "phone_send_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phone_send_jobs: {
         Row: {
@@ -1413,7 +1429,22 @@ export type Database = {
           status?: string
           to_phone?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "phone_send_jobs_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "phone_devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phone_send_jobs_outbox_id_fkey"
+            columns: ["outbox_id"]
+            isOneToOne: true
+            referencedRelation: "outbox"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reminder_rules: {
         Row: {
@@ -1992,7 +2023,27 @@ export type Database = {
       cancel_message: { Args: { id: string }; Returns: Json }
       claim_phone_send_job: {
         Args: { device: string }
-        Returns: { body: string; claim_id: string | null; claimed_at: string | null; created_at: string; device_id: string; error: string | null; expires_at: string; id: string; lease_expires_at: string | null; outbox_id: string | null; reported_at: string | null; status: string; to_phone: string }[]
+        Returns: {
+          body: string
+          claim_id: string | null
+          claimed_at: string | null
+          created_at: string
+          device_id: string
+          error: string | null
+          expires_at: string
+          id: string
+          lease_expires_at: string | null
+          outbox_id: string | null
+          reported_at: string | null
+          status: string
+          to_phone: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "phone_send_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       create_firm: {
         Args: { display_name: string; name: string }

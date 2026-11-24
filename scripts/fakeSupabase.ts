@@ -20,6 +20,8 @@ const DEFAULTS: Record<string, () => Row> = {
   student_drive_folders: () => ({ status: 'idle', progress_done: 0, progress_total: 0, skipped: [], missing_file_ids: [], removed_here_count: 0, sync_state: {}, lease_until: null, last_synced_at: null, last_error: null, drive_url: null }),
   google_connections: () => ({ last_error: null, scopes: [] }),
   document_events: () => ({ detail: {} }),
+  // The real table fills `at` in itself.
+  activity: () => ({ at: new Date().toISOString() }),
   phone_devices: () => ({ platform: 'ios_shortcut', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null }),
   phone_send_jobs: () => ({ outbox_id: null, status: 'pending', claim_id: null, claimed_at: null, lease_expires_at: null, reported_at: null, error: null, expires_at: new Date(Date.now() + 600_000).toISOString() }),
   phone_job_events: () => ({ at: new Date().toISOString(), from_status: null, actor_id: null, late: false }),

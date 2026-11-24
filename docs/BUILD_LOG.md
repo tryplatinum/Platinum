@@ -26,8 +26,8 @@ M4a (branch `m4a-agent`): server-side assistant — threads per student, tools, 
 - Agent: Claude Code, unattended run for William
 - Date: 2026-11-24
 - **THE ALLOWLIST IS THE ONLY GUARD. `text_consent_at`, `text_guardian_consent_at` AND `text_opt_outs` DO NOT EXIST ON MAIN, SO NOTHING HERE CHECKS CONSENT OR OPT-OUT. THIS MUST NOT BE USED WITH REAL FAMILIES UNTIL CONSENT AND OPT-OUT EXIST.** No "Stopped texts" control was built.
-- **Not applied:** `supabase/migrations/20261202000001_phone_gateway.sql`. It was not pushed. The SQL has never been run anywhere. Until it is applied, "Your phone" stays hidden in Firm settings and `TRANSPORT_TEXT=phone` must stay unset.
-- **Migration history is out of step:** `npx supabase migration list --remote` shows `20261201000001` on the remote with no local file on `main`. The new file is named after it. Whoever applied `20261201000001` needs to commit its file before the next `db:push`, or the CLI will complain about a remote version it cannot find locally.
+- **Applied:** `supabase/migrations/20261202000001_phone_gateway.sql`, pushed by William on 2026-11-24 (the CLI will not take a confirmation from an agent). `src/lib/database.types.ts` was regenerated with `npm run db:types` afterwards. `TRANSPORT_TEXT` is still unset in every deployed environment; William sets it himself.
+- Migration history is in step again: `20261201000001_agent.sql` reached `main` with PR 16 and was merged into this branch. It matches the copy in the remote history apart from blank lines, which the history table strips.
 - Off by default: text goes to a phone only when `TRANSPORT_TEXT` is exactly `phone`. Unset, a text is handled exactly as before, and `scripts/test-phone.ts` proves it.
 - What exists:
   - Migration: `phone_devices`, `phone_send_jobs`, `phone_job_events` (row level security on, no policy, every grant revoked from signed-in people), the function `claim_phone_send_job(device)`, and one nullable column `outbox.delivery_detail`.
@@ -45,11 +45,13 @@ M4a (branch `m4a-agent`): server-side assistant — threads per student, tools, 
   - Phone did not answer: `failed` + `phone_expired`.
   - Failed on the phone, or the counselor said it was not sent: `failed` + `phone_failed`.
   - No phone, no Gmail, stopped phone: `failed` + `phone_none`.
-- Checks: `typecheck`, `lint`, `test:notes`, `test:outbox`, `build` pass, with every `TRANSPORT_*` unset. `/phone-setup` was opened from the production build in a phone-sized Chrome: it shows the key from the URL fragment, the key is not in any request, and it makes no call to `/api/`.
+- Checks: `typecheck`, `lint`, `test:notes`, `test:outbox` (now 127 phone checks), `build` pass, with every `TRANSPORT_*` unset.
+- Checked against the real database (`npm run test:phone:db`, which makes and removes its own rows; do not run it unless asked): two claims at once for one job, exactly one gets it; twelve at once for one job, exactly one, five rounds running; three jobs and twelve claims, each handed out once; oldest first; an expired job is never handed out; the function and the three tables refuse anyone without the service role (42501); the checks on the number and the status hold.
+- Checked in a browser, locally, with `TRANSPORT_TEXT=phone` and `PHONE_WAKE_FAKE=1`, against the in-memory stand-in for the database with a script playing the phone: "Your phone" (connect form, notice, key shown once, the QR code read back by a decoder to `/phone-setup#k=<key>`, test to own number, state, recent jobs, CSV), and on Messages: Waiting for your phone with Cancel, Sent from your phone (the row changes by itself), Not confirmed with both buttons, Phone did not answer with "Open in Messages", and no phone connected. Screenshots are in `docs/phone-gateway/`. Found and fixed there: Firm settings had two buttons named "Disconnect"; the phone's is now "Disconnect phone".
 - **Not verified:**
   - No text left a real phone. No real wake email was sent. No Shortcut was built.
-  - The migration is not applied, so nothing ran against the real database: not the tables, the grants, row level security, nor `claim_phone_send_job`. "Two claims at once, exactly one gets it" was proven against the in-memory stand-in, which does the claim in one step of JavaScript, not against Postgres.
-  - "Your phone" in Firm settings, the QR code, and the new Messages states were not looked at in a browser (they need the tables). They typecheck and build. The QR code has not been scanned.
+  - The browser run used the stand-in database, not Supabase, so the screens have not been driven against the real tables. The real tables were exercised only by `test:phone:db`.
+  - The QR code was read by a decoder, not by an iPhone camera.
   - Whether a message a counselor sends to their own address through the Gmail API arrives in the Inbox and starts a Mail automation. My understanding is that Gmail files a self-addressed message under both Sent and Inbox, but I could not check without sending a real email. No INBOX label is set and the Gmail scope was not widened. If the wake does not reach the Inbox, that is the first thing to look at.
 - Decisions made without asking:
   1. "Send a test to my own number" does not go through the outbox. The outbox needs a student, and the counselor is not one. The test job is made by `/api/phone` directly, with the same allowlist check, a fixed text ("Platinum test. Your phone is connected."), and no outbox row. It exercises the job, the wake, the claim and the report, but not the dispatcher.
@@ -61,20 +63,20 @@ M4a (branch `m4a-agent`): server-side assistant — threads per student, tools, 
   7. "Not seen since" starts 7 days after the phone last asked for work.
   8. `test` and `wake` are refused while `TRANSPORT_TEXT` is not `phone`. `connect` is allowed, so a phone can be set up first.
   9. The wake address is checked against `SEND_ALLOWLIST` when connecting, before a job is made, and again when the wake is sent.
-  10. The sweeps (expire, lease to unknown) run on every `claim` and every counselor `status` call, and Messages asks for status every 10 seconds while a row waits. There is no cron, so with the app closed and the phone silent, a row stays "Waiting for your phone" until someone opens Messages or Firm settings.
+  10. The sweeps (expire, lease to unknown) run on every `claim`, every counselor `status` call, and every dispatcher run (the app runs the dispatcher on load and after each undo window). Messages also asks for status every 10 seconds while a row waits. There is still no cron: with every counselor's app closed and the phone silent, a row waits until the next time anyone in the firm opens the app. A sweep that fails never stops the dispatcher.
   11. The caps (20 an hour, 100 a day) count jobs by `claimed_at`. The rate limits on `/api/phone` are the in-memory ones from `server/rateLimit.ts`.
   12. `/phone-setup` leaves the key in the URL fragment, so it stays in the phone browser's history. Reconnecting the phone makes a new key and revokes the old one.
   13. New dependency: `qrcode-generator` 2.0.4 (MIT, no dependencies), for the QR code. It is not a state library, UI kit or ORM, but it is new, so say if it should go.
-  14. Aaron's `20261201000001` is on the remote and not in the repo, so the hand-added types in `src/lib/database.types.ts` cover only this change. Run `npm run db:types` after applying.
+  14. With `TRANSPORT_TEXT` unset a phone is handed nothing, even a job made while it was on: `claim` answers `none` and the job waits, then expires. Turning the setting off is a real off switch.
 - For Aaron, every changed line in the shared files:
   - `shared/outbox.ts`: one import (`phoneStatusLabel`); `outboxStatusLabel` takes an optional `detail` and returns the phone wording first when there is one (3 lines). No status was added.
   - `src/types.ts`: one import, and `OutboxMessage.detail?: DeliveryDetail`.
   - `src/data/repo.ts`: one line in `outboxFrom`, `detail: u(r.delivery_detail)`.
   - `src/store/store.ts`: none.
-  - `server/dispatch.ts`: `note` added to `OutboxRow` and to both selects; `outboxId` and `note` passed to the transport; a result with `waiting` goes to the new `markWaiting` (sets `delivery_detail`, leaves the row `sending`) instead of `markSent`; `markFailed` takes an optional detail from the transport's error; `DispatchSummary.waiting`. The allowlist check, the claim, the 60-second window and the student-link step are untouched and still run in the same order.
+  - `server/dispatch.ts`: `note` added to `OutboxRow` and to both selects; `outboxId` and `note` passed to the transport; a result with `waiting` goes to the new `markWaiting` (sets `delivery_detail`, leaves the row `sending`) instead of `markSent`; `markFailed` takes an optional detail from the transport's error; `DispatchSummary.waiting`. The allowlist check, the claim, the 60-second window and the student-link step are untouched and still run in the same order. It also calls `sweepJobs()` at the start of `dispatchFirm`, inside a try/catch, and `DispatchSummary` has `swept`. `src/services/dispatch.ts` reloads when `processed + swept > 0`.
   - `server/transport/types.ts`: `TransportSend.outboxId`, `TransportSend.note`, `TransportResult.waiting`.
 - William's steps:
-  1. Sort out `20261201000001` (see above), then `npm run db:push`: check the list shows only `20261202000001_phone_gateway.sql`, confirm, then `npm run db:types`.
+  1. Done: the migration is applied and the types are regenerated.
   2. Add his Gmail address and the test numbers (his own, and any test recipient) to `SEND_ALLOWLIST`.
   3. Set `TRANSPORT_TEXT=phone` on a preview deployment. Leave it unset everywhere else.
   4. Firm settings: turn on sending from Gmail, then "Connect an iPhone". Scan the code with the phone.
