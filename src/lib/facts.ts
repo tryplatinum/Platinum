@@ -156,7 +156,11 @@ export function briefFacts(data: AppData, meeting: Meeting, student: Student): B
     if (isOpen(t) && t.createdOn >= since) changes.push(`New task for ${ownerLabel(t, student)}: ${t.title}`)
   }
   for (const d of data.documents) {
-    if (d.studentId === student.id && d.addedOn >= since) changes.push(`New document: ${d.name}`)
+    if (d.studentId !== student.id || d.addedOn < since) continue
+    // A stored file counts once it is filed, and only when its folder is open to every
+    // member: a brief is sent to the model and saved where the whole firm can read it.
+    if (d.storagePath && (d.fileStatus !== 'filed' || (data.documentTypes.find((t) => t.id === d.typeId)?.sensitivity ?? 'standard') !== 'standard')) continue
+    changes.push(`New document: ${d.title ?? d.name}`)
   }
   for (const c of data.colleges) {
     if (c.studentId === student.id && (c.status === 'admitted' || c.status === 'deferred' || c.status === 'denied')) {

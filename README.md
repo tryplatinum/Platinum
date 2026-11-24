@@ -425,4 +425,4 @@ Data dictionary released October 15, 2026 (https://collegescorecard.ed.gov/files
 - **Files are sorted from their first two pages.** A long PDF whose telling page comes later may be filed wrongly.
 - **A suggestion that arrives after the upload window is closed** shows the next time the Documents screen loads its data (on focus), not instantly.
 - **Other counselors' uploads show as "A colleague"**: there is no member directory in the browser yet.
-- **Recent documents in a pre-meeting brief** are listed by title for whoever can see them, which for the owner includes files in owner-only folders.
+- **A pre-meeting brief lists recent documents by title**, but only files that are filed in a folder every member can read. Files waiting to be filed and files in owner-only folders are left out.
