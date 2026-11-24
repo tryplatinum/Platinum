@@ -9,11 +9,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FileRow } from '../../../components/files/FileRow'
 import { UploadWindow, useFileDrop } from '../../../components/files/UploadWindow'
+import { DriveFolders, goneFromDrive, useLinkedFolders } from '../../../components/google/DriveFolders'
+import { DrivePicker } from '../../../components/google/DrivePicker'
 import { ReminderComposer } from '../../../components/ReminderComposer'
 import { Button, Card, CardHeader, Empty, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { daysLate, missingRequestedDocuments, ownerLabel } from '../../../lib/derive'
 import { catchAllFolder, folderOf, foldersInOrder, isSorting, isWaiting, needsCheck, openFolders, studentFiles } from '../../../lib/files'
+import { driveReady, useGoogleStatus } from '../../../services/google'
 import { useData, useStore } from '../../../store/store'
 import type { Student } from '../../../types'
 
@@ -31,6 +34,12 @@ export default function DocumentsTab({ student }: { student: Student }) {
   const other = catchAllFolder(data)
   const waiting = data.documents.filter((d) => isWaiting(d) && d.studentId === student.id).length
   const drop = useFileDrop((files) => setUploading(files))
+  // Google Drive: shown only when the server has Google settings and this person has connected.
+  const google = useGoogleStatus()
+  const linked = useLinkedFolders(student.id, Boolean(google?.available))
+  const gone = goneFromDrive(linked.folders)
+  const [drive, setDrive] = useState<'files' | 'folder'>()
+  const isGone = (d: { driveFileId?: string }) => Boolean(d.driveFileId && gone.has(d.driveFileId))
 
   // A student's upload shows as "Sorting…" until the AI has filed it: look again every few seconds while one is.
   useEffect(() => {
@@ -53,13 +62,26 @@ export default function DocumentsTab({ student }: { student: Student }) {
           <Button onClick={() => setLinking(!linking)} aria-expanded={linking}>
             Add a link
           </Button>
+          {driveReady(google) && (
+            <>
+              <Button onClick={() => setDrive('folder')}>Link a Drive folder</Button>
+              <Button onClick={() => setDrive('files')}>Add from Google Drive</Button>
+            </>
+          )}
           <Button variant="primary" onClick={() => setUploading([])}>
             Upload files
           </Button>
         </div>
       </div>
+      {google?.available && google.connected && google.reconnect && (
+        <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+          Reconnect Google in Firm settings to add from Drive and to sync linked folders. Files already imported are not affected.
+        </p>
+      )}
 
       {uploading && <UploadWindow studentId={student.id} initialFiles={uploading} onClose={() => setUploading(undefined)} />}
+      {drive && <DrivePicker mode={drive} student={student} onClose={() => setDrive(undefined)} onLinked={linked.linked} />}
+      <DriveFolders student={student} linked={linked} onLink={() => setDrive('folder')} />
 
       {linking && (
         <form
@@ -145,7 +167,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
           <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed by the AI when it was not sure, or put under a catch-all folder. Move each one, or say it is in the right place." />
           <ul>
             {toCheck.map((d) => (
-              <FileRow key={d.id} doc={d} showFolder />
+              <FileRow key={d.id} doc={d} showFolder goneFromDrive={isGone(d)} />
             ))}
           </ul>
         </Card>
@@ -181,7 +203,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
             />
             <ul>
               {g.docs.map((d) => (
-                <FileRow key={d.id} doc={d} />
+                <FileRow key={d.id} doc={d} goneFromDrive={isGone(d)} />
               ))}
             </ul>
           </Card>

@@ -5,8 +5,8 @@
 // footer so they do not compete with the page.
 
 import { ArrowLeft, CalendarDays, ChevronDown, FolderOpen, LayoutDashboard, Menu, Send, Users, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
 import { filesWaitingCount } from '../lib/files'
 import { reminderQueue } from '../lib/reminders'
@@ -15,6 +15,7 @@ import { setAppearance, useAppearance } from '../theme'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
 import { FolderSettings } from './files/FolderSettings'
+import { GOOGLE_RETURN, GoogleAccount } from './google/GoogleAccount'
 import { Logo } from './Logo'
 import { Button, Card, Field, Modal, SegmentedControl, cx, inputClass, useToast } from './ui'
 
@@ -111,11 +112,25 @@ function SidebarMenu() {
   const toast = useToast()
   const { resetDemo, startEmpty } = useStore.getState()
   const [settings, setSettings] = useState(false)
+  const menu = useRef<HTMLDetailsElement>(null)
+  const [params, setParams] = useSearchParams()
   const students = activeStudents(data)
+
+  // Back from Google's consent screen (/app?google=connected): say how it went and show the Google row in Firm settings.
+  const returned = params.get('google')
+  useEffect(() => {
+    if (!returned) return
+    const next = new URLSearchParams(params)
+    next.delete('google')
+    setParams(next, { replace: true })
+    toast(GOOGLE_RETURN[returned] ?? GOOGLE_RETURN.failed)
+    if (menu.current) menu.current.open = true
+    setSettings(true)
+  }, [returned]) // eslint-disable-line react-hooks/exhaustive-deps
   const item = 'flex min-h-11 w-full items-center rounded-control px-3 text-left text-sm font-medium hover:bg-surface-2 hover:text-heading'
 
   return (
-    <details className="group rounded-control border border-line bg-surface">
+    <details ref={menu} className="group rounded-control border border-line bg-surface">
       <summary className="flex min-h-11 list-none items-center justify-between gap-2 rounded-control px-3 text-sm font-semibold text-heading [&::-webkit-details-marker]:hidden">
         View and settings
         <ChevronDown size={16} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-open:rotate-180" />
@@ -248,6 +263,9 @@ function FirmSettings({ onClose }: { onClose: () => void }) {
       {/* Outside the form above: folders are saved as they are changed. */}
       <div className="mt-5">
         <FolderSettings />
+      </div>
+      <div className="mt-5">
+        <GoogleAccount />
       </div>
     </Modal>
   )

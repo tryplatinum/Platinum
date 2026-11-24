@@ -38,6 +38,8 @@ export interface FileActions {
   deleteFile: (docId: ID) => Promise<void>
   /** Brings files that were being sorted up to date, and lets the server finish any it was cut off on. */
   refreshFiles: () => Promise<void>
+  /** Rows the server made or changed outside an upload (files copied from Google Drive), taken into memory. Nothing is written back. */
+  takeFiles: (rows: DocumentRow[]) => void
   /** Uploads the sample caseload's invented PDFs, already filed. Makes no AI request. */
   addSampleFiles: (students: Student[]) => Promise<void>
 
@@ -172,6 +174,10 @@ export function fileActions({ get, absorb, change }: Tools): FileActions {
       } catch {
         // A background refresh: the next one will try again.
       }
+    },
+
+    takeFiles: (rows) => {
+      if (rows.length) absorb((data) => rows.reduce((next, row) => withRow(row, true)(next), data))
     },
 
     addSampleFiles: async (students) => {
