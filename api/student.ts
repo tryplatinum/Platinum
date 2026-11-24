@@ -19,7 +19,8 @@ import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { StudentLinkError, findLink, finishStudentUpload, hashToken, startStudentUpload, studentPage, studentWrite, type Link } from '../server/studentLink.js'
 import { serviceConfigured } from '../server/supabase.js'
 
-export const config = { maxDuration: 30 }
+// Long enough for the sorting that carries on after finish_upload has answered.
+export const config = { maxDuration: 60 }
 
 const MAX_PER_ADDRESS = 120
 const MAX_PER_TOKEN = 60

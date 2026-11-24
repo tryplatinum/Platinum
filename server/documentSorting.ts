@@ -601,8 +601,8 @@ export async function deleteStoredFiles(caller: SignedIn, scope: DeleteScope): P
 }
 
 /** Removes rows left 'uploading' for over an hour, with any object that did arrive. */
-export async function removeAbandonedUploads(db: Db, firmId: string, studentId?: string): Promise<string[]> {
-  let query = db.from('documents').select('id, storage_path').eq('firm_id', firmId).eq('file_status', 'uploading').not('storage_path', 'is', null).lt('updated_at', new Date(Date.now() - ABANDONED_UPLOAD_MS).toISOString()).limit(200)
+export async function removeAbandonedUploads(db: Db, firmId: string, studentId?: string, olderThanMs = ABANDONED_UPLOAD_MS): Promise<string[]> {
+  let query = db.from('documents').select('id, storage_path').eq('firm_id', firmId).eq('file_status', 'uploading').not('storage_path', 'is', null).lt('updated_at', new Date(Date.now() - olderThanMs).toISOString()).limit(200)
   if (studentId) query = query.eq('student_id', studentId)
   const { data, error } = await query
   if (error) throw failed('reading abandoned uploads failed', error)

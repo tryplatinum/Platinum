@@ -12,9 +12,11 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { POST as aiPost } from '../api/ai.js'
 import { GET as studentGet, POST as studentPost } from '../api/student.js'
 import { POST as documentsPost } from '../api/documents.js'
-import { backgroundIdle, matchRoster, sorter } from '../server/documentSorting.js'
+import { deflateRawSync } from 'node:zlib'
+import { backgroundIdle, matchRoster, removeAbandonedUploads, sorter } from '../server/documentSorting.js'
+import { officeText } from '../server/fileText.js'
 import type { SortPromptInput } from '../server/prompts.js'
-import { tinyPdf } from '../shared/files.js'
+import { MIME, sniffMime, tinyPdf } from '../shared/files.js'
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
 import type { Json } from '../src/lib/database.types.js'
 import { adminClient, anonClient, createAccount, createMember, removeAccount, requireSettings, type TestAccount } from './testAccounts.js'
@@ -487,6 +489,56 @@ try {
   check('…while the owner still opens it', (await documents(a, { action: 'open', documentId: secret.id })).status === 200)
   const upsertInto = await c.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { documents: [{ ...(await rowOf(corrected.id)), type_id: folder('Identity and visa') }] } } as unknown as Json })
   check('…and cannot move a file there with an ordinary save', Boolean(upsertInto.error) || (await rowOf(corrected.id))?.type_id === folder('Applications'))
+
+  // A Word file: recognised by its contents, and its opening text is what the model is given.
+  const zip = (entries: [string, string][]) => {
+    const locals: Buffer[] = []
+    const central: Buffer[] = []
+    let offset = 0
+    for (const [name, text] of entries) {
+      const data = deflateRawSync(Buffer.from(text))
+      const head = Buffer.alloc(30)
+      head.writeUInt32LE(0x04034b50, 0)
+      head.writeUInt16LE(20, 4)
+      head.writeUInt16LE(8, 8)
+      head.writeUInt32LE(data.length, 18)
+      head.writeUInt32LE(Buffer.byteLength(text), 22)
+      head.writeUInt16LE(name.length, 26)
+      const dir = Buffer.alloc(46)
+      dir.writeUInt32LE(0x02014b50, 0)
+      dir.writeUInt16LE(8, 10)
+      dir.writeUInt32LE(data.length, 20)
+      dir.writeUInt32LE(Buffer.byteLength(text), 24)
+      dir.writeUInt16LE(name.length, 28)
+      dir.writeUInt32LE(offset, 42)
+      locals.push(head, Buffer.from(name), data)
+      central.push(dir, Buffer.from(name))
+      offset += 30 + name.length + data.length
+    }
+    const end = Buffer.alloc(22)
+    end.writeUInt32LE(0x06054b50, 0)
+    end.writeUInt16LE(entries.length, 8)
+    end.writeUInt16LE(entries.length, 10)
+    end.writeUInt32LE(Buffer.concat(central).length, 12)
+    end.writeUInt32LE(offset, 16)
+    return Buffer.concat([...locals, ...central, end])
+  }
+  const docx = zip([['[Content_Types].xml', '<Types/>'], ['word/document.xml', '<w:document><w:body><w:p><w:r><w:t>Activities resume</w:t></w:r></w:p><w:p><w:r><w:t>Robotics &amp; debate</w:t></w:r></w:p></w:body></w:document>']])
+  check('a Word file is recognised from its bytes and its opening text is read', sniffMime(docx) === MIME.docx && officeText(docx, MIME.docx) === 'Activities resume\nRobotics & debate' && sniffMime(zip([['hello.txt', 'hi']])) === undefined && sniffMime(Buffer.from(tinyPdf('x', []))) === MIME.pdf)
+  answer = { folder: 'Activities and resume', title: 'Activities resume', sure: true, studentName: null }
+  const word = await studentUpload(linkA, 'Resume', docx, MIME.docx)
+  await backgroundIdle()
+  check('a student’s Word file is stored and sorted from that text, with no file sent', word.finished?.status === 200 && (await rowOf(word.ticket!.documentId))?.type_id === folder('Activities and resume') && lastInput?.hasFile === false && lastInput.extractedText === 'Activities resume\nRobotics & debate', `HTTP ${word.finished?.status}`)
+
+  // An upload that was started and never finished is removed with whatever arrived.
+  const half = await documents(c, { action: 'start', filename: 'abandoned.pdf', size: PDF.length, type: 'application/pdf', studentId: seeded.A.studentId })
+  const halfRow = half.body.data as { id: string; storage_path: string }
+  objects.push(halfRow.storage_path)
+  await c.client.storage.from(BUCKET).upload(halfRow.storage_path, PDF, { contentType: 'application/pdf' })
+  await new Promise((resolve) => setTimeout(resolve, 1100))
+  const swept = await removeAbandonedUploads(admin, a.firmId, seeded.A.studentId, 1000)
+  check('an abandoned upload is removed with its object', swept.includes(halfRow.id) && !(await exists(halfRow.storage_path)) && !(await rowOf(halfRow.id)))
+  check('…and nothing that finished uploading is touched', Boolean(await rowOf(secret.id)) && (await exists(secret.path)))
 
   // Deleting: the object and the row go together, through one path.
   const deletedOne = await documents(c, { action: 'delete', documentId: corrected.id })
