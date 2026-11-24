@@ -348,6 +348,9 @@ function merged(base: AppData, add: AppData): AppData {
   }
 }
 
+/** Why the caseload was not cleared. A refusal over owner-only files already says nothing was changed. */
+const notCleared = (error: unknown) => (/Nothing was changed\.$/.test(reasonOf(error)) ? reasonOf(error) : `Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`)
+
 const NO_FIRM: Firm = { name: '', weeklyTextDay: 0, sortFilesAutomatically: true, counselorName: '', counselorFirstName: '' }
 
 // ── Writing changes to the database ─────────────────────────────────────────
@@ -516,12 +519,12 @@ export const useStore = create<State & Actions>()((set, get) => {
           install(data, true)
           void writes.then(() => get().addSampleFiles(data.students))
         },
-        (error) => notify(`Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`),
+        (error) => notify(notCleared(error)),
       ),
     startEmpty: () =>
       void clearStoredFiles(get()).then(
         () => install(undefined, true),
-        (error) => notify(`Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`),
+        (error) => notify(notCleared(error)),
       ),
 
     hasLegacyData: () => legacyData() !== undefined,

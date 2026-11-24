@@ -14,7 +14,8 @@
 // Who acts: a counselor's work is done with their own client, so row level
 // security applies. The service role is used only where there is no signed-in
 // person (a student link, system events, the background retry) and for removing
-// every file of a student or firm, always filtered by the caller's firm.
+// every file of a student or firm, always filtered by the caller's firm, and
+// only after checking that no owner-only file is in a non-owner's way.
 //
 // Nothing here logs file contents, signed URLs or keys.
 
@@ -567,6 +568,10 @@ export async function openDocument(caller: SignedIn, input: { documentId?: unkno
 
 export type DeleteScope = { documentId: string } | { studentId: string } | { firm: true }
 
+/** The same words the database uses when it refuses (apply_changes). */
+export const ownerOnlyRefusal = (count: number, doing: string) =>
+  `${count === 1 ? '1 owner-only file is' : `${count} owner-only files are`} in the way: only the firm’s owner can open ${count === 1 ? 'it' : 'them'}, so only the owner can ${doing}. Nothing was changed.`
+
 /**
  * THE one path that removes stored files. apply_changes and a cascade from
  * `delete from students` remove rows only, which would leave objects behind
@@ -575,13 +580,23 @@ export type DeleteScope = { documentId: string } | { studentId: string } | { fir
  * row (never by a folder prefix), then the row, then logs it.
  *
  * One document is removed as the caller: what they cannot read, they cannot
- * delete. A student's or the firm's files are removed with the service role,
- * filtered by the caller's firm, because a counselor who may delete a student
- * may not be able to see every file that student has (restricted folders), and
- * those objects must go too.
+ * delete, so an owner-only file can be deleted only by the owner.
+ *
+ * A student's or the firm's files: when any of them is owner-only, only the
+ * firm's owner may do it. Anyone else is refused before anything is touched,
+ * and told how many such files are in the way. (apply_changes makes the same
+ * check on deleting a student and on clearing the caseload.) Otherwise the
+ * files are removed with the service role, filtered by the caller's firm, so
+ * that files still uploading or waiting with no student go too.
  */
 export async function deleteStoredFiles(caller: SignedIn, scope: DeleteScope): Promise<{ removed: string[] }> {
   const one = 'documentId' in scope
+  if (!one && caller.role !== 'owner') {
+    const student = 'studentId' in scope ? scope.studentId : undefined
+    const counted = await caller.client.rpc('owner_only_file_count', { firm: caller.firmId, ...(student ? { students: [student] } : {}) })
+    if (counted.error) throw failed('counting owner-only files failed', counted.error)
+    if (counted.data > 0) throw new FileError(ownerOnlyRefusal(counted.data, student ? 'delete this student' : 'clear the caseload'), 403)
+  }
   const db = !one && serviceConfigured() ? serviceClient() : caller.client
   const folders = new Map((await foldersOf(db, caller.firmId)).map((f) => [f.id, f]))
   const removed: string[] = []

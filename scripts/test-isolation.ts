@@ -546,17 +546,59 @@ try {
   const deletedOne = await documents(c, { action: 'delete', documentId: corrected.id })
   check('deleting a document removes its object and its row together', deletedOne.status === 200 && !(await exists(corrected.path)) && !(await rowOf(corrected.id)))
   check('…and logs it with the title, since the folder was open to all', (await eventsOf(corrected.id)).some((e) => e.action === 'deleted' && (e.detail as { title?: string }).title === 'Common App confirmation'))
-  const before = ((await admin.from('documents').select('id, storage_path').eq('student_id', seeded.A.studentId).not('storage_path', 'is', null)).data ?? [])
-  const studentGone = await documents(c, { action: 'delete', studentId: seeded.A.studentId })
-  const leftRows = ((await admin.from('documents').select('id').eq('student_id', seeded.A.studentId).not('storage_path', 'is', null)).data ?? [])
+  // Owner-only files cannot be removed by other members: deleting a student's files, deleting the
+  // student, or clearing the caseload is refused for anyone but the owner while one is in the way.
+  const storedOf = async () => ((await admin.from('documents').select('id, storage_path').eq('student_id', seeded.A.studentId).not('storage_path', 'is', null)).data ?? [])
+  const before = await storedOf()
+  // Which of those rows have an object behind them, to compare after each refusal.
+  const objectsOf = async () => (await Promise.all(before.map((d) => exists(d.storage_path!)))).join()
+  const objectsBefore = await objectsOf()
+  const allThere = async () => (await storedOf()).length === before.length && (await objectsOf()) === objectsBefore
+  // How many owner-only files this student has, as the owner sees it.
+  const inTheWay = (await a.client.rpc('owner_only_file_count', { firm: a.firmId, students: [seeded.A.studentId] })).data ?? 0
+  const words = inTheWay === 1 ? '1 owner-only file is in the way: only the firm.s owner can open it' : `${inTheWay} owner-only files are in the way: only the firm.s owner can open them`
+  const refusedStudent = await documents(c, { action: 'delete', studentId: seeded.A.studentId })
+  check('a counselor who is not the owner cannot delete the files of a student who has an owner-only file', refusedStudent.status === 403 && inTheWay >= 1 && before.some((d) => d.id === secret.id), `HTTP ${refusedStudent.status}, ${inTheWay} owner-only`)
+  check('…and is told how many are in the way', new RegExp(`^${words}, so only the owner can delete this student\\. Nothing was changed\\.$`).test(refusedStudent.body.message ?? ''), refusedStudent.body.message)
+  const refusedFirm = await documents(c, { action: 'delete', firm: true })
+  check('…nor clear the caseload’s files', refusedFirm.status === 403 && new RegExp(`^${words}, so only the owner can clear the caseload`).test(refusedFirm.body.message ?? ''), refusedFirm.body.message)
+  const refusedRow = await c.client.rpc('apply_changes', { firm: a.firmId, changes: { delete: { students: [seeded.A.studentId] } } })
+  check('…nor delete the student in the database', new RegExp(`^${words}, so only the owner can delete this student`).test(refusedRow.error?.message ?? ''), refusedRow.error?.message)
+  const refusedClear = await c.client.rpc('apply_changes', { firm: a.firmId, changes: { clear: true } })
+  check('…nor clear the caseload in the database', new RegExp(`^${words}, so only the owner can clear the caseload`).test(refusedClear.error?.message ?? ''), refusedClear.error?.message)
+  check('…and every refusal changed nothing', (await allThere()) && ((await admin.from('students').select('id').eq('id', seeded.A.studentId)).data ?? []).length === 1 && !(await eventsOf(secret.id)).some((e) => e.action === 'deleted'))
+  check('the counselor is told the number, not the files', (await c.client.rpc('owner_only_file_count', { firm: a.firmId })).data === inTheWay && ((await c.client.from('documents').select('id').eq('id', secret.id)).data ?? []).length === 0)
+  check('firm B and anon cannot ask for the number', Boolean((await b.client.rpc('owner_only_file_count', { firm: a.firmId })).error) && Boolean((await anon.rpc('owner_only_file_count', { firm: a.firmId })).error))
+
+  // A single owner-only file: still the owner's alone to delete.
+  const secret2 = await counselorUpload(a, 'Passport scan', seeded.A.studentId)
+  await documents(a, { action: 'file', documentId: secret2.id, typeId: folder('Identity and visa'), title: 'Passport scan' })
+  check('a counselor cannot delete a single owner-only file', (await documents(c, { action: 'delete', documentId: secret2.id })).status === 404 && (await exists(secret2.path)) && Boolean(await rowOf(secret2.id)))
+  check('…the owner can', (await documents(a, { action: 'delete', documentId: secret2.id })).status === 200 && !(await exists(secret2.path)) && !(await rowOf(secret2.id)))
+
+  // The owner may do all of it.
+  const studentGone = await documents(a, { action: 'delete', studentId: seeded.A.studentId })
+  const leftRows = await storedOf()
   const leftObjects = (await Promise.all(before.map((d) => exists(d.storage_path!)))).filter(Boolean)
-  check('deleting a student’s files removes every object, even ones the counselor cannot see', studentGone.status === 200 && before.length >= 5 && before.some((d) => d.id === secret.id) && leftRows.length === 0 && leftObjects.length === 0, `${before.length} before, ${leftRows.length} rows and ${leftObjects.length} objects left`)
+  check('the owner deletes a student’s files, owner-only ones included: every object and row goes', studentGone.status === 200 && before.length >= 5 && leftRows.length === 0 && leftObjects.length === 0, `${before.length} before, ${leftRows.length} rows and ${leftObjects.length} objects left`)
   const secretDeleted = (await eventsOf(secret.id)).find((e) => e.action === 'deleted')
   check('…and the deleted event of a restricted file carries no title or file name', Boolean(secretDeleted) && Object.keys(secretDeleted!.detail as object).length === 0)
   check('…and leaves the student and their essays alone', ((await admin.from('students').select('id').eq('id', seeded.A.studentId)).data ?? []).length === 1 && ((await admin.from('documents').select('id').eq('student_id', seeded.A.studentId).eq('kind', 'essay')).data ?? []).length === 1)
+  // With no owner-only file left, a counselor may delete a student's files again.
+  const plainFile = await counselorUpload(c, 'Activity list', seeded.A.studentId)
+  await documents(c, { action: 'file', documentId: plainFile.id, typeId: folder('Activities and resume'), title: 'Activity list' })
+  check('with no owner-only file in the way, a counselor deletes a student’s files', (await documents(c, { action: 'delete', studentId: seeded.A.studentId })).status === 200 && !(await exists(plainFile.path)) && !(await rowOf(plainFile.id)))
+
+  // Clearing the caseload: the same rule.
   const loner = await counselorUpload(a, 'Waiting with no student')
+  const aid = await counselorUpload(a, 'Aid appeal', seeded.A.studentId)
+  await documents(a, { action: 'file', documentId: aid.id, typeId: folder('Financial aid'), title: 'Aid appeal' })
+  const clearRefused = await documents(c, { action: 'delete', firm: true })
+  check('a counselor cannot clear the firm’s files while an owner-only file exists', clearRefused.status === 403 && (await exists(loner.path)) && (await exists(aid.path)), clearRefused.body.message)
   const firmGone = await documents(a, { action: 'delete', firm: true })
-  check('clearing a firm’s files removes those waiting with no student too', firmGone.status === 200 && !(await exists(loner.path)) && !(await rowOf(loner.id)))
+  check('the owner clears the firm’s files, including those waiting with no student', firmGone.status === 200 && !(await exists(loner.path)) && !(await rowOf(loner.id)) && !(await exists(aid.path)) && !(await rowOf(aid.id)))
+  const lone2 = await counselorUpload(c, 'Waiting again')
+  check('with no owner-only file left, a counselor may clear the firm’s files', (await documents(c, { action: 'delete', firm: true })).status === 200 && !(await exists(lone2.path)))
   check("…and touches nothing of firm B's", ((await admin.from('documents').select('id').eq('firm_id', b.firmId)).data ?? []).length > 0)
 
   // The link's limits.

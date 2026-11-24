@@ -322,6 +322,8 @@ export interface StudentDocument {
   schoolYear?: string
   uploadedByKind?: 'counselor' | 'student_link'
   uploadedByUser?: ID
+  /** The student link a file was dropped through. Absent on counselor uploads and on older drops. */
+  studentLinkId?: ID
   fileStatus?: FileStatus
   sortedBy?: 'person' | 'auto'
   needsCheck?: boolean

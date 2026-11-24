@@ -541,6 +541,7 @@ export type Database = {
           status: string | null
           storage_path: string | null
           student_id: string | null
+          student_link_id: string | null
           target: string | null
           task_id: string | null
           title: string | null
@@ -581,6 +582,7 @@ export type Database = {
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
+          student_link_id?: string | null
           target?: string | null
           task_id?: string | null
           title?: string | null
@@ -621,6 +623,7 @@ export type Database = {
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
+          student_link_id?: string | null
           target?: string | null
           task_id?: string | null
           title?: string | null
@@ -653,6 +656,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "students"
             referencedColumns: ["firm_id", "id"]
+          },
+          {
+            foreignKeyName: "documents_student_link_id_fkey"
+            columns: ["student_link_id"]
+            isOneToOne: false
+            referencedRelation: "student_links"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "documents_task_id_fkey"
@@ -1501,6 +1511,15 @@ export type Database = {
         Args: { display_name: string; name: string }
         Returns: string
       }
+      document_is_owner_only: {
+        Args: {
+          file_status: string
+          kind: string
+          storage_path: string
+          type_id: string
+        }
+        Returns: boolean
+      }
       document_is_readable: { Args: { document: string }; Returns: boolean }
       document_type_is_open: { Args: { type: string }; Returns: boolean }
       file_document: {
@@ -1516,6 +1535,10 @@ export type Database = {
       }
       is_firm_member: { Args: { firm: string }; Returns: boolean }
       is_firm_owner: { Args: { firm: string }; Returns: boolean }
+      owner_only_file_count: {
+        Args: { firm: string; students?: string[] }
+        Returns: number
+      }
       path_uuid: { Args: { path: string; segment: number }; Returns: string }
       seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {
