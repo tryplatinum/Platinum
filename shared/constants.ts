@@ -2,6 +2,8 @@
 // browser can use this file without pulling in Zod.
 
 export const AI_ENDPOINT = '/api/ai'
+/** Counselor assistant: POST a message, GET the thread. */
+export const AGENT_ENDPOINT = '/api/agent'
 /** Sends due queued outbox rows for the signed-in firm. */
 export const DISPATCH_ENDPOINT = '/api/dispatch'
 /** The student link endpoint and the header that carries the link's token. */
