@@ -33,6 +33,17 @@ export const AgentProposalSourceSchema = z.object({
 })
 export type AgentProposalSource = z.infer<typeof AgentProposalSourceSchema>
 
+/**
+ * A record a tool actually returned on this turn. The model does not write this
+ * list. `label` is the chip, already worded, such as "Meeting · Nov 18".
+ */
+export const AgentTurnSourceSchema = z.object({
+  kind: z.string().min(1).max(40),
+  id: z.string().min(1).max(80),
+  label: z.string().min(1).max(160),
+})
+export type AgentTurnSource = z.infer<typeof AgentTurnSourceSchema>
+
 export const AgentProposalOutSchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(AGENT_PROPOSAL_KINDS),
@@ -48,8 +59,65 @@ export const AgentResponseSchema = z.object({
   threadId: z.string().uuid(),
   reply: z.string(),
   proposals: z.array(AgentProposalOutSchema),
+  sources: z.array(AgentTurnSourceSchema),
 })
 export type AgentResponse = z.infer<typeof AgentResponseSchema>
+
+/** One proposal as the panel shows it, with the status stored on the row. */
+export const AgentHistoryProposalSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(AGENT_PROPOSAL_KINDS),
+  studentId: z.string().uuid(),
+  summary: z.string(),
+  status: z.enum(AGENT_PROPOSAL_STATUSES),
+})
+export type AgentHistoryProposal = z.infer<typeof AgentHistoryProposalSchema>
+
+/** A user or assistant turn. Tool rows are not included. */
+export const AgentHistoryMessageSchema = z.object({
+  id: z.string().uuid(),
+  role: z.enum(['user', 'assistant']),
+  text: z.string(),
+  sources: z.array(AgentTurnSourceSchema),
+  proposals: z.array(AgentHistoryProposalSchema),
+})
+export type AgentHistoryMessage = z.infer<typeof AgentHistoryMessageSchema>
+
+/** GET /api/agent — this counselor's thread for one student, or the general thread. */
+export const AgentHistorySchema = z.object({
+  ok: z.literal(true),
+  threadId: z.string().uuid().nullable(),
+  messages: z.array(AgentHistoryMessageSchema),
+})
+export type AgentHistory = z.infer<typeof AgentHistorySchema>
+
+/** One line for a proposal card. Prefers the drafted title or body over the rationale. */
+export function proposalSummary(proposal: { kind: string; rationale?: string; payload: unknown }): string {
+  const payload =
+    proposal.payload && typeof proposal.payload === 'object' && !Array.isArray(proposal.payload)
+      ? (proposal.payload as Record<string, unknown>)
+      : {}
+  if (typeof payload.title === 'string' && payload.title.trim()) return clip(payload.title)
+  if (typeof payload.body === 'string' && payload.body.trim()) return clip(payload.body.split('\n')[0] ?? '')
+  if (typeof payload.to === 'string') {
+    const field = typeof payload.field === 'string' && payload.field.trim() ? payload.field.trim() : 'Profile'
+    return clip(`${field} → ${payload.to}`)
+  }
+  if (Array.isArray(payload.slots)) {
+    const when = payload.slots
+      .map((slot) => (slot && typeof slot === 'object' && 'when' in slot ? String((slot as { when?: unknown }).when ?? '') : ''))
+      .filter(Boolean)
+    if (when.length) return clip(when.join(' · '))
+  }
+  const rationale = proposal.rationale?.trim()
+  if (rationale) return clip(rationale)
+  return proposal.kind
+}
+
+function clip(text: string): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > 140 ? `${line.slice(0, 137)}…` : line
+}
 
 export type AgentErrorCode =
   | 'not_configured'

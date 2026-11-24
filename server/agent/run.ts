@@ -3,10 +3,11 @@
 // except pending proposals and message rows.
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { AgentProposalOut } from '../../shared/agent.js'
+import type { AgentProposalOut, AgentTurnSource } from '../../shared/agent.js'
 import { modelName } from '../claude.js'
 import { agentSystemPrompt } from '../prompts.js'
 import type { Json } from '../../src/lib/database.types.js'
+import { dedupeSources, sourcesFromTool } from './sources.js'
 import { AGENT_TOOLS, runTool } from './tools.js'
 import type { AgentContext, CreatedProposal, Db } from './types.js'
 
@@ -128,6 +129,8 @@ export interface AgentRunResult {
   threadId: string
   reply: string
   proposals: AgentProposalOut[]
+  /** Records the tools returned this turn. Not taken from the model's text. */
+  sources: AgentTurnSource[]
 }
 
 export async function runAgent(args: {
@@ -196,6 +199,7 @@ export async function runAgent(args: {
   const rounds = maxRounds()
   let reply = ''
   let hitRoundCap = false
+  const turnSources: AgentTurnSource[] = []
 
   for (let round = 0; round < rounds; round++) {
     let response: Anthropic.Message
@@ -235,6 +239,7 @@ export async function runAgent(args: {
     const toolResults: Anthropic.ToolResultBlockParam[] = []
     for (const use of toolUses) {
       const result = await runTool(ctx, use.name, use.input)
+      if (result.ok) turnSources.push(...sourcesFromTool(use.name, result.data))
       const body = result.ok ? result.data : { error: result.error }
       toolResults.push({
         type: 'tool_result',
@@ -287,6 +292,7 @@ export async function runAgent(args: {
     threadId,
     reply,
     proposals: ctx.createdProposals.map(toOut),
+    sources: dedupeSources(turnSources),
   }
 }
 

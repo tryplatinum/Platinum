@@ -4,6 +4,7 @@
 // proposal. Nothing is sent from here.
 
 import { AgentRequestSchema, type AgentErrorCode } from '../shared/agent.js'
+import { loadAgentThread } from '../server/agent/history.js'
 import { AgentHttpError, runAgent } from '../server/agent/run.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, serviceClient, serviceConfigured } from '../server/supabase.js'
@@ -18,6 +19,36 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 const fail = (code: AgentErrorCode, message: string, status: number) => json({ ok: false, code, message }, status)
+
+function studentQuery(request: Request): string | null | Response {
+  const raw = new URL(request.url).searchParams.get('studentId')
+  if (raw === null || raw === '' || raw === 'null') return null
+  const parsed = AgentRequestSchema.shape.studentId.safeParse(raw)
+  if (!parsed.success || parsed.data === null) return fail('bad_request', 'Invalid request: studentId.', 400)
+  return parsed.data
+}
+
+/** This counselor's thread for one student, or the general thread when studentId is null. */
+export async function GET(request: Request): Promise<Response> {
+  if (!authConfigured()) {
+    return fail('not_configured', 'The server has no Supabase settings, so it cannot run the assistant.', 503)
+  }
+  const caller = await identify(request)
+  if (!caller.ok) {
+    return caller.reason === 'no_firm'
+      ? fail('no_firm', 'Your account does not belong to a firm yet.', 403)
+      : fail('unauthorized', 'Sign in again to use the assistant.', 401)
+  }
+  const studentId = studentQuery(request)
+  if (studentId instanceof Response) return studentId
+  try {
+    return json(await loadAgentThread(caller.client, caller.firmId, caller.userId, studentId))
+  } catch (error) {
+    if (error instanceof AgentHttpError) return fail(error.code as AgentErrorCode, error.message, error.status)
+    console.error('[agent] history', error)
+    return fail('server', 'Something went wrong in the assistant. Please try again.', 500)
+  }
+}
 
 export async function POST(request: Request): Promise<Response> {
   if (!authConfigured() || !serviceConfigured()) {
@@ -63,7 +94,7 @@ export async function POST(request: Request): Promise<Response> {
       studentId: body.data.studentId,
       message: body.data.message.trim(),
     })
-    return json({ ok: true, threadId: result.threadId, reply: result.reply, proposals: result.proposals })
+    return json({ ok: true, threadId: result.threadId, reply: result.reply, proposals: result.proposals, sources: result.sources })
   } catch (error) {
     if (error instanceof AgentHttpError) {
       return fail(error.code as AgentErrorCode, error.message, error.status)

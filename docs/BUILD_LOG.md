@@ -96,4 +96,17 @@ Approvals home at `/app`, Activity, reminder skips (`20261131000001`), edit prof
 
 ## Next step
 
-Aaron: `npm run db:push` then `npm run db:types`, then `npm run test:agent`. Manual Approvals check after Reset demo. Then M4b panel.
+M4c command bar, or the signed-in panel pass on a reset demo if it was not finished in the browser. File tools stay M4d. Permanent reminder skips still have no Settings screen.
+
+## M4b-2
+
+The panel talks to `POST /api/agent` and `GET /api/agent?studentId=`. `VITE_AGENT_MOCK=true` keeps the canned client.
+
+- `shared/agent.ts` — reply `sources: [{ kind, id, label }]`, plus `AgentHistory` for the thread (`messages` with each reply’s sources and proposals, proposals carrying `status`).
+- `server/agent/sources.ts` — chips are built from tool results only (task, meeting, student, and so on). The model’s own source list is not used.
+- `server/agent/history.ts` and `GET` on `api/agent.ts` — this counselor’s thread, last 50 user and assistant messages, tool rows left out, read with the counselor’s token.
+- `src/services/agentClient.ts` — real client is the default; session token like `aiClient`.
+- `src/components/agent/types.ts` — removed. The panel uses `shared/agent.ts`.
+- Panel: loads history on open and when the student changes; proposal cards show Pending, Approved, or Discarded; pending cards link to Approvals; 429, 401, and 500 show the server’s text; a reply that created proposals calls `reload(true)` so the Approvals badge updates; `console.debug` logs the reply time, and Thinking… shows the seconds after 3s.
+
+Checks: `typecheck`, `lint`, `test:notes`, `test:outbox` exit 0. `test:agent` passed all 8 cases. Signed-in sample caseload, real agent: “What’s overdue?” 7.3s, “Draft a reminder to their mom about the essay deadline.” 29.3s, “Who needs attention this week?” 7.8s. Source chips matched Kevin’s tasks. The proposal showed Pending, the Approvals badge went from 22 to 23 without a reload, and after approval plus a reload the card showed Approved with the history intact. Sophia’s thread was empty and separate.

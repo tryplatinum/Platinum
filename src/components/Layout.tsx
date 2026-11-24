@@ -17,7 +17,8 @@ import { AiConnection } from './AiConnection'
 import { FolderSettings } from './files/FolderSettings'
 import { GOOGLE_RETURN, GoogleAccount } from './google/GoogleAccount'
 import { YourPhone } from './phone/YourPhone'
-import { Logo } from './Logo'
+import { AgentPanel, useAgentPanel } from './agent/AgentPanel'
+import { Logo, Spark } from './Logo'
 import { Button, Card, Field, Modal, SegmentedControl, cx, inputClass, useToast } from './ui'
 
 /** Navigation and button icons: 20px, stroke 1.75. Always beside a text label. */
@@ -28,6 +29,7 @@ export function CounselorLayout() {
   const email = useStore((s) => (s.account.status === 'ready' ? s.account.email : ''))
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const panel = useAgentPanel()
   useEffect(() => setMenuOpen(false), [location.pathname, location.search])
 
   const reminders = reminderQueue(data)
@@ -100,12 +102,37 @@ export function CounselorLayout() {
         </div>
       </nav>
 
-      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-        <div className="mx-auto flex max-w-[1240px] flex-col gap-6">
-          <LegacyImport />
-          <Outlet />
+      <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="sticky top-0 z-20 flex items-center justify-end border-b border-line bg-canvas px-4 py-1.5 sm:px-6 lg:px-10">
+            <button
+              type="button"
+              className={cx(
+                'flex min-h-11 items-center gap-2 rounded-control px-3 text-sm font-semibold text-heading',
+                panel.open ? 'bg-sidebar-active' : 'hover:bg-chip',
+              )}
+              aria-expanded={panel.open}
+              aria-controls="agent-panel"
+              aria-keyshortcuts="Meta+J Control+J"
+              onClick={panel.toggle}
+            >
+              <Spark size={16} />
+              Assistant
+              <span aria-hidden className="text-xs font-medium text-muted">
+                ⌘J
+              </span>
+            </button>
+          </div>
+          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+            <div className="mx-auto flex max-w-[1240px] flex-col gap-6">
+              <LegacyImport />
+              <Outlet />
+            </div>
+          </main>
         </div>
-      </main>
+        {/* Stays mounted while closed so each thread survives a toggle. */}
+        <AgentPanel open={panel.open} onClose={panel.close} />
+      </div>
     </div>
   )
 }
