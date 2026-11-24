@@ -23,6 +23,8 @@ export type EssayBrainstorm = z.infer<typeof EssayBrainstormSchema>
 export const AgentRequestSchema = z.object({
   studentId: z.string().uuid().nullable(),
   message: z.string().min(1).max(8_000),
+  /** Panel poll key. Optional so older clients still work. */
+  requestId: z.string().uuid().optional(),
 })
 export type AgentRequest = z.infer<typeof AgentRequestSchema>
 
@@ -54,12 +56,21 @@ export const AgentProposalOutSchema = z.object({
 })
 export type AgentProposalOut = z.infer<typeof AgentProposalOutSchema>
 
+/** Per-request timing. No student content. */
+export const AgentTimingSchema = z.object({
+  rounds: z.number(),
+  models: z.array(z.object({ ms: z.number(), inputTokens: z.number(), outputTokens: z.number() })),
+  tools: z.array(z.object({ name: z.string(), ms: z.number() })),
+})
+export type AgentTiming = z.infer<typeof AgentTimingSchema>
+
 export const AgentResponseSchema = z.object({
   ok: z.literal(true),
   threadId: z.string().uuid(),
   reply: z.string(),
   proposals: z.array(AgentProposalOutSchema),
   sources: z.array(AgentTurnSourceSchema),
+  timing: AgentTimingSchema.optional(),
 })
 export type AgentResponse = z.infer<typeof AgentResponseSchema>
 
@@ -98,7 +109,14 @@ export function proposalSummary(proposal: { kind: string; rationale?: string; pa
       ? (proposal.payload as Record<string, unknown>)
       : {}
   if (typeof payload.title === 'string' && payload.title.trim()) return clip(payload.title)
-  if (typeof payload.body === 'string' && payload.body.trim()) return clip(payload.body.split('\n')[0] ?? '')
+  if (typeof payload.body === 'string' && payload.body.trim()) {
+    const lines = payload.body.split('\n').map((line) => line.trim()).filter(Boolean)
+    const opening = lines[0] ?? ''
+    // The sign-off is the short lines after the message, so the card shows the name.
+    const closing = lines.slice(1).filter((line) => line.length <= 40)
+    const shown = closing.length > 0 ? `${opening} — ${closing.join(', ')}` : opening
+    return clip(shown)
+  }
   if (typeof payload.to === 'string') {
     const field = typeof payload.field === 'string' && payload.field.trim() ? payload.field.trim() : 'Profile'
     return clip(`${field} → ${payload.to}`)
