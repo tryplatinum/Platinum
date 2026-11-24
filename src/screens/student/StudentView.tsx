@@ -10,6 +10,7 @@ import { formatDate, formatDateLong, formatTime } from '../../lib/dates'
 import { dueText, essaysFor, isOpen, meetingsFor, nextApplicationDeadline, nextMeeting, ownerLabel, sortByUrgency, tasksFor } from '../../lib/derive'
 import { useData, useStore } from '../../store/store'
 import type { Student } from '../../types'
+import { AddFile } from './AddFile'
 
 /** The student this view belongs to, provided by StudentLayout. */
 const useStudent = () => useOutletContext<Student>()
@@ -96,6 +97,8 @@ export function StudentHome() {
           </>
         )}
       </Card>
+
+      <AddFile counselorName={data.firm.counselorFirstName} />
 
       {recap?.recap && (
         <Card tone="accent" className="flex flex-col gap-2 p-4">
