@@ -1,9 +1,12 @@
 // Getting a small, cheap piece of a file ready for the model that sorts it:
-// the first two pages of a PDF, or the first few thousand characters of a Word
-// or Excel file. Nothing here logs file contents.
+// the first two pages of a PDF, the first few thousand characters of a Word or
+// Excel file, or a reduced copy of a large photo. Nothing here logs file
+// contents, and nothing here changes what is stored: every result is a copy
+// made in memory for one request to the model.
 
 import { inflateRawSync } from 'node:zlib'
 import { PDFDocument } from 'pdf-lib'
+import sharp from 'sharp'
 import { MIME } from '../shared/files.js'
 
 /** How many pages of a PDF the model is shown. */
@@ -21,6 +24,36 @@ export async function firstPages(pdf: Uint8Array): Promise<Uint8Array | undefine
     const pages = await out.copyPages(source, Array.from({ length: PDF_PAGES }, (_, i) => i))
     pages.forEach((page) => out.addPage(page))
     return await out.save()
+  } catch {
+    return undefined
+  }
+}
+
+/** The longest edge of the copy of a photo the model is shown. Enough to read a printed page. */
+export const REDUCED_LONG_EDGE = 1568
+/** Refuse to decode anything larger than this many pixels (a 100-megapixel image). */
+const MAX_PIXELS = 100_000_000
+
+/**
+ * A smaller JPEG copy of a photo, for the model only: turned the right way up,
+ * at most 1568 pixels on its longest edge. HEIC (an iPhone's own format) is
+ * decoded first. Returns undefined when the image cannot be read, and the
+ * caller then falls back to the file name. The stored original is never touched.
+ */
+export async function reducedPhoto(bytes: Uint8Array, mime: string): Promise<Uint8Array | undefined> {
+  try {
+    let source = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    if (mime === MIME.heic) {
+      // Loaded only when a HEIC file arrives: it carries its own decoder.
+      const { default: convert } = await import('heic-convert')
+      source = Buffer.from(await convert({ buffer: source, format: 'JPEG', quality: 0.9 }))
+    }
+    const out = await sharp(source, { limitInputPixels: MAX_PIXELS })
+      .rotate()
+      .resize({ width: REDUCED_LONG_EDGE, height: REDUCED_LONG_EDGE, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer()
+    return new Uint8Array(out.buffer, out.byteOffset, out.byteLength)
   } catch {
     return undefined
   }

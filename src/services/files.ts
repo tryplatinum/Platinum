@@ -9,7 +9,7 @@
 // Only the store (store/files.ts) and the student's page use this file.
 
 import { STUDENT_ENDPOINT, STUDENT_TOKEN_HEADER } from '../../shared/constants'
-import { DOCUMENTS_BUCKET, DOCUMENTS_ENDPOINT, FILE_TYPES_LABEL, MAX_FILE_BYTES, MIME, RESUMABLE_ABOVE_BYTES, declaredMime } from '../../shared/files'
+import { DOCUMENTS_BUCKET, DOCUMENTS_ENDPOINT, FILE_TYPES_LABEL, MAX_FILE_BYTES, RESUMABLE_ABOVE_BYTES, declaredMime } from '../../shared/files'
 import type { StudentUploadTicket } from '../../shared/student'
 import type { Database } from '../lib/database.types'
 import { todayISO } from '../lib/dates'
@@ -160,28 +160,6 @@ export async function uploadToStorage(path: string, file: Blob, mime: string, on
 
 // ── A student link ──────────────────────────────────────────────────────────
 
-/** Phone photos are large. One over this is scaled down in the browser before it is sent. */
-const PHOTO_SHRINK_ABOVE = 3_000_000
-const PHOTO_LONG_EDGE = 2400
-
-/** A smaller JPEG of a large photo, still easy to read. Anything else is returned as it is. */
-export async function shrinkPhoto(file: File): Promise<File> {
-  if ((file.type !== MIME.jpeg && file.type !== MIME.png) || file.size <= PHOTO_SHRINK_ABOVE) return file
-  try {
-    const image = await createImageBitmap(file)
-    const scale = Math.min(1, PHOTO_LONG_EDGE / Math.max(image.width, image.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(image.width * scale)
-    canvas.height = Math.round(image.height * scale)
-    canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, MIME.jpeg, 0.85))
-    if (!blob || blob.size >= file.size) return file
-    return new File([blob], file.name.replace(/\.(png|jpe?g)$/i, '') + '.jpg', { type: MIME.jpeg })
-  } catch {
-    return file
-  }
-}
-
 type StudentReply = { ok: true; upload?: StudentUploadTicket; added?: { name: string } } | { ok: false; message: string }
 
 async function studentCall(token: string, body: Record<string, unknown>): Promise<Extract<StudentReply, { ok: true }>> {
@@ -203,7 +181,8 @@ async function studentCall(token: string, body: Record<string, unknown>): Promis
  * there. Returns the file's name. The link gets nothing else back.
  */
 export async function studentLinkUpload(linkToken: string, original: File, onProgress: Progress): Promise<string> {
-  const file = await shrinkPhoto(original)
+  // The photo is stored exactly as taken. The server makes its own reduced copy for sorting.
+  const file = original
   const mime = checkFile(file)
   const { upload } = await studentCall(linkToken, { action: 'start_upload', filename: file.name, size: file.size, type: mime, today: todayISO() })
   if (!upload) throw new FileFailure('The upload could not be started. Try again.')

@@ -30,7 +30,8 @@ npm run dev                    # http://localhost:5173
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` from the linked project |
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
 | `npm run test:notes` | Check, with no keys or network, that a student's "things to remember" cannot reach a parent report, a parent reminder or the student link's code |
-| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls), then sort two invented files (two more). `npm run test:ai -- sortFile` runs only those. Then one real college list draft for the sample student Kevin against the real directory (one call, or two if a reason is thrown away); `npm run test:ai -- collegeList` runs only that |
+| `npm run test:files` | Check, with no keys or network, what of a photo the sorting model is shown: a reduced copy of a large one, the file name when no copy can be made. `-- path/to/photo.heic` also checks a HEIC file |
+| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls), then sort three invented files, one of them a phone-sized photo (three more). `npm run test:ai -- sortFile` runs only those. Then one real college list draft for the sample student Kevin against the real directory (one call, or two if a reason is thrown away); `npm run test:ai -- collegeList` runs only that |
 | `npm run import:colleges` | Fill the college directory from the College Scorecard, by hand (`-- --dry-run` reports without writing). See "The college directory" |
 | `npm run test:bands` | Check, with no keys or network, the band rules (missing data and the under-20% rule included), the candidate cap, the majors match, the check on AI-written reasons, and that the student link and parent reports read no drafts |
 | `npm run build:programs` | Rewrite `shared/cipPrograms.ts`, the list of program titles in the directory, by hand after an import. See "Drafting a college list" |
@@ -225,7 +226,7 @@ student:    POST /api/student start_upload  ─▶ token, limits, declared size 
 - **A counselor's upload** is never filed by the AI. It gets a suggestion and waits under "Waiting for you" on the Documents screen, on no student's page, until a person files it. Choosing a different folder from the suggestion is a correction; the AI's suggestion stays on the row, and that pair is what the next request is shown.
 - **If the model fails or takes over 40 seconds,** the upload still succeeds: the file goes under Other marked to check, and sorting is tried once more in the background. A folder or title a person set is never overwritten (every automatic write applies only while the row is still in the state the AI found it in).
 - **"Sort files automatically"** (Firm settings, owner only, on by default). Off: every upload lands under Other to be checked and nothing is sent to the model. The server reads the setting from the database.
-- **HEIC photos and images over about 3.5 MB** cannot be shown to the model, so they are sorted from the file name alone and nearly always land under "Check these". A large photo taken on a student link is scaled down in the browser first, so this mostly affects files picked from a phone's library.
+- **Large photos and HEIC photos are sorted from a reduced copy.** An image over about 3.5 MB cannot be sent to the model as it is, and HEIC (an iPhone's own format) cannot be sent at all, so the server makes a smaller JPEG in memory (turned upright, at most 1568 pixels on its longest edge) and sorts from that. The stored file is never changed, and a photo added through a student link is stored exactly as taken. If the copy cannot be made, the file is sorted from its name alone and always lands under "Check these".
 
 **After the response.** A student never waits for the model: `finish_upload` answers as soon as the file is checked and hands the sorting to `waitUntil` (`@vercel/functions`), which keeps the function alive on Vercel; in `npm run dev` the promise simply runs. If that work is cut off anyway, the row stays `sorting`. The next time a counselor's browser loads documents it calls `settle`, which files any row stuck in `sorting` for over three minutes under Other marked to check (a counselor's own upload waits there instead), and removes uploads abandoned for over an hour.
 
@@ -262,7 +263,7 @@ design/reference/         The nine approved HTML mockups (visual reference only)
 api/documents.ts          Server function: stored files for signed-in members (start, finish, suggest,
                           file, rename, open, delete, settle). A thin handler
 server/documentSorting.ts Everything that decides or records where a file goes, and the one delete path
-server/fileText.ts        The first two pages of a PDF; the opening text of a Word or Excel file
+server/fileText.ts        The first two pages of a PDF; the opening text of a Word or Excel file; a reduced copy of a large or HEIC photo
 shared/files.ts           Bucket, limits, file types, the path convention, reading a file's real type
 server/collegeListDrafts.ts  Drafting a college list: candidates, bands for a student, the AI step and its
                           checks, saving the draft. One module of plain functions

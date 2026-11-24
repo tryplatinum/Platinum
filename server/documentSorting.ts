@@ -39,7 +39,7 @@ import {
 import type { Database, Json } from '../src/lib/database.types.js'
 import type { DocumentAction, FileSuggestion } from '../src/types.js'
 import { AiError, hasAnthropicKey, runWithFile, type FileContent } from './claude.js'
-import { firstPages, officeText } from './fileText.js'
+import { firstPages, officeText, reducedPhoto } from './fileText.js'
 import { SORT_PROMPT, type SortPromptInput } from './prompts.js'
 import { serviceClient, serviceConfigured, type Caller } from './supabase.js'
 
@@ -267,7 +267,7 @@ async function rosterMatch(db: Db, firmId: string, printed: string | undefined):
 
 // ── Asking the model ────────────────────────────────────────────────────────
 
-/** Images above this cannot be sent inline (the API's limit is 5 MB once encoded). */
+/** Images above this cannot be sent as they are (the API's limit is 5 MB once encoded): a reduced copy is sent. */
 const MAX_IMAGE_BYTES = 3_500_000
 /** A PDF that cannot be cut to two pages is sent whole only when it is small. */
 const MAX_WHOLE_PDF_BYTES = 3_000_000
@@ -283,16 +283,26 @@ export const sorter = {
   },
 }
 
-/** What of the file the model is shown: two PDF pages, the image, or the opening text of a Word or Excel file. */
-async function contentFor(bytes: Uint8Array, mime: string | null): Promise<{ file?: FileContent; text?: string }> {
+/**
+ * What of the file the model is shown: two PDF pages, the image, or the opening
+ * text of a Word or Excel file. A photo too large to send, and any HEIC photo,
+ * is shown as a reduced copy made here in memory; the stored file is untouched.
+ * `nameOnly` is set when a photo could not be shown at all, so the model has
+ * only the file name: the caller then marks the file to be checked.
+ */
+export async function contentFor(bytes: Uint8Array, mime: string | null): Promise<{ file?: FileContent; text?: string; nameOnly?: boolean }> {
   const base64 = (b: Uint8Array) => Buffer.from(b.buffer, b.byteOffset, b.byteLength).toString('base64')
   if (mime === MIME.pdf) {
     const pages = (await firstPages(bytes)) ?? (bytes.length <= MAX_WHOLE_PDF_BYTES ? bytes : undefined)
     return pages ? { file: { kind: 'pdf', base64: base64(pages) } } : {}
   }
   if ((mime === MIME.jpeg || mime === MIME.png) && bytes.length <= MAX_IMAGE_BYTES) return { file: { kind: 'image', mediaType: mime, base64: base64(bytes) } }
+  if (mime === MIME.jpeg || mime === MIME.png || mime === MIME.heic) {
+    const copy = await reducedPhoto(bytes, mime)
+    // The reduced copy could not be made: the file name is all the model gets.
+    return copy && copy.length <= MAX_IMAGE_BYTES ? { file: { kind: 'image', mediaType: MIME.jpeg, base64: base64(copy) } } : { nameOnly: true }
+  }
   if (mime === MIME.docx || mime === MIME.xlsx) return { text: officeText(bytes, mime) }
-  // HEIC and very large images cannot be shown to the model: the file name is all it gets.
   return {}
 }
 
@@ -334,7 +344,8 @@ export async function classifyDocument(db: Db, row: DocumentRow, given?: Uint8Ar
     studentName: clean(output.studentName, 120),
     reason: clean(output.reason, 300) ?? '',
     alternatives: [...new Set(output.alternatives)].filter((id) => id !== output.typeId && ids.includes(id)).slice(0, 2),
-    sure: output.sure,
+    // A photo sorted from its name alone is always checked by a person.
+    sure: output.sure && !content.nameOnly,
     model,
     at: new Date().toISOString(),
   }
