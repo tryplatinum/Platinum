@@ -434,6 +434,50 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   check('a colleague cannot answer for someone else’s phone', (await call('token-no-gmail', { action: 'resolve', outboxId: askYes, sent: false })).status === 404)
 }
 
+// ── 9b. The dispatcher sweeps too, and the switch is a switch ───────────────
+
+{
+  clearJobs()
+  const stale = queue()
+  const silent = queue()
+  await dispatch({ phone: true })
+  await call(KEY_NOW, { action: 'claim' })
+  jobOf(stale)!.lease_expires_at = new Date(Date.now() - 1000).toISOString()
+  jobOf(silent)!.expires_at = new Date(Date.now() - 1000).toISOString()
+  // No phone asks and nobody opens a page: only the dispatcher runs.
+  const run = await dispatch({ phone: true })
+  check('a dispatcher run gives up on a job nobody took, with no page open and no phone asking', jobOf(silent)?.status === 'expired' && rowOf(silent).status === 'failed' && rowOf(silent).delivery_detail === 'phone_expired')
+  check('…and marks a job the phone took and never reported on as not confirmed', jobOf(stale)?.status === 'unknown' && rowOf(stale).delivery_detail === 'phone_unknown' && rowOf(stale).status === 'sending')
+  check('…and says how many it swept, so the browser reloads', run.swept === 2 && run.processed === 0)
+  check('the sweep runs with TRANSPORT_TEXT unset too, and sends nothing', await (async () => {
+    const late = queue()
+    await dispatch({ phone: true })
+    jobOf(late)!.expires_at = new Date(Date.now() - 1000).toISOString()
+    const mailsBefore = mails.length
+    const off = await dispatch()
+    return off.swept === 1 && jobOf(late)?.status === 'expired' && mails.length === mailsBefore
+  })())
+  check('a failing sweep never stops the dispatcher', await (async () => {
+    const real = db.fetch
+    db.fetch = async (input, init) => (String(input instanceof Request ? input.url : input).includes('/phone_send_jobs') ? new Response(JSON.stringify({ code: '42P01', message: 'relation does not exist' }), { status: 404, headers: { 'content-type': 'application/json' } }) : real(input, init))
+    const email = queue({ channel: 'email' })
+    const summary = await dispatch()
+    db.fetch = real
+    // The email is still dealt with (it fails at the allowlist: that parent's address is not on it).
+    return summary.swept === 0 && summary.processed === 1 && rowOf(email).status === 'failed' && rowOf(email).error === 'recipient not on allowlist'
+  })())
+
+  // Switched off while a job waits: the phone is given nothing.
+  clearJobs()
+  const held = queue()
+  await dispatch({ phone: true })
+  const off = await call(KEY_NOW, { action: 'claim' }, { phone: false })
+  check('with TRANSPORT_TEXT unset a phone is handed nothing, even a job made while it was on', off.status === 200 && off.text === '{"next":"none"}' && jobOf(held)?.status === 'pending')
+  check('…and switched back on, it is', (await call(KEY_NOW, { action: 'claim' })).json.job_id === jobOf(held)?.id)
+  jobOf(held)!.status = 'submitted'
+  rowOf(held).status = 'sent'
+}
+
 // ── 10. Cancel while it waits ───────────────────────────────────────────────
 
 {
@@ -456,7 +500,9 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   clearJobs()
   for (let i = 0; i < CLAIMS_PER_HOUR + 1; i++) await createJob({ outboxId: null, deviceId: DEVICE, toPhone: OWN_PHONE, body: TEST_BODY }, { actor: 'counselor', actorId: LIN })
   let handed = 0
+  process.env.TRANSPORT_TEXT = 'phone'
   for (let i = 0; i < CLAIMS_PER_HOUR; i++) if ((await quietly(() => claimNext(device() as never))).next === 'send') handed++
+  delete process.env.TRANSPORT_TEXT
   const over = await call(KEY_NOW, { action: 'claim' })
   check('the 21st claim in an hour returns “none”', handed === CLAIMS_PER_HOUR && over.status === 200 && over.text === '{"next":"none"}')
   check('…and that job stays pending', jobs().filter((j) => j.status === 'pending').length === 1 && jobs().filter((j) => j.status === 'claimed').length === CLAIMS_PER_HOUR)

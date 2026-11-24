@@ -7,7 +7,7 @@
 
 import { CLAIMS_PER_DAY, CLAIMS_PER_HOUR, PHONE_REASON, type ClaimAnswer } from '../../shared/phoneGateway.js'
 import { serviceClient } from '../supabase.js'
-import { onAllowlist, type Device, type Job } from './config.js'
+import { onAllowlist, textViaPhone, type Device, type Job } from './config.js'
 import { moveJob, noteClaimed, sweepJobs } from './jobs.js'
 import { hashKey, looksLikeKey, sameHash } from './keys.js'
 
@@ -47,6 +47,8 @@ export async function claimNext(device: Device): Promise<ClaimAnswer> {
   await sweepJobs()
   const now = new Date().toISOString()
   await db().from('phone_devices').update({ last_seen_at: now, ...(device.first_seen_at ? {} : { first_seen_at: now }) }).eq('id', device.id)
+  // Switched off on the server: nothing is handed out, even a job made while it was on. It waits, then expires.
+  if (!textViaPhone()) return { next: 'none' }
 
   // A handful of tries: a job that fails its checks is marked failed and the next one is tried.
   for (let tries = 0; tries < 5; tries++) {

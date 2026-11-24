@@ -228,7 +228,7 @@ export function YourPhone() {
               Refresh
             </Button>
             <Button disabled={busy} onClick={disconnect}>
-              Disconnect
+              Disconnect phone
             </Button>
           </div>
         </>

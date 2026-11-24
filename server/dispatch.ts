@@ -13,6 +13,7 @@ import {
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import type { QueueChannel, QueueLanguage } from '../shared/outbox.js'
+import { sweepJobs } from './phoneGateway/jobs.js'
 import { hashToken } from './studentLink.js'
 import { serviceClient } from './supabase.js'
 import { getTransport } from './transport/index.js'
@@ -43,6 +44,8 @@ export type DispatchSummary = {
   skipped: number
   /** Handed to the counselor's own phone and not sent yet. Counted in `processed`, not in `sent`. */
   waiting: number
+  /** Texts given up on in this run because a phone never answered. Their rows changed, so the browser reloads. */
+  swept: number
 }
 
 const kindLabel = (kind: string) => kind.replace(/_/g, ' ')
@@ -186,6 +189,15 @@ async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllo
  * status queued → sending, skip when another caller already took the row.
  */
 export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
+  // Texts a phone never answered for are given up on here too, so a row does not sit on
+  // "Waiting for your phone" until someone opens a page. It sends nothing, and a failure
+  // (the phone tables not being there, say) never stops the messages below from going out.
+  let swept = 0
+  try {
+    swept = await sweepJobs()
+  } catch (error) {
+    console.error('[dispatch] phone sweep:', error instanceof Error ? error.message : 'unknown')
+  }
   const allowlist = parseAllowlist(process.env.SEND_ALLOWLIST)
   const now = new Date().toISOString()
   const { data: due, error } = await serviceClient()
@@ -198,7 +210,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
 
   if (error) throw new Error(`outbox read failed: ${error.message}`)
 
-  const summary: DispatchSummary = { processed: 0, sent: 0, failed: 0, skipped: 0, waiting: 0 }
+  const summary: DispatchSummary = { processed: 0, sent: 0, failed: 0, skipped: 0, waiting: 0, swept }
   for (const candidate of due ?? []) {
     const claimed = await serviceClient()
       .from('outbox')

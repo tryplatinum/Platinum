@@ -23,8 +23,8 @@ export async function runDispatch(): Promise<void> {
     }
     if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return
     // Refresh local outbox after a send so status/error show up.
-    const body = (await res.json()) as { ok?: boolean; processed?: number }
-    if (body.ok && (body.processed ?? 0) > 0) {
+    const body = (await res.json()) as { ok?: boolean; processed?: number; swept?: number }
+    if (body.ok && (body.processed ?? 0) + (body.swept ?? 0) > 0) {
       const { useStore } = await import('../store/store')
       void useStore.getState().reload(true)
     }
