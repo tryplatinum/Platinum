@@ -10,7 +10,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { COLLEGES_ENDPOINT, type CollegeSearchFilters, type CollegeSearchResult, type CollegeSummary } from '../../shared/colleges'
 import { accessToken } from '../store/session'
-import type { ID } from '../types'
+import type { CollegeFit, CollegeListPreferences, FitBasis, ID } from '../types'
 
 const TIMEOUT_MS = 20_000
 
@@ -19,7 +19,7 @@ export class DirectoryFailure extends Error {}
 
 const NO_ENDPOINT = 'The college directory is not available here.'
 
-async function call<T>(body: Record<string, unknown>): Promise<T> {
+async function call<T>(body: Record<string, unknown>, timeoutMs = TIMEOUT_MS): Promise<T> {
   const token = await accessToken()
   if (!token) throw new DirectoryFailure('Sign in again to look up colleges.')
   const post = (bearer: string) =>
@@ -27,7 +27,7 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}` },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   let res: Response
   try {
@@ -189,3 +189,31 @@ export function dismissMatch(collegeId: ID, unitid: number): void {
   }
   changed()
 }
+
+// ── Drafting a list ─────────────────────────────────────────────────────────
+// Both go to the server: it reads the candidates from the directory, sets the
+// bands by the rules and (for a draft) asks the model, then checks the answer.
+
+/** A draft is one or two model calls. The server gives up on the model before this. */
+const DRAFT_TIMEOUT_MS = 125_000
+
+export interface DraftedList {
+  draftId: ID
+  items: number
+  /** False when the AI step did not run and the draft is the banded candidates to pick from. */
+  byModel: boolean
+}
+
+/** Asks the server to draft a list and save it as a draft. Nothing is added to the student's list. Throws DirectoryFailure. */
+export const requestListDraft = (studentId: ID, preferences: CollegeListPreferences) => call<DraftedList>({ action: 'draft', studentId, preferences }, DRAFT_TIMEOUT_MS)
+
+export interface BandedCollege {
+  unitid: number
+  name: string
+  state?: string
+  fit: CollegeFit
+  basis: FitBasis
+}
+
+/** Reach, Target or Likely for this student at these colleges, by the rules. No model is involved. Throws DirectoryFailure. */
+export const bandColleges = (studentId: ID, unitids: number[]) => call<BandedCollege[]>({ action: 'band', studentId, unitids })

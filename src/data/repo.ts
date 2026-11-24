@@ -790,3 +790,43 @@ export async function revokeStudentLink(id: ID): Promise<void> {
   const { error } = await supabase.from('student_links').update({ revoked_at: new Date().toISOString() }).eq('id', id)
   if (error) fail(error, 'Could not revoke the link')
 }
+
+// ── College list drafts ─────────────────────────────────────────────────────
+// A draft is created by the server (server/collegeListDrafts.ts) and added to
+// the list by a database function, so these read what was saved for the store
+// to take in with `absorb`. Review edits are ordinary changes (diffData above).
+
+/** One draft and its colleges, as the server saved them. */
+export async function loadListDraft(draftId: ID): Promise<{ draft: CollegeListDraft; items: CollegeListDraftItem[] }> {
+  const [draft, items] = await Promise.all([
+    supabase.from('college_list_drafts').select('*').eq('id', draftId).single(),
+    supabase.from('college_list_draft_items').select('*').eq('draft_id', draftId).order('position'),
+  ])
+  if (draft.error) fail(draft.error, 'Could not load the draft list')
+  if (items.error) fail(items.error, 'Could not load the draft list')
+  return { draft: listDraftFrom(draft.data), items: items.data.map(listDraftItemFrom) }
+}
+
+/**
+ * "Add to list": one database function writes the draft's kept colleges into
+ * the student's list (skipping any already there), marks the draft approved
+ * with who and when, and logs it. Returns how many were added.
+ */
+export async function addDraftToCollegeList(draftId: ID): Promise<number> {
+  const { data, error } = await supabase.rpc('add_draft_to_college_list', { draft: draftId })
+  if (error) fail(error, 'Could not add the draft to the list')
+  return data
+}
+
+/** What add_draft_to_college_list changed for one student: their list, the draft, and the latest activity. */
+export async function loadAfterListApproval(studentId: ID, draftId: ID): Promise<{ colleges: CollegeApp[]; draft: CollegeListDraft; activity: ActivityEvent[] }> {
+  const [colleges, draft, activity] = await Promise.all([
+    supabase.from('colleges').select('*').eq('student_id', studentId).order('seq'),
+    supabase.from('college_list_drafts').select('*').eq('id', draftId).single(),
+    supabase.from('activity').select('*').eq('student_id', studentId).order('seq', { ascending: false }).limit(5),
+  ])
+  if (colleges.error) fail(colleges.error, 'Could not load the college list')
+  if (draft.error) fail(draft.error, 'Could not load the draft list')
+  if (activity.error) fail(activity.error, 'Could not load the activity log')
+  return { colleges: colleges.data.map(collegeFrom), draft: listDraftFrom(draft.data), activity: activity.data.map(activityFrom) }
+}

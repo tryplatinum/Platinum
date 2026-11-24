@@ -34,6 +34,7 @@ import {
   handPickRows,
   normalizePreferences,
   notesForListDraft,
+  MAX_LIST_NOTE_CHARS,
   reasonProblem,
   stillNeeded,
   type DraftRow,
@@ -133,11 +134,12 @@ export async function readListStudent(client: Client, studentId: ID): Promise<Li
 // ── Candidates ──────────────────────────────────────────────────────────────
 
 const CANDIDATE_COLUMNS =
-  'unitid, name, state, region, control, undergrad_size, admit_rate, open_admissions, sat_ebrw_25, sat_ebrw_75, sat_math_25, sat_math_75, act_25, act_75, sources'
+  'unitid, name, aliases, state, region, control, undergrad_size, admit_rate, open_admissions, sat_ebrw_25, sat_ebrw_75, sat_math_25, sat_math_75, act_25, act_75, sources'
 
 interface CandidateRow {
   unitid: number
   name: string
+  aliases: string[]
   state: string | null
   region: string | null
   control: string | null
@@ -186,6 +188,13 @@ function candidateFrom(r: CandidateRow, student: BandStudent, wantedCodes: Reado
     ...(mustInclude ? { mustInclude: true } : {}),
   }
 }
+
+/** Lower case, punctuation as spaces: how a typed college name is compared with a directory name. */
+const plain = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
 
 /** Digits and letters only by the time they reach a filter string (the schema checked them). */
 const quoted = (values: readonly string[]) => values.map((v) => `"${v.replace(/"/g, '')}"`).join(',')
@@ -276,17 +285,21 @@ export async function candidatePool(client: Client, studentId: ID, preferences: 
   const prefs = parsePreferences(preferences)
   const student = await readListStudent(client, studentId)
 
-  // Colleges already on the student's list are not proposed again.
-  const listed = await client.from('colleges').select('directory_unitid').eq('student_id', student.id).not('directory_unitid', 'is', null)
+  // Colleges already on the student's list are not proposed again: by their directory link, or,
+  // for a row typed in by hand, when its name is the college's name or one of its aliases.
+  const listed = await client.from('colleges').select('name, directory_unitid').eq('student_id', student.id)
   if (listed.error) throw new ListDraftError('database', 'The college list could not be read.')
-  const onList = new Set(listed.data.map((c) => c.directory_unitid!))
+  const onList = new Set(listed.data.flatMap((c) => (c.directory_unitid === null ? [] : [c.directory_unitid])))
+  // "NYU (Tandon)" is on the list as "NYU (Tandon)" and as "NYU".
+  const typed = new Set(listed.data.filter((c) => c.directory_unitid === null).flatMap((c) => [plain(c.name), plain(c.name.replace(/\([^)]*\)/g, ' '))]).filter(Boolean))
+  const listedByName = (r: CandidateRow) => typed.size > 0 && [r.name, ...(r.aliases ?? [])].some((n) => typed.has(plain(n)))
 
   const mustIds = prefs.mustInclude.map((r) => r.unitid).filter((id) => !onList.has(id))
   const leaveOut = [...new Set([...onList, ...mustIds, ...prefs.exclude.map((r) => r.unitid)])]
   const [found, must] = await Promise.all([findCandidates(client, prefs, leaveOut), readColleges(client, mustIds)])
 
   const codes = new Set(prefs.programs.map((p) => p.cipCode))
-  const all = [...must.map((r) => candidateFrom(r, student, codes, true)), ...found.rows.map((r) => candidateFrom(r, student, codes, false))]
+  const all = [...must.map((r) => candidateFrom(r, student, codes, true)), ...found.rows.filter((r) => !listedByName(r)).map((r) => candidateFrom(r, student, codes, false))]
   return { student, preferences: prefs, candidates: capCandidates(all, prefs.mix, CANDIDATE_CAP), matched: found.total }
 }
 
@@ -355,9 +368,11 @@ export interface Explained {
  * Asks the model which candidates to put on the list and why, and checks the
  * answer: a unitid that is not a candidate is dropped, a duplicate is dropped,
  * and a reason (or the note) that states a percentage or a four-digit number
- * is thrown away. If anything was thrown away or a band came back short, the
+ * is thrown away. If a reason was thrown away or a band came back short, the
  * model is asked once more for just what is missing. Whatever is still short
- * is filled from the top candidates of that band with the stock reason.
+ * is filled from the top candidates of that band with the stock reason. The
+ * overall note is taken from the first answer only (the second is about a
+ * part of the list), and is dropped if it fails the check.
  *
  * Never throws for a model failure: with no key, an error, a refusal or no
  * answer in time, it returns the top banded candidates for the counselor to
@@ -376,14 +391,14 @@ export async function explainCandidates(pool: CandidatePool, notes: NoteForList[
   const started = Date.now()
   const left = () => AI_BUDGET_MS - (Date.now() - started)
   const nameOf = new Map(candidates.map((c) => [c.unitid, c.name]))
-  const usableNote = (text: string) => (reasonProblem(text) ? undefined : text.trim())
+  const usableNote = (text: string) => (reasonProblem(text, MAX_LIST_NOTE_CHARS) ? undefined : text.trim())
   try {
     const first = await within(listModel.run(modelInput(pool, notes)), left())
     const checked = checkPicks(first.draft.picks, candidates)
     let accepted = checked.accepted
     let rejected = checked.rejected.map((r) => r.unitid)
     let rejectedReasons = checked.rejected.length
-    let note = usableNote(first.draft.note)
+    const note = usableNote(first.draft.note)
     let model = first.model
     let askedTwice = false
 
@@ -391,12 +406,11 @@ export async function explainCandidates(pool: CandidatePool, notes: NoteForList[
     const short = need.Reach + need.Target + need.Likely > 0
     const chosen = new Set(accepted.map((p) => p.unitid))
     const remaining = candidates.filter((c) => !chosen.has(c.unitid))
-    if ((checked.rejected.length > 0 || short || note === undefined) && remaining.length > 0 && left() > SECOND_ASK_NEEDS_MS) {
+    if ((checked.rejected.length > 0 || short) && remaining.length > 0 && left() > SECOND_ASK_NEEDS_MS) {
       askedTwice = true
       const problems = [
         ...checked.rejected.map((r) => `Your reason for ${nameOf.get(r.unitid)} (${r.unitid}) was discarded because ${r.problem}. A reason may not contain a percentage or a four-digit number.`),
         ...(checked.dropped ? [`${checked.dropped} of your picks were not among the candidates, or were named twice, and were dropped.`] : []),
-        ...(note === undefined ? ['Your overall note was discarded because it was empty, too long or stated a figure.'] : []),
         `Still needed: Reach ${need.Reach}, Target ${need.Target}, Likely ${need.Likely}.`,
       ]
       try {
@@ -405,7 +419,6 @@ export async function explainCandidates(pool: CandidatePool, notes: NoteForList[
         accepted = [...accepted, ...again.accepted]
         rejected = [...rejected, ...again.rejected.map((r) => r.unitid)]
         rejectedReasons += again.rejected.length
-        note ??= usableNote(second.draft.note)
         model = second.model
       } catch {
         // The first answer stands; whatever is short is filled below.

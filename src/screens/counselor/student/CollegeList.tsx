@@ -10,7 +10,8 @@
 import { useEffect, useState } from 'react'
 import type { CollegeSummary } from '../../../../shared/colleges'
 import { CollegeFigures, CollegePicker, DirectorySourceNote, collegePlace } from '../../../components/colleges'
-import { Button, Card, CardHeader, Empty, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { Button, Card, CardHeader, Empty, LinkButton, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { openListDraft } from '../../../lib/collegeListDraft'
 import { collegeIsPending, collegesFor, dueText } from '../../../lib/derive'
 import { dismissMatch, matchDismissed, useDirectoryColleges, useSuggestedMatches, type DirectoryFigures } from '../../../services/colleges'
 import { useData, useStore } from '../../../store/store'
@@ -60,6 +61,13 @@ export function CollegeList({ student }: { student: Student }) {
   const [plan, setPlan] = useState<ApplicationPlan>()
   const [deadline, setDeadline] = useState('')
   const alreadyListed = picked !== undefined && colleges.some((c) => c.directoryUnitid === picked.unitid)
+  // A draft list waiting for review. Only counselors see it.
+  const draft = openListDraft(data, student.id)
+  const draftLink = (
+    <LinkButton to={`/app/students/${student.id}/list-draft`} variant={draft ? 'remind' : 'secondary'}>
+      {draft ? 'Review the draft list' : 'Draft a list'}
+    </LinkButton>
+  )
 
   const close = () => {
     setAdding(false)
@@ -71,7 +79,16 @@ export function CollegeList({ student }: { student: Student }) {
 
   return (
     <Card>
-      <CardHeader size="section" className="px-5 py-4" title="College list" count={colleges.length || undefined} action={!adding && <Button onClick={() => setAdding(true)}>Add college</Button>} />
+      <CardHeader size="section" className="px-5 py-4" title="College list" count={colleges.length || undefined}
+        action={
+          !adding && (
+            <>
+              {draftLink}
+              <Button onClick={() => setAdding(true)}>Add college</Button>
+            </>
+          )
+        }
+      />
       {adding && (
         <form
           className="mx-5 mb-4 flex flex-col gap-3 rounded-lg bg-canvas p-4"
@@ -206,6 +223,11 @@ function CollegeRows({ college: c, directory, suggestion }: { college: CollegeAp
         <td className="px-5 py-2.5">
           <span className="font-semibold">{c.name}</span>
           {c.note && <span className="block text-[13px] text-muted">{c.note}</span>}
+          {c.fitReason && (
+            <span className="block text-[13px] text-ink-soft">
+              <span className="font-semibold">{c.fit}.</span> {c.fitReason}
+            </span>
+          )}
           {c.directoryUnitid === undefined && finding === undefined && !offer && (
             <button type="button" className="block text-[13px] font-semibold text-accent underline" aria-label={`Find ${c.name} in the directory`} onClick={() => setFinding(c.name)}>
               Find in the directory

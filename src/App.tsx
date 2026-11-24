@@ -15,6 +15,7 @@ import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
 import { StudentLinkLayout } from './screens/student/StudentLinkLayout'
 import { StudentHome, StudentProfile } from './screens/student/StudentView'
+import ListDraft from './screens/counselor/ListDraft'
 
 // ── Redirects from the v1 URLs, so old links and bookmarks keep working ──
 
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="notes" element={<Navigate to="/app/meetings?log=1" replace />} />
           <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
           <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />
+          <Route path="students/:studentId/list-draft" element={<ListDraft />} />
         </Route>
 
         <Route path="/student/:studentId" element={<StudentLayout />}>

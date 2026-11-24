@@ -7,7 +7,7 @@
 // The server module that uses these is server/collegeListDrafts.ts.
 
 import { CIP_PROGRAMS, type CipProgram } from '../../shared/cipPrograms'
-import type { CollegeFit, CollegeListPreferences, CollegeRef, ListMix, Meeting, SizeBand } from '../types'
+import type { AiSource, AppData, CollegeFit, CollegeListDraft, CollegeListDraftItem, CollegeListPreferences, CollegeRef, ID, ListDraftRun, ListMix, Meeting, SizeBand } from '../types'
 import { byRelevance, DEFAULT_MIX, FITS, MAX_PER_BAND, SIZES, type Candidate } from './collegeBands'
 
 // ── Majors to programs ──────────────────────────────────────────────────────
@@ -162,6 +162,8 @@ export function defaultPreferences(student: { majors: string[] }): CollegeListPr
 export const STOCK_REASON = 'Matches your filters'
 /** Longer than this is not "two sentences at most". The table allows 600. */
 export const MAX_REASON_CHARS = 400
+/** The overall note is a short paragraph; it passes the same check with this length. */
+export const MAX_LIST_NOTE_CHARS = 900
 
 /**
  * Why a model-written reason or note cannot be used, or undefined when it can.
@@ -171,10 +173,10 @@ export const MAX_REASON_CHARS = 400
  * figure could hide behind) is thrown away, not edited. The prompt also tells
  * the model not to state figures or chances; this check is the guarantee.
  */
-export function reasonProblem(text: string): string | undefined {
+export function reasonProblem(text: string, maxChars = MAX_REASON_CHARS): string | undefined {
   const reason = text.trim()
   if (!reason) return 'it was empty'
-  if (reason.length > MAX_REASON_CHARS) return 'it was too long'
+  if (reason.length > maxChars) return 'it was too long'
   if (/\d\s*(%|％|percent\b|per cent\b)/i.test(reason)) return 'it stated a percentage'
   if (/(?<!\d)\d{4}(?!\d)/.test(reason) || /(?<![\d,])\d,\d{3}(?![\d,])/.test(reason)) return 'it stated a four-digit number, which could be read as a test score'
   return undefined
@@ -307,4 +309,39 @@ export function notesForListDraft(meetings: Pick<Meeting, 'title' | 'date' | 'st
     if (notes.length === NOTES_FOR_DRAFT) break
   }
   return notes
+}
+
+// ── Reading drafts out of the store's data ──────────────────────────────────
+
+/** The draft a counselor is reviewing for this student: the newest one not yet added or discarded. */
+export function openListDraft(data: Pick<AppData, 'collegeListDrafts'>, studentId: ID): CollegeListDraft | undefined {
+  return data.collegeListDrafts.filter((d) => d.studentId === studentId && d.status === 'draft').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+}
+
+/** A draft's colleges, Reach then Target then Likely, each band in its saved order. */
+export function draftItems(data: Pick<AppData, 'collegeListDraftItems'>, draftId: ID): CollegeListDraftItem[] {
+  return data.collegeListDraftItems.filter((i) => i.draftId === draftId).sort((a, b) => FITS.indexOf(a.fit) - FITS.indexOf(b.fit) || a.position - b.position)
+}
+
+/** How a draft was made: the model or why not, when, and our counts. */
+export const draftRun = (draft: CollegeListDraft): (AiSource & ListDraftRun) | undefined => draft.source
+
+/**
+ * The preferences a regenerated draft starts from: the ones the draft was made
+ * with, plus what the counselor did to it. Colleges they removed become
+ * exclusions and colleges they added become must-includes, so those two kinds
+ * of edit carry over. A band they changed does not: bands are set again by the rule.
+ */
+export function regeneratePreferences(draft: CollegeListDraft, items: CollegeListDraftItem[], nameOf: (unitid: number) => string): CollegeListPreferences {
+  const p = draft.preferences
+  // In a draft the AI did not make, "not kept" means "not picked yet", not "removed".
+  const removed = draft.source?.kind === 'placeholder' ? [] : items.filter((i) => !i.kept)
+  const added = items.filter((i) => i.kept && i.fitBasis.addedBy === 'counselor')
+  const ref = (i: CollegeListDraftItem): CollegeRef => ({ unitid: i.unitid, name: nameOf(i.unitid) })
+  const gone = new Set(removed.map((i) => i.unitid))
+  return {
+    ...p,
+    mustInclude: uniqueRefs([...(p.mustInclude ?? []).filter((r) => !gone.has(r.unitid)), ...added.map(ref)], MAX_MUST_INCLUDE),
+    exclude: uniqueRefs([...(p.exclude ?? []), ...removed.map(ref)], MAX_EXCLUDE),
+  }
 }

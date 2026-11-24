@@ -48,6 +48,7 @@ import type {
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
 import { clearStoredFiles, fileActions, type FileActions } from './files'
+import { listDraftActions, type ListDraftActions } from './listDrafts'
 
 /** Where versions before accounts kept everything. Read once, to offer an import. */
 const LEGACY_STORAGE_KEY = 'platinum-v0'
@@ -214,6 +215,9 @@ interface Actions {
 
 /** Stored files and folders: see store/files.ts. Their rows are changed through the server and taken in with `absorb`. */
 interface Actions extends FileActions {}
+
+/** Draft college lists: see store/listDrafts.ts. */
+interface Actions extends ListDraftActions {}
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
@@ -1108,6 +1112,8 @@ export const useStore = create<State & Actions>()((set, get) => {
     sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
 
     ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
+
+    ...listDraftActions({ get, absorb: (fn) => get().absorb(fn), change, saved: () => writes }),
   }
 })
 
