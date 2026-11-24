@@ -232,7 +232,7 @@ export function reportFacts(data: AppData, student: Student, parentId: ID): stri
     const plan = c.plan ? ` (${c.plan})` : ''
     if (c.status === 'in_progress') facts.push(`Application in progress: ${c.name}${plan}${c.deadline ? `, deadline ${formatDate(c.deadline)}` : ''}`)
     else if (c.status === 'submitted') facts.push(`Application submitted: ${c.name}${plan}`)
-    else if (c.status !== 'considering') facts.push(`Decision from ${c.name} (${c.plan}): ${c.status}`)
+    else if (c.status !== 'considering') facts.push(`Decision from ${c.name}${plan}: ${c.status}`)
   }
   const next = nextMeeting(data, student.id)
   facts.push(next ? `Next meeting: ${formatDate(next.date)}` : 'No next meeting is scheduled yet')
