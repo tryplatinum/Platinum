@@ -213,7 +213,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
             </>
           )}
           {showFolder && folder && `${folder.name}${folder.archivedAt ? ' (archived)' : ''} · `}
-          {uploadedBy(doc, student, me)} · {formatDate(doc.addedOn)}
+          {doc.uploadedByKind === 'student_link' ? `Added through the student link · ${formatDate(doc.addedOn)}` : `${uploadedBy(doc, student, me)} · ${formatDate(doc.addedOn)}`}
           {stored && doc.sortedBy === 'auto' && (
             <>
               {' · '}

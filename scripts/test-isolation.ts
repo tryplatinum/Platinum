@@ -394,6 +394,10 @@ try {
   check('a student drop ends up filed under a folder with no counselor action', dropped?.file_status === 'filed' && dropped.type_id === folder('Test scores') && dropped.sorted_by === 'auto' && dropped.needs_check === false && dropped.title === 'SAT score report, Aug 2026' && modelCalls === 1, `${dropped?.file_status}, ${modelCalls} model call(s)`)
   check('…with its real size and hash recorded', dropped?.size_bytes === pdfOf('Score report').length && dropped.content_hash === createHash('sha256').update(pdfOf('Score report')).digest('hex'))
   check('…at the path {firm}/{student}/{document}/{safe name}', dropped?.storage_path === `${a.firmId}/${seeded.A.studentId}/${dropped?.id}/Score-report.pdf` && (await exists(dropped!.storage_path!)))
+  const linkUsed = (await admin.from('student_links').select('id').eq('token_hash', createHash('sha256').update(linkA).digest('hex')).single()).data?.id
+  check('…and the link it came through', Boolean(linkUsed) && dropped?.student_link_id === linkUsed && dropped?.uploaded_by_kind === 'student_link')
+  const counselorOwn = ((await admin.from('documents').select('student_link_id').eq('firm_id', a.firmId).eq('uploaded_by_kind', 'counselor').not('storage_path', 'is', null)).data ?? [])
+  check('a counselor’s upload records no link', counselorOwn.length > 0 && counselorOwn.every((d) => d.student_link_id === null))
   const dropEvents = await eventsOf(drop.ticket!.documentId)
   check('…and uploaded and auto_sorted events', dropEvents.map((e) => `${e.actor_kind}:${e.action}`).join(',') === 'student_link:uploaded,system:auto_sorted', dropEvents.map((e) => e.action).join(','))
   const dropActivity = await admin.from('activity').select('text').eq('student_id', seeded.A.studentId).eq('actor', 'student').like('text', '%added a file')

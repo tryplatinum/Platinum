@@ -60,6 +60,13 @@ check('a PDF or a Word file is never treated as a photo', !(await contentFor(new
 const source = readFileSync(new URL('../server/documentSorting.ts', import.meta.url), 'utf8')
 check('a file sorted from its name alone is always marked to check', /sure: output\.sure && !content\.nameOnly/.test(source))
 
+// ── The link a file came through ──
+const linkSource = readFileSync(new URL('../server/studentLink.ts', import.meta.url), 'utf8')
+check('a file dropped through a link records that link', /student_link_id: link\.id \?\? null/.test(linkSource))
+check('the daily cap is still counted per student, not per link', /\.eq\('student_id', link\.studentId\)\.not\('storage_path', 'is', null\)/.test(linkSource) && !/\.eq\('student_link_id'/.test(linkSource))
+const rowSource = readFileSync(new URL('../src/components/files/FileRow.tsx', import.meta.url), 'utf8')
+check('the file row says “Added through the student link” with the date', /Added through the student link · \$\{formatDate\(doc\.addedOn\)\}/.test(rowSource))
+
 // ── HEIC, when a sample is given ──
 // No HEIC file is kept in the repo. Pass the path of one to check that it is decoded:
 //   npm run test:files -- path/to/photo.heic

@@ -18,6 +18,8 @@ import { serviceClient } from './supabase.js'
 export interface Link {
   firmId: string
   studentId: string
+  /** The student_links row. Recorded on each file dropped through the link. */
+  id?: string
 }
 
 /** Thrown for anything the student should simply be told did not work. */
@@ -37,9 +39,9 @@ export const hashToken = (token: string) => createHash('sha256').update(token).d
 
 /** The student a token opens, or undefined when it is unknown or revoked. */
 export async function findLink(token: string): Promise<Link | undefined> {
-  const { data, error } = await serviceClient().from('student_links').select('firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
+  const { data, error } = await serviceClient().from('student_links').select('id, firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
   if (error) throw new Error(`student link lookup failed: ${error.message}`)
-  return data ? { firmId: data.firm_id, studentId: data.student_id } : undefined
+  return data ? { firmId: data.firm_id, studentId: data.student_id, id: data.id } : undefined
 }
 
 /** Done tasks stay on the page this long. */
@@ -260,7 +262,8 @@ export async function startStudentUpload(link: Link, upload: Extract<StudentUplo
   if (stored + declared.size > STUDENT_TOTAL_BYTES) throw new StudentLinkError('There is no room left for more files. Ask your counselor to make space.', 413)
 
   const day = [daysFromNow(-1), daysFromNow(0), daysFromNow(1)].includes(upload.today) ? upload.today : daysFromNow(0)
-  const row = uploadingRow({ firmId: link.firmId, studentId: link.studentId, ...declared, by: 'student_link', today: day })
+  // The cap above is per student. Which link the file came through is recorded for the counselor to see.
+  const row = { ...uploadingRow({ firmId: link.firmId, studentId: link.studentId, ...declared, by: 'student_link', today: day }), student_link_id: link.id ?? null }
   const made = await db.from('documents').insert(row)
   if (made.error) throw new Error(`student upload row failed: ${made.error.message}`)
   const signed = await db.storage.from(DOCUMENTS_BUCKET).createSignedUploadUrl(row.storage_path)
