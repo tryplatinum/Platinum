@@ -184,7 +184,8 @@ export async function fakeGoogle(url: string, init?: RequestInit): Promise<Respo
 
   if (at.hostname !== 'www.googleapis.com' || !at.pathname.startsWith('/drive/v3/')) return notFound()
   const headers = new Headers(init?.headers)
-  if (headers.get('authorization') !== 'Bearer fake-access-token') return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
+  // A revoked grant: Google stops taking the access token too.
+  if (headers.get('authorization') !== 'Bearer fake-access-token' || state().expired) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
   const path = at.pathname.slice('/drive/v3'.length)
 
   if (path === '/about') return json({ user: { emailAddress: FAKE_ADDRESS } })

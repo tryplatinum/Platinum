@@ -220,8 +220,8 @@ export interface SyncState {
   known?: string[]
   /** Drive files a person deleted here. Not imported again unless they ask. */
   removedHere?: string[]
-  /** Files left out last time, by Drive id, with the modified time they had: not tried again until they change. */
-  settled?: Record<string, string>
+  /** Files left out for a reason found only by reading them, by Drive id, with the modified time they had: not read again until they change. */
+  settled?: Record<string, { at: string; reason: string }>
 }
 
 export interface SyncPlan {
@@ -280,7 +280,10 @@ export function planSync(input: { listed: ListedFile[]; known: KnownFile[]; stat
     }
     if (!have) {
       // Left out before for a reason found only by reading it (a duplicate, an export too large): not read again until it changes.
-      if (settled[file.id] !== undefined && settled[file.id] === (file.modifiedTime ?? '')) continue
+      if (settled[file.id] && settled[file.id].at === (file.modifiedTime ?? '')) {
+        skipped.push({ name: file.name, reason: settled[file.id].reason })
+        continue
+      }
       queue.push({ ...file, change: 'new' })
     } else if (later(file.modifiedTime, have.driveModifiedAt)) {
       queue.push({ ...file, change: 'changed', documentId: have.documentId })

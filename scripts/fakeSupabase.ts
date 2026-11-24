@@ -53,6 +53,12 @@ export function fakeSupabase() {
         return !test(row, column, rest)
       case 'lt':
         return have !== null && have !== undefined && String(have) < rest
+      case 'lte':
+        return have !== null && have !== undefined && String(have) <= rest
+      case 'gt':
+        return have !== null && have !== undefined && String(have) > rest
+      case 'gte':
+        return have !== null && have !== undefined && String(have) >= rest
       case 'in':
         return rest
           .replace(/^\(|\)$/g, '')
@@ -67,7 +73,7 @@ export function fakeSupabase() {
   function matching(name: string, params: URLSearchParams): Row[] {
     let rows = [...table(name)]
     for (const [key, expression] of params) {
-      if (['select', 'order', 'limit', 'on_conflict', 'columns'].includes(key)) continue
+      if (['select', 'order', 'limit', 'offset', 'on_conflict', 'columns'].includes(key)) continue
       if (key === 'or') {
         const parts = expression.replace(/^\(|\)$/g, '').split(',')
         rows = rows.filter((row) => parts.some((part) => test(row, part.slice(0, part.indexOf('.')), part.slice(part.indexOf('.') + 1))))
@@ -76,10 +82,12 @@ export function fakeSupabase() {
     const order = params.get('order')
     if (order) {
       const [column, direction] = order.split(',')[0].split('.')
-      rows.sort((a, b) => String(a[column] ?? '').localeCompare(String(b[column] ?? '')) * (direction === 'desc' ? -1 : 1))
+      const compare = (a: unknown, b: unknown) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? '')))
+      rows.sort((a, b) => compare(a[column], b[column]) * (direction === 'desc' ? -1 : 1))
     }
+    const offset = Number(params.get('offset') ?? 0)
     const limit = params.get('limit')
-    return limit ? rows.slice(0, Number(limit)) : rows
+    return rows.slice(offset, limit ? offset + Number(limit) : undefined)
   }
 
   const conflict = (name: string, row: Row) => {

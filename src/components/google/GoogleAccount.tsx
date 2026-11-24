@@ -3,7 +3,7 @@
 // connection is the signed-in person's own, not the firm's. Shown only when
 // the server has Google settings.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GoogleFailure, callGoogle, loadGoogleStatus, startGoogleConnect, takeGoogleStatus, useGoogleStatus } from '../../services/google'
 import type { GoogleStatus } from '../../../shared/google'
 import { Button, Pill, SectionLabel } from '../ui'
@@ -14,6 +14,10 @@ export function GoogleAccount() {
   const status = useGoogleStatus()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  // Settings shows the connection as it is now, not as it was when the app loaded.
+  useEffect(() => {
+    void loadGoogleStatus(true)
+  }, [])
   if (!status?.available) return null
 
   const run = async (work: () => Promise<unknown>) => {

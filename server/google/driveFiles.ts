@@ -287,7 +287,7 @@ export async function syncFolder(caller: SignedIn, input: { id: string; today?: 
         queue: queue.slice(taken),
         known: outcome.documentId ? [...new Set([...(state.known ?? []), item.id])] : state.known,
         // Left out for a reason found only by reading it: not read again until Drive says it changed.
-        settled: outcome.skipped ? { ...state.settled, [item.id]: item.modifiedTime ?? '' } : state.settled,
+        settled: outcome.skipped ? { ...state.settled, [item.id]: { at: item.modifiedTime ?? '', reason: outcome.skipped } } : state.settled,
       }
       await save({ progress_done: done, skipped: skipped as unknown as Json })
     }

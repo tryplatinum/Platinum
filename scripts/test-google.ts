@@ -198,7 +198,7 @@ check('anything else is not stored', driveKind({ name: 'a.mp4', mimeType: 'video
       { driveFileId: 'half-made', documentId: 'd-half', driveModifiedAt: null, fileStatus: 'uploading' },
       { driveFileId: 'elsewhere', documentId: 'd-elsewhere', driveModifiedAt: null, fileStatus: 'filed' },
     ],
-    state: { known: ['same', 'changed', 'gone'], removedHere: ['deleted-here'], settled: { settled: '2026-11-10T09:00:00.000Z' } },
+    state: { known: ['same', 'changed', 'gone'], removedHere: ['deleted-here'], settled: { settled: { at: '2026-11-10T09:00:00.000Z', reason: REASON.duplicate } } },
     maxBytes: MAX_FILE_BYTES,
   })
   const queued = (id: string) => plan.queue.find((q) => q.id === id)
@@ -211,8 +211,8 @@ check('anything else is not stored', driveKind({ name: 'a.mp4', mimeType: 'video
   check('a half-made row is removed and the file imported again', plan.unfinished.includes('d-half') && queued('half-made')?.change === 'new')
   check('a file that cannot be stored is listed with the reason', plan.skipped.some((s) => s.name === 'clip.mp4' && s.reason === REASON.unsupported) && plan.skipped.some((s) => s.name === 'huge.pdf' && s.reason === REASON.tooLarge))
   check('a Google Form is left out without a word', !queued('form') && !plan.skipped.some((s) => s.name.startsWith('form')))
-  check('a file left out last time is not read again until it changes', !queued('settled'))
-  const again = planSync({ listed: [file('settled', { modifiedTime: '2026-11-15T09:00:00.000Z' })], known: [], state: { settled: { settled: '2026-11-10T09:00:00.000Z' } }, maxBytes: MAX_FILE_BYTES })
+  check('a file left out last time is not read again until it changes, and stays on the list', !queued('settled') && plan.skipped.some((s) => s.name === 'settled.pdf' && s.reason === REASON.duplicate))
+  const again = planSync({ listed: [file('settled', { modifiedTime: '2026-11-15T09:00:00.000Z' })], known: [], state: { settled: { settled: { at: '2026-11-10T09:00:00.000Z', reason: REASON.duplicate } } }, maxBytes: MAX_FILE_BYTES })
   check('…and is once it does', again.queue.length === 1)
   const limits = planSync({ listed: [], known: [], state: {}, truncated: true, tooDeep: ['Deep folder'], maxBytes: MAX_FILE_BYTES })
   check('the 500-file and 5-level limits are told to the counselor', limits.skipped.some((s) => s.reason === REASON.tooMany) && limits.skipped.some((s) => s.name === 'Deep folder' && s.reason === REASON.tooDeep))

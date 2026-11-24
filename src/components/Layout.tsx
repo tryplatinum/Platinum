@@ -118,8 +118,11 @@ function SidebarMenu() {
 
   // Back from Google's consent screen (/app?google=connected): say how it went and show the Google row in Firm settings.
   const returned = params.get('google')
+  const told = useRef(false)
   useEffect(() => {
-    if (!returned) return
+    // Once, even when React runs the effect twice in development.
+    if (!returned || told.current) return
+    told.current = true
     const next = new URLSearchParams(params)
     next.delete('google')
     setParams(next, { replace: true })

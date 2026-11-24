@@ -11,7 +11,7 @@ import { FolderSync } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SYNC_STALE_MS, type LinkedFolder } from '../../../shared/google'
 import { todayISO } from '../../lib/dates'
-import { GoogleFailure, callGoogle, driveReady, useGoogleStatus } from '../../services/google'
+import { GoogleFailure, callGoogle, driveReady, loadGoogleStatus, useGoogleStatus } from '../../services/google'
 import type { DocumentRow } from '../../services/files'
 import { useStore } from '../../store/store'
 import type { ID, Student } from '../../types'
@@ -59,6 +59,8 @@ export function useLinkedFolders(studentId: ID, enabled: boolean) {
           if (!alive.current) return
           takeFiles(answer.documents)
           put(answer.folder)
+          // The sync found that Google has ended the connection: every screen should say so.
+          if (answer.folder.status === 'reconnect') void loadGoogleStatus(true)
           if (answer.busy) {
             // Someone else's call is syncing this folder. Look again shortly, a few times.
             if (++waits > 10) break
