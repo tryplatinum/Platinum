@@ -198,14 +198,18 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
     : undefined
 
   const onApprove = () => {
-    approveItem(item)
-    toast(item.isSend ? `Approved. Undo is on the toast.` : `Approved.`)
+    void Promise.resolve(approveItem(item))
+      .then(() => toast(item.isSend ? `Approved. Undo is on the toast.` : `Approved.`))
+      .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not approve.'))
   }
 
   const onDiscard = () => {
-    discardItem(item)
-    setDiscarding(false)
-    toast('Discarded.')
+    void Promise.resolve(discardItem(item))
+      .then(() => {
+        setDiscarding(false)
+        toast('Discarded.')
+      })
+      .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not discard.'))
   }
 
   const onSkip = async (mode: 'once' | 'until_on') => {
@@ -244,6 +248,12 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{previewStudentLink(item.preview)}</p>
           )}
           <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>
+          {item.rationale && item.kind.startsWith('agent_') && (
+            <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>
+          )}
+          {item.sourcesLine && (
+            <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>
+          )}
         </div>
         <span className="flex flex-wrap gap-1.5">
           <Button variant="primary" onClick={onApprove}>
@@ -467,6 +477,111 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     )
   }
 
+  if (item.proposalId && item.kind.startsWith('agent_')) {
+    const proposal = data.agentProposals.find((p) => p.id === item.proposalId)
+    if (!proposal) return null
+    const payload = proposal.payload
+    const save = (next: Record<string, unknown>) => store.updateAgentProposal(proposal.id, next)
+    if (item.kind === 'agent_message' || item.kind === 'agent_parent_update') {
+      return (
+        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={String(payload.body ?? '')}
+            onChange={(e) => save({ ...payload, body: e.target.value })}
+            aria-label="Message body"
+          />
+          {typeof payload.bodyEn === 'string' && (
+            <textarea
+              className={textareaClass}
+              rows={4}
+              value={payload.bodyEn}
+              onChange={(e) => save({ ...payload, bodyEn: e.target.value })}
+              aria-label="English body"
+            />
+          )}
+          <Button className="self-start" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      )
+    }
+    if (item.kind === 'agent_task') {
+      return (
+        <div className="flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
+          <input className={cx(inputBase, 'min-w-[14rem] flex-1')} value={String(payload.title ?? '')} onChange={(e) => save({ ...payload, title: e.target.value })} aria-label="Task" />
+          <input className={inputBase} type="date" value={String(payload.dueDate ?? '')} onChange={(e) => save({ ...payload, dueDate: e.target.value })} aria-label="Due date" />
+          <textarea className={cx(textareaClass, 'w-full')} rows={2} value={String(payload.detail ?? '')} onChange={(e) => save({ ...payload, detail: e.target.value })} aria-label="Detail" />
+          <Button onClick={onClose}>Done</Button>
+        </div>
+      )
+    }
+    if (item.kind === 'agent_profile_change') {
+      return (
+        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
+          <label className="text-[13px] font-semibold text-muted">
+            Proposed value (was {String(payload.from ?? '')})
+            <input
+              className={cx(inputBase, 'mt-1 w-full')}
+              value={String(payload.to ?? '')}
+              onChange={(e) => {
+                const to = e.target.value
+                const patch = payload.patch as { kind?: string; field?: string; value?: unknown } | undefined
+                if (patch?.kind === 'score' && patch.field) {
+                  const value = Number(to)
+                  if (Number.isFinite(value)) save({ ...payload, to, patch: { ...patch, value } })
+                  else save({ ...payload, to })
+                } else if (patch?.kind === 'setMajors') {
+                  save({ ...payload, to, patch: { kind: 'setMajors', value: to.split(',').map((s) => s.trim()).filter(Boolean) } })
+                } else if (patch?.kind === 'addInterest') {
+                  save({ ...payload, to, patch: { kind: 'addInterest', value: to.trim() } })
+                } else {
+                  save({ ...payload, to })
+                }
+              }}
+            />
+          </label>
+          <Button className="self-start" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      )
+    }
+    if (item.kind === 'agent_meeting_times') {
+      const slots = Array.isArray(payload.slots) ? (payload.slots as { when: string; reason: string }[]) : []
+      return (
+        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
+          {slots.map((slot, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <input
+                className={inputBase}
+                value={slot.when}
+                onChange={(e) => {
+                  const next = slots.map((s, j) => (j === i ? { ...s, when: e.target.value } : s))
+                  save({ ...payload, slots: next })
+                }}
+                aria-label={`Slot ${i + 1} when`}
+              />
+              <input
+                className={inputBase}
+                value={slot.reason}
+                onChange={(e) => {
+                  const next = slots.map((s, j) => (j === i ? { ...s, reason: e.target.value } : s))
+                  save({ ...payload, slots: next })
+                }}
+                aria-label={`Slot ${i + 1} reason`}
+              />
+            </div>
+          ))}
+          <Button className="self-start" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      )
+    }
+  }
+
   return null
 }
 
@@ -577,7 +692,7 @@ function ProfileChangeEditor({ meetingId, change, onClose }: { meetingId: string
   )
 }
 
-function approveItem(item: ApprovalItem): void {
+function approveItem(item: ApprovalItem): void | Promise<void> {
   const s = useStore.getState()
   const data = s.data
   switch (item.kind) {
@@ -616,10 +731,17 @@ function approveItem(item: ApprovalItem): void {
       if (draft) s.sendMessage({ ...draft.message, trigger: 'approved' })
       break
     }
+    case 'agent_message':
+    case 'agent_parent_update':
+    case 'agent_task':
+    case 'agent_profile_change':
+    case 'agent_meeting_times':
+      if (item.proposalId) return s.approveAgentProposal(item.proposalId)
+      break
   }
 }
 
-function discardItem(item: ApprovalItem): void {
+function discardItem(item: ApprovalItem): void | Promise<void> {
   const s = useStore.getState()
   switch (item.kind) {
     case 'notes':
@@ -657,6 +779,13 @@ function discardItem(item: ApprovalItem): void {
       break
     }
     case 'reminder':
+      break
+    case 'agent_message':
+    case 'agent_parent_update':
+    case 'agent_task':
+    case 'agent_profile_change':
+    case 'agent_meeting_times':
+      if (item.proposalId) return s.discardAgentProposal(item.proposalId)
       break
   }
 }

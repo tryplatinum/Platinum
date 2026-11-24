@@ -65,6 +65,166 @@ export type Database = {
           },
         ]
       }
+      agent_messages: {
+        Row: {
+          content: Json
+          created_at: string
+          firm_id: string
+          id: string
+          input_tokens: number | null
+          output_tokens: number | null
+          role: string
+          thread_id: string
+        }
+        Insert: {
+          content: Json
+          created_at?: string
+          firm_id: string
+          id?: string
+          input_tokens?: number | null
+          output_tokens?: number | null
+          role: string
+          thread_id: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          firm_id?: string
+          id?: string
+          input_tokens?: number | null
+          output_tokens?: number | null
+          role?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_messages_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "agent_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_proposals: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          firm_id: string
+          id: string
+          kind: string
+          payload: Json
+          rationale: string
+          sources: Json
+          status: string
+          student_id: string
+          thread_id: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          firm_id: string
+          id?: string
+          kind: string
+          payload: Json
+          rationale?: string
+          sources?: Json
+          status?: string
+          student_id: string
+          thread_id: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          firm_id?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          rationale?: string
+          sources?: Json
+          status?: string
+          student_id?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_proposals_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_proposals_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_proposals_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "agent_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_threads: {
+        Row: {
+          counselor_id: string
+          created_at: string
+          firm_id: string
+          id: string
+          student_id: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          counselor_id: string
+          created_at?: string
+          firm_id: string
+          id?: string
+          student_id?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          counselor_id?: string
+          created_at?: string
+          firm_id?: string
+          id?: string
+          student_id?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_threads_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_threads_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       college_directory: {
         Row: {
           act_25: number | null

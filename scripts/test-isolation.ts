@@ -8,6 +8,7 @@
 // in .env.local. It creates two throwaway accounts and firms with invented
 // rows, runs the checks, and deletes them again. It makes no AI calls.
 
+import './loadEnv.js'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { POST as aiPost } from '../api/ai.js'
 import { GET as studentGet, POST as studentPost } from '../api/student.js'

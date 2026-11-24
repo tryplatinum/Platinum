@@ -6,16 +6,18 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Database } from '../src/lib/database.types.js'
 
-const url = process.env.VITE_SUPABASE_URL ?? ''
-const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? ''
+const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
 export function requireSettings(): void {
-  const missing = Object.entries({ VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: anonKey, SUPABASE_SERVICE_ROLE_KEY: serviceKey })
-    .filter(([, value]) => !value)
-    .map(([name]) => name)
+  const missing = [
+    !url ? 'SUPABASE_URL or VITE_SUPABASE_URL' : '',
+    !anonKey ? 'SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY' : '',
+    !serviceKey ? 'SUPABASE_SERVICE_ROLE_KEY' : '',
+  ].filter(Boolean)
   if (missing.length) {
-    console.error(`Missing in .env.local: ${missing.join(', ')}`)
+    console.error(`Missing in .env: ${missing.join(', ')}`)
     process.exit(1)
   }
 }

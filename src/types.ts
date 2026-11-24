@@ -817,6 +817,30 @@ export interface ReminderSkip {
   skippedBy?: ID
 }
 
+/** A draft from the server assistant waiting in Approvals. */
+export type AgentProposalKind = 'message' | 'parent_update' | 'task' | 'profile_change' | 'meeting_times'
+export type AgentProposalStatus = 'pending' | 'approved' | 'discarded'
+
+export interface AgentProposalSource {
+  type: string
+  id?: string
+  label: string
+}
+
+export interface AgentProposal {
+  id: ID
+  studentId: ID
+  threadId: ID
+  kind: AgentProposalKind
+  payload: Record<string, unknown>
+  rationale: string
+  sources: AgentProposalSource[]
+  status: AgentProposalStatus
+  createdAt: string
+  decidedBy?: ID
+  decidedAt?: string
+}
+
 // ── Root ────────────────────────────────────────────────────────────────────
 
 export interface Firm {
@@ -851,4 +875,6 @@ export interface AppData {
   collegeListDraftItems: CollegeListDraftItem[]
   /** Active and recent reminder skips for this firm. */
   reminderSkips: ReminderSkip[]
+  /** Pending (and recent) drafts from the server assistant. */
+  agentProposals: AgentProposal[]
 }
