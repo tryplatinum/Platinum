@@ -47,6 +47,7 @@ import type {
   WeeklyText,
 } from '../types'
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
+import { clearStoredFiles, fileActions, type FileActions } from './files'
 
 /** Where versions before accounts kept everything. Read once, to offer an import. */
 const LEGACY_STORAGE_KEY = 'platinum-v0'
@@ -210,6 +211,9 @@ interface Actions {
    */
   sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
 }
+
+/** Stored files and folders: see store/files.ts. Their rows are changed through the server and taken in with `absorb`. */
+interface Actions extends FileActions {}
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
@@ -486,14 +490,35 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (quiet && (startedAt !== revision || pendingWrites > 0)) return
         if (get().account.status !== 'ready' || get().mode !== 'firm') return
         set({ data, studentLinks, load: 'ready', loadError: undefined })
+        // Files still being sorted when this loaded: bring them up to date, and let the server finish any it was cut off on.
+        void get().refreshFiles()
       } catch (error) {
         if (!quiet) set({ load: 'error', loadError: reasonOf(error) })
       }
     },
 
-    loadSample: () => install(sample(), false),
-    resetDemo: () => install(sample(), true),
-    startEmpty: () => install(undefined, true),
+    // The sample's invented PDFs are uploaded once its students are saved. Clearing the
+    // caseload first removes every stored file through the server (objects, then rows):
+    // apply_changes removes rows only and would leave the objects behind.
+    loadSample: () => {
+      const data = sample()
+      install(data, false)
+      void writes.then(() => get().addSampleFiles(data.students))
+    },
+    resetDemo: () =>
+      void clearStoredFiles(get()).then(
+        () => {
+          const data = sample()
+          install(data, true)
+          void writes.then(() => get().addSampleFiles(data.students))
+        },
+        (error) => notify(`Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`),
+      ),
+    startEmpty: () =>
+      void clearStoredFiles(get()).then(
+        () => install(undefined, true),
+        (error) => notify(`Nothing was changed: the stored files could not be removed. ${reasonOf(error)}`),
+      ),
 
     hasLegacyData: () => legacyData() !== undefined,
     importLegacyData: () => {
@@ -681,7 +706,14 @@ export const useStore = create<State & Actions>()((set, get) => {
 
     updateDocument: (docId, patch) => change((data) => ({ ...data, documents: patchById(data.documents, docId, (d) => ({ ...d, ...patch })) })),
 
-    removeDocument: (docId) => change((data) => ({ ...data, documents: data.documents.filter((d) => d.id !== docId) })),
+    removeDocument: (docId) => {
+      // A stored file goes through the server, which removes the object and the row together.
+      if (get().data.documents.find((d) => d.id === docId)?.storagePath) {
+        get().deleteFile(docId).catch((error) => notify(`That file was not deleted. ${reasonOf(error)}`))
+        return
+      }
+      change((data) => ({ ...data, documents: data.documents.filter((d) => d.id !== docId) }))
+    },
 
     saveEssayDraft: (docId, text, asNew) =>
       change((data) => ({
@@ -1074,6 +1106,8 @@ export const useStore = create<State & Actions>()((set, get) => {
       }),
 
     sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
+
+    ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
   }
 })
 

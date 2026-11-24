@@ -144,6 +144,45 @@ for (const { feature, input, label } of runs) {
   if (feature === 'draftFromMeeting' && body.ok) console.log(`draftFromMeeting: things to remember: ${JSON.stringify(body.draft.personalNotes)}`)
 }
 
+// ── Sorting a file (not an /api/ai feature: the server reads the file from storage) ──
+// Two real model calls: an invented score report as a PDF with the student's name
+// printed on it, uploaded by the counselor outside a student page, and an invented
+// transcript under an unhelpful file name. Run alone with:  npm run test:ai -- sortFile
+if (!only || (only as string) === 'sortFile') {
+  const { POST: documentsPost } = await import('../api/documents.js')
+  const { tinyPdf, DOCUMENTS_BUCKET } = await import('../shared/files.js')
+  const { adminClient } = await import('./testAccounts.js')
+  const call = async (body: Record<string, unknown>) => {
+    const response = await documentsPost(new Request('http://localhost/api/documents', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${account.token}` }, body: JSON.stringify(body) }))
+    return (await response.json()) as { ok: boolean; message?: string; data?: Record<string, unknown> }
+  }
+  const studentId = crypto.randomUUID()
+  const made = await account.client.from('students').insert({ id: studentId, firm_id: account.firmId, first_name: 'Maya', last_name: 'Chen', grad_year: 2027 })
+  if (made.error) throw new Error(`could not create the test student: ${made.error.message}`)
+  const folders = (await account.client.from('document_types').select('id, name')).data ?? []
+  const files = [
+    { name: 'scan_0042.pdf', expect: 'Test scores', pdf: tinyPdf('SAT Score Report', ['College Board', 'Student: CHEN, MAYA', 'Test date: August 23, 2026', 'Total score: 1480', 'Evidence-Based Reading and Writing: 720', 'Math: 760']) },
+    { name: 'document (3).pdf', expect: 'Transcripts and grades', pdf: tinyPdf('Official High School Transcript', ['Lakeview High School', 'Student: Maya Chen', 'School year 2025-26, Grade 11', 'AP Chemistry: A', 'AP US History: A-', 'Precalculus Honors: A', 'Cumulative GPA: 3.92']) },
+  ]
+  const paths: string[] = []
+  for (const file of files) {
+    const started = Date.now()
+    const row = (await call({ action: 'start', filename: file.name, size: file.pdf.length, type: 'application/pdf' })).data as { id: string; storage_path: string }
+    paths.push(row.storage_path)
+    const up = await account.client.storage.from(DOCUMENTS_BUCKET).upload(row.storage_path, file.pdf, { contentType: 'application/pdf' })
+    if (up.error) throw new Error(`upload failed: ${up.error.message}`)
+    await call({ action: 'finish', documentId: row.id })
+    const body = await call({ action: 'suggest', documentId: row.id })
+    const doc = body.data as { file_status?: string; student_id?: string | null; needs_check?: boolean; ai_suggestion?: { typeId: string; title: string; studentName?: string; reason: string; alternatives: string[]; sure: boolean; model: string } | null } | undefined
+    const folderName = (id?: string) => folders.find((f) => f.id === id)?.name ?? id
+    console.log(`\n━━ sortFile “${file.name}” · ${((Date.now() - started) / 1000).toFixed(1)}s ${'━'.repeat(40)}`)
+    console.log(JSON.stringify(doc?.ai_suggestion ? { ...doc.ai_suggestion, typeId: folderName(doc.ai_suggestion.typeId), alternatives: doc.ai_suggestion.alternatives.map(folderName) } : body, null, 2))
+    console.log(`sortFile: status ${doc?.file_status}; needs a check: ${doc?.needs_check}; name matched to the roster: ${doc?.student_id === studentId ? 'Maya Chen' : 'no'}`)
+    if (!doc?.ai_suggestion || folderName(doc.ai_suggestion.typeId) !== file.expect || doc.student_id !== studentId || doc.file_status !== 'suggested') failed += 1
+  }
+  await adminClient().storage.from(DOCUMENTS_BUCKET).remove(paths)
+}
+
 await removeAccount(account)
 
 if (failed > 0) {

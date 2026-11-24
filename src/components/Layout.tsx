@@ -6,10 +6,12 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
+import { filesWaitingCount } from '../lib/files'
 import { reminderQueue } from '../lib/reminders'
 import { signOut } from '../store/session'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
+import { FolderSettings } from './files/FolderSettings'
 import { Button, Card, Field, Modal, cx, inputClass, useToast } from './ui'
 
 export function CounselorLayout() {
@@ -24,6 +26,7 @@ export function CounselorLayout() {
     { to: '/app/students', label: 'Students', end: false, badge: 0, badgeLabel: '' },
     { to: '/app/meetings', label: 'Meetings', end: false, badge: pendingApprovals(data).filter((a) => a.kind === 'meeting').length, badgeLabel: 'to review' },
     { to: '/app/messages', label: 'Messages sent', end: false, badge: reminderQueue(data).filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
+    { to: '/app/documents', label: 'Documents', end: false, badge: filesWaitingCount(data), badgeLabel: 'files waiting or to check' },
   ]
 
   return (
@@ -165,7 +168,7 @@ function FirmSettings({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(firm.name)
   const [counselor, setCounselor] = useState(firm.counselorName)
   return (
-    <Modal title="Firm settings" onClose={onClose}>
+    <Modal title="Firm settings" onClose={onClose} wide>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -187,6 +190,10 @@ function FirmSettings({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </form>
+      {/* Outside the form above: folders are saved as they are changed. */}
+      <div className="mt-5">
+        <FolderSettings />
+      </div>
     </Modal>
   )
 }

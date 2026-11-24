@@ -5,7 +5,7 @@ A workspace for private college counselors: every student in one place, with an 
 It is still a v0. Four limits matter before you put real work in it:
 
 1. **Nothing is delivered.** Reminders, parent reports, recaps and feedback are written to a log (Messages sent). Use "Copy" to paste a message into email, text, WeChat or LINE yourself. The weekly text to each student is the same: Platinum writes it, and you send it from your own phone.
-2. **AI requests send data to Anthropic.** When AI is connected, the facts for one student (first name, scores, tasks, deadlines, your pasted notes or essay text) are sent to Anthropic's API to write a draft. Last names, emails, phone numbers and messaging handles are left out. There is no privacy agreement in place, and students are minors: decide whether that is acceptable before entering real students.
+2. **AI requests send data to Anthropic.** When AI is connected, the facts for one student (first name, scores, tasks, deadlines, your pasted notes or essay text) are sent to Anthropic's API to write a draft. Last names, emails, phone numbers and messaging handles are left out. While "Sort files automatically" is on, the first two pages of every uploaded file are sent too. There is no privacy agreement in place, and students are minors: decide whether that is acceptable before entering real students.
 3. **Nothing AI-written reaches a student or parent until you approve it.** Each approval records who approved (name and account) and when.
 4. **A student link is a password.** Anyone holding a student's link can see that student's page and mark their tasks done. Send it only to the student, and revoke it if it leaks.
 
@@ -30,7 +30,7 @@ npm run dev                    # http://localhost:5173
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` from the linked project |
 | `npm run test:isolation` | Check on the real project that firms cannot reach each other and the anon key reaches nothing |
 | `npm run test:notes` | Check, with no keys or network, that a student's "things to remember" cannot reach a parent report, a parent reminder or the student link's code |
-| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls) |
+| `npm run test:ai` | Call all seven AI features for real and print the drafts (nine calls), then sort two invented files (two more). `npm run test:ai -- sortFile` runs only those |
 | `npm run import:colleges` | Fill the college directory from the College Scorecard, by hand (`-- --dry-run` reports without writing). See "The college directory" |
 
 ### Environment variables
@@ -41,12 +41,13 @@ In `.env.local` (git-ignored) for local work, and in the host's settings for a d
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | browser and server | The project URL, `https://<ref>.supabase.co`. Public. |
 | `VITE_SUPABASE_ANON_KEY` | browser and server | The **anon / publishable** key (`sb_publishable_…` or a JWT with role `anon`). Public by design: row level security decides what it can reach. |
-| `SUPABASE_SERVICE_ROLE_KEY` | server only | The **service role / secret** key (`sb_secret_…`). Bypasses row level security. Used only by the student link function. Never give it a `VITE_` name: anything with that prefix is shipped to the browser. |
+| `SUPABASE_SERVICE_ROLE_KEY` | server only | The **service role / secret** key (`sb_secret_…`). Bypasses row level security. Used by the student link function, and by the files function only for work no signed-in person does (see "Stored files"). Never give it a `VITE_` name: anything with that prefix is shipped to the browser. |
 | `ANTHROPIC_API_KEY` | server only | Your Anthropic key. Without it the app still runs and AI drafts are labelled placeholders. |
 | `VITE_PUBLIC_URL` | browser, optional | The address students reach the app at, used for the link in weekly texts. Only needed when you open the app at a different address from the one students use. |
 | `ANTHROPIC_MODEL` | server only, optional | Model for every AI feature. Default `claude-sonnet-5-5`. |
 | `AI_REFUSAL_FALLBACK` | server only, optional | `off` stops the API re-running a declined request on a fallback model. |
 | `SCORECARD_API_KEY` | `npm run import:colleges` only | A free api.data.gov key for the College Scorecard. Never used by the browser or a server function. |
+| `ANTHROPIC_SORT_MODEL` | server only, optional | Model used only to sort uploaded files into folders. Default `claude-haiku-5-5`, the cheapest current model that reads PDFs and images. |
 
 Only the two `VITE_` values reach the browser. The other keys are read from the environment by the server functions and are never logged.
 
@@ -86,7 +87,8 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | Reminder rules and queue | Real rules, real queue, fixed wording. No scheduler: a button stands in for the daily send |
 | Report schedule | A recorded intention. Nothing is drafted on a timer |
 | Meeting recording | None. You paste or type notes or a transcript |
-| Files | Only the file name or a link is recorded. Nothing is uploaded or stored. On a student link, only links can be attached |
+| Files | **Real.** Counselors and students upload PDFs, photos, Word and Excel files to a private storage bucket, sorted into the firm's folders. Opening one goes through a link that lives 60 seconds. Older rows that were a name or a link only stay as they are, labelled "name only, no file stored". See "Stored files" |
+| Sorting files into folders | **Real**, by AI, and it can be wrong. A student's upload is filed with nobody checking first and is marked "Sorted automatically"; when the AI was not sure it is listed under "Check these". A counselor's upload is never filed by the AI: it waits with a suggestion |
 | Calendar | Platinum's own schedule. No invitations, no calendar sync |
 | Sign-in and accounts | **Real.** Supabase Auth with email and password: sign up, sign in, sign out, reset password |
 | The student's own page | **Real.** A secret link per student opens it on their phone with no login. You create and revoke links from the student page |
@@ -185,6 +187,55 @@ It accepts three writes, each checked against the token's student and limited to
 
 `/student/:id` is the counselor's preview of that page and sits behind sign-in.
 
+### Stored files
+
+Real files live in one private Supabase Storage bucket, `documents`. A stored file is a row in the `documents` table (the same table essays use) with `storage_path` set and a life-cycle in `file_status`: `uploading`, `sorting`, `suggested`, `filed`. Essays and the older name-or-link rows have neither and are never treated as files to sort.
+
+**Bucket setup.** `npm run db:push` creates the bucket and its policies (`supabase/migrations/20261126000002_documents_bucket.sql`); there is nothing to click in the dashboard. It is private, has no public URLs, takes PDF, JPEG, PNG, HEIC, DOCX and XLSX, and caps a file at 25 MB.
+
+**Path.** `{firm_id}/{student_id or _}/{document_id}/{safe name}`. The second segment is `_` for a counselor's upload made outside a student page. The path is set once and never changes: renaming or moving a file to another folder changes the row only. Because of that, files are always removed by the exact path on each row, never by a student's folder prefix.
+
+**Who can reach a file.** A member of the firm, until it is filed under a folder marked "owner only" (Decisions and awards, Financial aid, Identity and visa, Firm paperwork, or any folder the owner marks so). From then on the row, its log and its object are the firm owner's only. A counselor who is not the owner can still file INTO such a folder; the file then leaves their lists and the screen says why. The anon key alone reaches nothing.
+
+**Uploading** never passes through a server function:
+
+```
+counselor:  POST /api/documents start   ─▶ row (file_status uploading, storage_path)
+            browser ─▶ Storage, as the signed-in person. Storage accepts an upload only to the exact
+                       path of an uploading row of their firm. Resumable (TUS) in 6 MB pieces above 6 MB.
+            POST /api/documents finish  ─▶ server reads the object: real type from its first bytes, size, SHA-256
+            POST /api/documents suggest ─▶ the AI's suggestion. The file waits (file_status suggested)
+            POST /api/documents file    ─▶ a person files it ("Yes, put it there" or Save)
+
+student:    POST /api/student start_upload  ─▶ token, limits, declared size and type checked; row made;
+                                               a one-time signed upload URL for that one path
+            browser ─▶ Storage, with that URL
+            POST /api/student finish_upload ─▶ real type, size and hash checked (a file that fails is deleted
+                                               with its row); answers at once; the AI files it afterwards
+```
+
+**Sorting.** `server/documentSorting.ts` holds everything that decides or records where a file goes, as plain functions (`classifyDocument`, `matchRoster`, `recentCorrections`, `suggestForCounselor`, `sortStudentDrop`, `fileDocument`, `deleteStoredFiles`, `settleFiles`), so the central AI can call them later.
+
+- **What is sent to Anthropic:** the first two pages of a PDF (or the image; or the first 4,000 characters of a Word or Excel file), the file's name, the firm's open folders with their one-line descriptions, and the firm's last 20 corrections (title, the AI's folder, the folder a person chose). Inline in the request, never through the Files API. No roster and no student record. Limit 2 at the top of this file applies: these are students' documents.
+- **The model never picks a student.** It reports the name printed on the document; `matchRoster` matches it to the firm's students in code (exact, then ignoring case and order) and gives up when two students match.
+- **A student's upload** is filed automatically: folder and title from the model, `sorted_by auto`, and `needs_check` when the model said it was not sure. The counselor sees "Sorting…" until then.
+- **A counselor's upload** is never filed by the AI. It gets a suggestion and waits under "Waiting for you" on the Documents screen, on no student's page, until a person files it. Choosing a different folder from the suggestion is a correction; the AI's suggestion stays on the row, and that pair is what the next request is shown.
+- **If the model fails or takes over 40 seconds,** the upload still succeeds: the file goes under Other marked to check, and sorting is tried once more in the background. A folder or title a person set is never overwritten (every automatic write applies only while the row is still in the state the AI found it in).
+- **"Sort files automatically"** (Firm settings, owner only, on by default). Off: every upload lands under Other to be checked and nothing is sent to the model. The server reads the setting from the database.
+- **HEIC photos and images over about 3.5 MB** cannot be shown to the model, so they are sorted from the file name alone and nearly always land under "Check these". A large photo taken on a student link is scaled down in the browser first, so this mostly affects files picked from a phone's library.
+
+**After the response.** A student never waits for the model: `finish_upload` answers as soon as the file is checked and hands the sorting to `waitUntil` (`@vercel/functions`), which keeps the function alive on Vercel; in `npm run dev` the promise simply runs. If that work is cut off anyway, the row stays `sorting`. The next time a counselor's browser loads documents it calls `settle`, which files any row stuck in `sorting` for over three minutes under Other marked to check (a counselor's own upload waits there instead), and removes uploads abandoned for over an hour.
+
+**Deleting.** `apply_changes` and a cascade from deleting a student remove rows only, which would strand the stored objects. So there is one path, `deleteStoredFiles` (`POST /api/documents` `delete`), which removes objects first and rows second, for one document, one student's files, or the whole firm's. The store's delete, **Reset demo** and **Start empty** go through it. One document is removed as the signed-in person; a student's or firm's files are removed with the service role, filtered by the caller's firm, because a counselor who may delete a student may not be able to see every file that student has.
+
+**The log.** `document_events` records uploaded, auto_sorted, suggested, approved, typed, renamed, viewed, downloaded and deleted, insert only. A "deleted" entry for a file from an owner-only folder carries no title or file name, since the log outlives the file.
+
+**Limits.** 25 MB a file. On a student link: 10 files a day, 200 MB per student in total, and the link's existing rate limits by token and address. `/api/documents`: 120 requests per person per five minutes, in memory like the others.
+
+**The student link can add files and nothing else.** It gets back a file's name; it can never list, open or download one. `npm run test:isolation` checks that, along with everything above about who reaches what, using a stand-in for the model.
+
+**The sample caseload** includes five invented PDFs. They are generated in the browser (`tinyPdf` in `shared/files.ts`) and uploaded through the counselor's own upload path, already filed, once the sample students are saved. Loading them makes no AI request.
+
 ## Code layout
 
 ```
@@ -205,6 +256,11 @@ server/collegeTools.ts    The college tools: search, get, a student's list (and 
 shared/colleges.ts        The directory's shapes, labels and which figure has which data year
 scripts/import-colleges.ts  Fills the college directory from the College Scorecard, by hand
 design/reference/         The nine approved HTML mockups (visual reference only)
+api/documents.ts          Server function: stored files for signed-in members (start, finish, suggest,
+                          file, rename, open, delete, settle). A thin handler
+server/documentSorting.ts Everything that decides or records where a file goes, and the one delete path
+server/fileText.ts        The first two pages of a PDF; the opening text of a Word or Excel file
+shared/files.ts           Bucket, limits, file types, the path convention, reading a file's real type
 
 src/types.ts              Every data shape
 src/lib/supabase.ts       The one Supabase client in the browser
@@ -242,6 +298,12 @@ src/screens/counselor/    CommandCenter, Students, StudentPage (+ student/ tabs)
                           Meetings (by student, calendar), Messages, WeeklyTexts, SignIn (+ firm setup, reset)
 src/screens/student/      The student's phone-width view, and its layout for the secret link
 src/App.tsx               All routes, and redirects from the old URLs
+src/lib/files.ts          Derived facts about files and folders: waiting, to check, new, which folder
+src/services/files.ts     The browser side of files: /api/documents, and uploads straight to storage
+src/store/files.ts        The store's file and folder actions (spread into the one store)
+src/components/files/     UploadWindow, FilingRow (pickers and suggestion), FileRow and preview, FolderSettings
+src/screens/counselor/Documents.tsx   The firm-wide Documents screen
+src/screens/student/AddFile.tsx       "Add a file" on the student's own page
 ```
 
 Rules of thumb:
@@ -356,3 +418,11 @@ Data dictionary released October 15, 2026 (https://collegescorecard.ed.gov/files
 - **Directory figures are fetched when a list is shown** and kept until the page is reloaded. They are as current as the last import.
 - **Aliases are split on commas**, so an alias that itself contains a comma is stored as two. Search is unaffected: it reads the whole alias string.
 - **A college is on a list once per link, not once per name.** The same college can be added twice as free text.
+- **File storage, not built yet:** document requests ("please upload your transcript" with a slot to fill), parent links, pulling grades or scores out of a document into the profile, search inside or across files, a file's history on screen (the log is recorded but not shown), linking a file to a college, moving a filed file to another student, virus scanning, and versions of a file.
+- **A file the AI sorted can be in the wrong folder**, including an owner-only one, where a counselor who is not the owner will not see it. The owner sees everything; "Check these" lists only the ones the AI doubted.
+- **"10 files a day" on a student link is counted per student**, not per link: a student with two live links shares the allowance.
+- **A file's contents are not scanned.** The server checks that a file really is the type it claims, by its first bytes, and nothing more.
+- **Files are sorted from their first two pages.** A long PDF whose telling page comes later may be filed wrongly.
+- **A suggestion that arrives after the upload window is closed** shows the next time the Documents screen loads its data (on focus), not instantly.
+- **Other counselors' uploads show as "A colleague"**: there is no member directory in the browser yet.
+- **Recent documents in a pre-meeting brief** are listed by title for whoever can see them, which for the owner includes files in owner-only folders.

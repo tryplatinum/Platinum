@@ -7,6 +7,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
 import { RequireFirm } from './components/RequireFirm'
 import CommandCenter from './screens/counselor/CommandCenter'
+import Documents from './screens/counselor/Documents'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="students/:studentId" element={<StudentPage />} />
           <Route path="meetings" element={<Meetings />} />
           <Route path="messages" element={<Messages />} />
+          <Route path="documents" element={<Documents />} />
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
           <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />
