@@ -99,9 +99,11 @@ interface Actions {
   /** Adds the invented sample caseload to the firm, with dates relative to today. */
   loadSample: () => void
   /** Deletes the firm's data and loads the sample caseload again. */
-  resetDemo: () => void
+  /** Resolves true once the caseload is replaced, false when it was refused or failed (nothing changed, and the person was told why). */
+  resetDemo: () => Promise<boolean>
   /** Deletes the firm's data, for a counselor entering their own students. */
-  startEmpty: () => void
+  /** As resetDemo: true once the caseload is cleared, false when nothing was changed. */
+  startEmpty: () => Promise<boolean>
   /** True when this browser still holds data saved by a version before accounts. */
   hasLegacyData: () => boolean
   /** Copies that saved data into the firm, then removes it from the browser. */
@@ -513,18 +515,28 @@ export const useStore = create<State & Actions>()((set, get) => {
       void writes.then(() => get().addSampleFiles(data.students))
     },
     resetDemo: () =>
-      void clearStoredFiles(get()).then(
+      clearStoredFiles(get()).then(
         () => {
           const data = sample()
           install(data, true)
           void writes.then(() => get().addSampleFiles(data.students))
+          return true
         },
-        (error) => notify(notCleared(error)),
+        (error) => {
+          notify(notCleared(error))
+          return false
+        },
       ),
     startEmpty: () =>
-      void clearStoredFiles(get()).then(
-        () => install(undefined, true),
-        (error) => notify(notCleared(error)),
+      clearStoredFiles(get()).then(
+        () => {
+          install(undefined, true)
+          return true
+        },
+        (error) => {
+          notify(notCleared(error))
+          return false
+        },
       ),
 
     hasLegacyData: () => legacyData() !== undefined,
