@@ -497,6 +497,32 @@ export async function sortStudentDrop(firmId: string, documentId: string, bytes?
   }
 }
 
+/**
+ * Where a file synced from a linked Drive folder is filed, decided from the
+ * bytes in memory BEFORE anything is stored. The same rules as sortStudentDrop:
+ * the model's folder and title, marked to check when it was not sure; with
+ * sorting off, or when the model fails (tried twice), the catch-all folder
+ * marked to check.
+ *
+ * Deciding first matters for who can read it: a row that is not yet filed is
+ * open to every member of the firm, so a synced file is only ever written
+ * already filed. One that belongs in a folder only the owner can open is never
+ * readable by anyone else, not even while it is being sorted.
+ */
+export async function decideFiling(db: Db, row: DocumentRow, bytes: Uint8Array, driveFolder?: string): Promise<{ patch: Database['public']['Tables']['documents']['Update']; detail: Record<string, unknown> }> {
+  const other = catchAll(await foldersOf(db, row.firm_id)).id
+  const fallback = (detail: Record<string, unknown>) => ({ patch: { type_id: other, needs_check: true }, detail: { typeId: other, ...detail } })
+  if (!(await sortsAutomatically(db, row.firm_id))) return fallback({ sortingOff: true })
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const s = await classifyDocument(db, row, bytes, driveFolder)
+      return { patch: { type_id: s.typeId, title: s.title, name: s.title, school_year: s.schoolYear ?? null, needs_check: !s.sure, ai_suggestion: s as unknown as Json }, detail: { typeId: s.typeId, sure: s.sure, model: s.model, ...(attempt ? { retry: true } : {}) } }
+    } catch (error) {
+      if (attempt > 0 || !worthRetrying(error)) return fallback({ failed: true })
+    }
+  }
+}
+
 // ── What a person does to a file ────────────────────────────────────────────
 
 export interface Filed {

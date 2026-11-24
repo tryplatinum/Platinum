@@ -11,9 +11,16 @@
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE, aboutReply, tokenFailure, tokenReply, type GoogleStatus } from '../../shared/google.js'
 import { serviceClient, serviceConfigured, type Caller } from '../supabase.js'
 import { AUTH_URL, DRIVE_API, REVOKE_URL, TOKEN_URL, clientId, clientSecret, fakeMode, google, googleConfigured, redirectUri, tokenKey } from './config.js'
+import { FAKE_ADDRESS } from './fakeDrive.js'
 import { STATE_SECONDS, decryptToken, encryptToken, newNonce, signState, verifyState } from './secrets.js'
 
 type SignedIn = Extract<Caller, { ok: true }>
+
+/** Whose Google connection, and for which firm. A connection is only ever used for the firm it was made in. */
+export interface Who {
+  userId: string
+  firmId: string
+}
 
 /** Something to tell the person. The message is safe to show; `code` lets the screen offer "Reconnect Google". */
 export class GoogleError extends Error {
@@ -65,7 +72,7 @@ export async function connectionStatus(caller: SignedIn): Promise<GoogleStatus> 
 export const STATE_COOKIE = 'google_state'
 
 const cookie = (request: Request, value: string, maxAge: number) =>
-  `${STATE_COOKIE}=${value}; Path=/api/google; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`
+  `${STATE_COOKIE}=${value}; Path=/api/google; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${new URL(request.url).protocol === 'https:' || process.env.VERCEL ? '; Secure' : ''}`
 
 export function readCookie(request: Request, name: string): string | undefined {
   for (const part of (request.headers.get('cookie') ?? '').split(';')) {
@@ -114,8 +121,10 @@ export type ConnectOutcome = 'connected' | 'gmail_on' | 'declined' | 'unchanged'
  * was given when it started. Anything else is refused before Google is asked
  * anything. Returns where to send the person, never an error with details.
  */
+export const clearStateCookie = (request: Request) => cookie(request, '', 0)
+
 export async function finishConnect(request: Request): Promise<{ outcome: ConnectOutcome; clearCookie: string }> {
-  const clearCookie = cookie(request, '', 0)
+  const clearCookie = clearStateCookie(request)
   const done = (outcome: ConnectOutcome) => ({ outcome, clearCookie })
   if (!googleAvailable()) return done('failed')
   const params = new URL(request.url).searchParams
@@ -138,9 +147,14 @@ export async function finishConnect(request: Request): Promise<{ outcome: Connec
   if (!exchanged.ok) return done('failed')
   const tokens = tokenReply.safeParse(await exchanged.json().catch(() => undefined))
   if (!tokens.success) return done('failed')
-  const scopes = (tokens.data.scope ?? '').split(/\s+/).filter((s) => s === DRIVE_SCOPE || s === GMAIL_SEND_SCOPE)
-
+  const granted = (tokens.data.scope ?? '').split(/\s+/)
   const existing = await rowOf(claims.userId)
+  // Sending from Gmail is recorded only when the person asked for it this time, or already had it on this
+  // connection. Google can hand back a permission given long ago; that alone never turns sending on.
+  const mayHaveGmail = claims.gmail || Boolean(existing && existing.firm_id === claims.firmId && existing.scopes.includes(GMAIL_SEND_SCOPE))
+  const scopes = [DRIVE_SCOPE, GMAIL_SEND_SCOPE].filter((scope) => granted.includes(scope) && (scope !== GMAIL_SEND_SCOPE || mayHaveGmail))
+  // The invented Google never replaces a real connection (a dev server pointed at a shared database).
+  if (fakeMode() && existing && existing.google_address !== FAKE_ADDRESS) return done('failed')
   // Drive was unticked on Google's screen. An existing connection is left exactly as it was.
   if (!scopes.includes(DRIVE_SCOPE) || !tokens.data.refresh_token) return done(existing ? 'unchanged' : 'failed')
 
@@ -163,7 +177,7 @@ export async function finishConnect(request: Request): Promise<{ outcome: Connec
   }
   cached.delete(claims.userId)
   // Folders this person linked can sync again.
-  await serviceClient().from('student_drive_folders').update({ status: 'idle', last_error: null }).eq('linked_by', claims.userId).eq('status', 'reconnect')
+  await serviceClient().from('student_drive_folders').update({ status: 'idle', last_error: null }).eq('firm_id', claims.firmId).eq('linked_by', claims.userId).eq('status', 'reconnect')
   if (claims.gmail) return done(scopes.includes(GMAIL_SEND_SCOPE) ? 'gmail_on' : 'unchanged')
   return done('connected')
 }
@@ -191,26 +205,41 @@ export async function disconnect(caller: SignedIn): Promise<GoogleStatus> {
 // ── Access tokens ───────────────────────────────────────────────────────────
 
 /** Access tokens, in this instance's memory only, until a minute before they expire. */
-const cached = new Map<string, { token: string; until: number; scopes: string[] }>()
+const cached = new Map<string, { token: string; until: number; scopes: string[]; connectedAt: string }>()
 
 /** For tests. */
 export const forgetAccessTokens = () => cached.clear()
 
 /**
- * A fresh access token for one user, for one scope. When Google says the grant
- * is expired or revoked (every 7 days while the Google project is in testing),
- * that is recorded on the row and a GoogleError with code 'reconnect' is thrown:
- * every feature then shows "Reconnect Google" instead of failing.
+ * A fresh access token for one user in one firm, for one scope. When Google
+ * says the grant is expired or revoked (every 7 days while the Google project
+ * is in testing), that is recorded on the row and a GoogleError with code
+ * 'reconnect' is thrown: every feature then shows "Reconnect Google" instead of
+ * failing.
+ *
+ * The connection row is read every time, before the cache is trusted: a
+ * connection that was disconnected, or that belongs to another firm, is never
+ * used from memory. And a token is only ever asked of Google for someone who is
+ * still a member of that firm.
  */
-export async function accessTokenFor(userId: string, scope: string = DRIVE_SCOPE): Promise<string> {
+export async function accessTokenFor(who: Who, scope: string = DRIVE_SCOPE): Promise<string> {
   requireAvailable()
-  const hit = cached.get(userId)
-  if (hit && hit.until > Date.now() && hit.scopes.includes(scope)) return hit.token
-
+  const { userId } = who
   const row = await rowOf(userId)
-  if (!row) throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
+  if (!row || row.firm_id !== who.firmId) {
+    cached.delete(userId)
+    throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
+  }
   if (row.last_error === 'reconnect') throw new GoogleError('reconnect', RECONNECT_MESSAGE, 409)
   if (!row.scopes.includes(scope)) throw new GoogleError('reconnect', scope === GMAIL_SEND_SCOPE ? 'Sending from Gmail is not turned on for this Google account.' : RECONNECT_MESSAGE, 409)
+
+  const hit = cached.get(userId)
+  if (hit && hit.until > Date.now() && hit.scopes.includes(scope) && hit.connectedAt === row.connected_at) return hit.token
+
+  // Someone who has left the firm keeps no working connection in it.
+  const member = await serviceClient().from('firm_members').select('user_id').eq('user_id', userId).eq('firm_id', who.firmId).maybeSingle()
+  if (member.error) throw new Error(`reading the membership failed: ${member.error.message}`)
+  if (!member.data) throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
 
   let refresh: string
   try {
@@ -242,7 +271,7 @@ export async function accessTokenFor(userId: string, scope: string = DRIVE_SCOPE
   }
   const tokens = tokenReply.safeParse(body)
   if (!tokens.success) throw new GoogleError('google', 'Google gave an answer that could not be read. Try again in a moment.', 502)
-  cached.set(userId, { token: tokens.data.access_token, until: Date.now() + (tokens.data.expires_in - 60) * 1000, scopes: row.scopes })
+  cached.set(userId, { token: tokens.data.access_token, until: Date.now() + (tokens.data.expires_in - 60) * 1000, scopes: row.scopes, connectedAt: row.connected_at })
   return tokens.data.access_token
 }
 

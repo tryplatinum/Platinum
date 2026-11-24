@@ -61,7 +61,7 @@ export const tokenReply = z.object({
 
 export const tokenFailure = z.object({ error: z.string(), error_description: z.string().optional() })
 
-export const aboutReply = z.object({ user: z.object({ emailAddress: z.string().min(3).max(320) }) })
+export const aboutReply = z.object({ user: z.object({ emailAddress: z.string().email().max(320) }) })
 
 export const driveFile = z.object({
   id: driveId,
@@ -70,7 +70,7 @@ export const driveFile = z.object({
   modifiedTime: z.string().optional(),
   /** Bytes, as a string. Absent on folders and on Google's own formats. */
   size: z.string().regex(/^\d+$/).optional(),
-  webViewLink: z.string().url().max(500).optional(),
+  webViewLink: z.string().url().startsWith('https://').max(500).optional(),
   trashed: z.boolean().optional(),
   shortcutDetails: z.object({ targetId: driveId, targetMimeType: z.string().max(200).optional() }).optional(),
 })
@@ -128,7 +128,10 @@ export interface LinkedFolder {
   lastError?: string
   done: number
   total: number
+  /** With names for the person who linked the folder and for the owner. For anyone else: one line per reason, no names. */
   skipped: SkippedFile[]
+  skippedCount: number
+  /** Only Drive ids of files the person can read. */
   missingFileIds: string[]
   removedHere: number
   /** True when the signed-in person linked it (their Google connection is the one it syncs with). */
@@ -178,8 +181,9 @@ export const REASON = {
   notReadable: 'Google would not let this file be read.',
   wrongContents: 'The file is not what its name says it is.',
   empty: 'The file is empty.',
-  tooMany: `A linked folder takes at most ${MAX_FOLDER_FILES} files. The rest were left out.`,
+  tooMany: `A linked folder takes at most ${MAX_FOLDER_FILES} files, and only so much can be read in one go. The rest were left out.`,
   tooDeep: `Folders more than ${MAX_FOLDER_DEPTH} levels down are not read.`,
+  failed: 'It could not be imported. “Sync now” tries it again once it changes in Drive.',
 } as const
 
 /** The name a stored copy gets: Google's own formats are saved as PDFs. */

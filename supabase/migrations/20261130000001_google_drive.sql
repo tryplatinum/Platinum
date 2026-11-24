@@ -9,10 +9,11 @@
 --                             from Drive and which Drive file it is.
 --   * student_drive_folders   a Drive folder linked to a student, and how its
 --                             sync is going. Firm members can read it (not the
---                             server's working state). Writes go through
+--                             server's working state, nor Drive file names). Writes go through
 --                             /api/google with the service role.
 --
--- Additive only: new tables, new nullable columns, new indexes. Nothing is
+-- Additive only: new tables, new nullable columns, new indexes, one new trigger
+-- function. Nothing is
 -- dropped, renamed or replaced. apply_changes is not changed: it already copes
 -- with new nullable columns, and the browser sends these four back unchanged.
 
@@ -48,9 +49,39 @@ alter table public.documents
   -- Null means an upload.
   add column source text check (source is null or source in ('upload', 'google_drive')),
   add column drive_file_id text check (drive_file_id is null or char_length(drive_file_id) <= 200),
-  add column drive_url text check (drive_url is null or char_length(drive_url) <= 500),
+  add column drive_url text check (drive_url is null or (char_length(drive_url) <= 500 and drive_url ~ '^https://')),
   -- Drive's own "modified" time when the stored copy was taken.
   add column drive_modified_at timestamptz;
+
+-- These four columns, and the path of a stored object, are the server's to set:
+-- a sync run with the service role trusts them to say which Drive file a row
+-- is a copy of and where its object lives. A signed-in person's update keeps
+-- whatever was there (it is not refused, so an older browser tab that does not
+-- know the new columns can still save a document without blanking them).
+-- Inserts are not affected: a counselor's own import writes them once.
+create function public.documents_keep_server_columns()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    new.source := old.source;
+    new.drive_file_id := old.drive_file_id;
+    new.drive_url := old.drive_url;
+    new.drive_modified_at := old.drive_modified_at;
+    if old.storage_path is not null then
+      new.storage_path := old.storage_path;
+    end if;
+  end if;
+  return new;
+end
+$$;
+
+revoke execute on function public.documents_keep_server_columns() from public, anon, authenticated;
+
+create trigger documents_keep_server_columns before update on public.documents
+  for each row execute function public.documents_keep_server_columns();
 
 -- One stored copy of a Drive file per student.
 create unique index documents_drive_file_idx on public.documents (firm_id, student_id, drive_file_id)
@@ -98,10 +129,12 @@ create policy student_drive_folders_select on public.student_drive_folders for s
 -- No insert, update or delete policy: writes go through the server.
 
 revoke all on table public.student_drive_folders from public, anon, authenticated;
--- Every column except sync_state and lease_until.
+-- Not sync_state or lease_until (the server's working state), and not skipped or
+-- missing_file_ids: those hold Drive file names and ids, which /api/google hands
+-- out per person (names only to whoever linked the folder and to the owner).
 grant select (
   id, firm_id, student_id, linked_by, drive_folder_id, folder_name, drive_url, status,
-  last_synced_at, last_error, progress_done, progress_total, skipped, missing_file_ids,
+  last_synced_at, last_error, progress_done, progress_total,
   removed_here_count, created_at, updated_at
 ) on table public.student_drive_folders to authenticated;
 grant all on table public.student_drive_folders to service_role;

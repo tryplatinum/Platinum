@@ -13,12 +13,18 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, ran
 /** How long a person has to finish Google's consent screen. */
 export const STATE_SECONDS = 600
 
-/** 32 bytes from whatever the setting holds: 32 bytes of base64, 64 hex characters, or any other text (hashed). */
+/**
+ * 32 bytes from the setting: 32 random bytes as base64, or as 64 hex
+ * characters. Other text is accepted only when it is at least 32 characters
+ * long (it is hashed); anything shorter is refused, so a short word can never
+ * become the key.
+ */
 function keyBytes(key: string): Buffer {
   if (!key) throw new Error('GOOGLE_TOKEN_KEY is not set.')
   if (/^[0-9a-f]{64}$/i.test(key)) return Buffer.from(key, 'hex')
   const decoded = Buffer.from(key, 'base64')
   if (decoded.length === 32 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(key)) return decoded
+  if (key.length < 32) throw new Error('GOOGLE_TOKEN_KEY is too short. Use 32 random bytes: `openssl rand -base64 32`.')
   return createHash('sha256').update(key, 'utf8').digest()
 }
 
@@ -32,7 +38,7 @@ const b64 = (bytes: Buffer) => bytes.toString('base64url')
 /** `v1.<nonce>.<tag>.<ciphertext>`. */
 export function encryptToken(plain: string, userId: string, key: string): string {
   const nonce = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', subKey(key, 'token'), nonce)
+  const cipher = createCipheriv('aes-256-gcm', subKey(key, 'token'), nonce, { authTagLength: 16 })
   cipher.setAAD(Buffer.from(userId, 'utf8'))
   const body = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()])
   return ['v1', b64(nonce), b64(cipher.getAuthTag()), b64(body)].join('.')
@@ -42,9 +48,13 @@ export function encryptToken(plain: string, userId: string, key: string): string
 export function decryptToken(stored: string, userId: string, key: string): string {
   const [version, nonce, tag, body] = stored.split('.')
   if (version !== 'v1' || !nonce || !tag || !body) throw new Error('The stored Google token is not in a known form.')
-  const decipher = createDecipheriv('aes-256-gcm', subKey(key, 'token'), Buffer.from(nonce, 'base64url'))
+  const nonceBytes = Buffer.from(nonce, 'base64url')
+  const tagBytes = Buffer.from(tag, 'base64url')
+  // A shortened tag is a weaker check: only the full 16 bytes, and the 12-byte nonce we make, are accepted.
+  if (nonceBytes.length !== 12 || tagBytes.length !== 16) throw new Error('The stored Google token is not in a known form.')
+  const decipher = createDecipheriv('aes-256-gcm', subKey(key, 'token'), nonceBytes, { authTagLength: 16 })
   decipher.setAAD(Buffer.from(userId, 'utf8'))
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'))
+  decipher.setAuthTag(tagBytes)
   return Buffer.concat([decipher.update(Buffer.from(body, 'base64url')), decipher.final()]).toString('utf8')
 }
 

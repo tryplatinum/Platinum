@@ -24,16 +24,16 @@ import {
   type ListedFile,
 } from '../../shared/google.js'
 import { DRIVE_API, google } from './config.js'
-import { GoogleError, RECONNECT_MESSAGE, accessTokenFor, dropAccessToken } from './connection.js'
+import { GoogleError, RECONNECT_MESSAGE, accessTokenFor, dropAccessToken, type Who } from './connection.js'
 
 const FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink,trashed,shortcutDetails(targetId,targetMimeType)'
 const ALL_DRIVES = { supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' }
 
 /** One GET to the Drive API as this user. A token Google no longer takes is asked for again, once. */
-async function driveGet(userId: string, path: string, params: Record<string, string>): Promise<Response> {
+async function driveGet(who: Who, path: string, params: Record<string, string>): Promise<Response> {
   const url = `${DRIVE_API}${path}?${new URLSearchParams(params)}`
   for (let attempt = 0; ; attempt++) {
-    const token = await accessTokenFor(userId, DRIVE_SCOPE)
+    const token = await accessTokenFor(who, DRIVE_SCOPE)
     let res: Response
     try {
       res = await google.fetch(url, { headers: { authorization: `Bearer ${token}` } })
@@ -41,13 +41,13 @@ async function driveGet(userId: string, path: string, params: Record<string, str
       throw new GoogleError('google', 'Google Drive could not be reached. Try again in a moment.', 502)
     }
     if (res.status !== 401) return res
-    dropAccessToken(userId)
+    dropAccessToken(who.userId)
     if (attempt > 0) throw new GoogleError('reconnect', RECONNECT_MESSAGE, 409)
   }
 }
 
-async function driveJson(userId: string, path: string, params: Record<string, string>): Promise<unknown> {
-  const res = await driveGet(userId, path, params)
+async function driveJson(who: Who, path: string, params: Record<string, string>): Promise<unknown> {
+  const res = await driveGet(who, path, params)
   if (res.status === 404) throw new GoogleError('refused', 'That is no longer in Google Drive, or this Google account cannot open it.', 404)
   if (res.status === 403) throw new GoogleError('refused', 'Google would not let that be read.', 403)
   if (res.status === 429 || res.status >= 500) throw new GoogleError('google', 'Google Drive is busy. Try again in a moment.', 502)
@@ -97,9 +97,9 @@ const quoted = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "
  * One page of the Drive panel: My Drive, Shared with me, the shared drives, a
  * folder, or a search by name and contents (Drive's own search).
  */
-export async function browseDrive(userId: string, input: { parent: string; query?: string; pageToken?: string }): Promise<DriveListing> {
+export async function browseDrive(who: Who, input: { parent: string; query?: string; pageToken?: string }): Promise<DriveListing> {
   if (!input.query && input.parent === 'drives') {
-    const page = parsed(sharedDriveList, await driveJson(userId, '/drives', { pageSize: '100', ...(input.pageToken ? { pageToken: input.pageToken } : {}) }))
+    const page = parsed(sharedDriveList, await driveJson(who, '/drives', { pageSize: '100', ...(input.pageToken ? { pageToken: input.pageToken } : {}) }))
     return { entries: page.drives.map((d) => ({ id: d.id, name: d.name, kind: 'drive', label: 'Shared drive' })), nextPageToken: page.nextPageToken }
   }
   const q = input.query
@@ -109,7 +109,7 @@ export async function browseDrive(userId: string, input: { parent: string; query
       : `${quoted(input.parent)} in parents and trashed = false`
   const page = parsed(
     driveList,
-    await driveJson(userId, '/files', {
+    await driveJson(who, '/files', {
       q,
       fields: `nextPageToken,files(${FIELDS})`,
       pageSize: '100',
@@ -124,14 +124,14 @@ export async function browseDrive(userId: string, input: { parent: string; query
 
 // ── One file ────────────────────────────────────────────────────────────────
 
-const metadata = async (userId: string, id: string) => parsed(driveFile, await driveJson(userId, `/files/${encodeURIComponent(id)}`, { fields: FIELDS, supportsAllDrives: 'true' }))
+const metadata = async (who: Who, id: string) => parsed(driveFile, await driveJson(who, `/files/${encodeURIComponent(id)}`, { fields: FIELDS, supportsAllDrives: 'true' }))
 
 /** A file's details. A shortcut is followed to its target, once: a shortcut to a shortcut is refused. */
-export async function getDriveFile(userId: string, id: string): Promise<DriveFile> {
-  const file = await metadata(userId, id)
+export async function getDriveFile(who: Who, id: string): Promise<DriveFile> {
+  const file = await metadata(who, id)
   if (file.mimeType !== GOOGLE_SHORTCUT) return file
   if (!file.shortcutDetails) throw new GoogleError('refused', 'That shortcut points nowhere.', 404)
-  const target = await metadata(userId, file.shortcutDetails.targetId)
+  const target = await metadata(who, file.shortcutDetails.targetId)
   if (target.mimeType === GOOGLE_SHORTCUT) throw new GoogleError('refused', 'That shortcut points to another shortcut.', 400)
   return target
 }
@@ -171,14 +171,14 @@ async function readCapped(res: Response, max: number): Promise<Uint8Array | unde
  * saved as a PDF by Google (files.export); anything else is downloaded as it
  * is. A file that cannot be taken comes back with the reason, never an error.
  */
-export async function downloadDriveFile(userId: string, file: { id: string; name: string; mimeType: string; size?: string | number }): Promise<Downloaded> {
+export async function downloadDriveFile(who: Who, file: { id: string; name: string; mimeType: string; size?: string | number }): Promise<Downloaded> {
   const type = driveKind(file)
   if (type.kind !== 'export' && type.kind !== 'download') return { ok: false, reason: REASON.unsupported }
   if (type.kind === 'download' && file.size && Number(file.size) > MAX_FILE_BYTES) return { ok: false, reason: REASON.tooLarge }
   const res =
     type.kind === 'export'
-      ? await driveGet(userId, `/files/${encodeURIComponent(file.id)}/export`, { mimeType: 'application/pdf' })
-      : await driveGet(userId, `/files/${encodeURIComponent(file.id)}`, { alt: 'media', supportsAllDrives: 'true' })
+      ? await driveGet(who, `/files/${encodeURIComponent(file.id)}/export`, { mimeType: 'application/pdf' })
+      : await driveGet(who, `/files/${encodeURIComponent(file.id)}`, { alt: 'media', supportsAllDrives: 'true' })
   if (res.status === 403 && type.kind === 'export') {
     const text = await res.text().catch(() => '')
     return { ok: false, reason: /exportSizeLimitExceeded|too large/i.test(text) ? REASON.exportTooLarge : REASON.notReadable }
@@ -205,8 +205,18 @@ export interface FolderContents {
  * Every file under a folder, subfolders included: at most 500 files and five
  * levels (the linked folder itself is level one). A shortcut is followed to its
  * target once. A folder is never read twice, so a loop of shortcuts ends.
+ *
+ * It is also bounded in what it asks of Google: at most LIST_REQUESTS requests
+ * and LIST_MS of time. A folder that needs more is reported as cut short, like
+ * one with too many files, instead of running past the function's time limit.
  */
-export async function listFolderTree(userId: string, folderId: string): Promise<FolderContents> {
+const LIST_REQUESTS = 150
+const LIST_MS = 25_000
+
+export async function listFolderTree(who: Who, folderId: string, now: () => number = Date.now): Promise<FolderContents> {
+  const startedAt = now()
+  let requests = 0
+  const spent = () => ++requests > LIST_REQUESTS || now() - startedAt > LIST_MS
   const listed: ListedFile[] = []
   const tooDeep: string[] = []
   const visited = new Set<string>([folderId])
@@ -218,9 +228,13 @@ export async function listFolderTree(userId: string, folderId: string): Promise<
     for (const folder of level) {
       let pageToken: string | undefined
       do {
+        if (spent()) {
+          truncated = true
+          break
+        }
         const page: { files: DriveFile[]; nextPageToken?: string } = parsed(
           driveList,
-          await driveJson(userId, '/files', { q: `${quoted(folder.id)} in parents and trashed = false`, fields: `nextPageToken,files(${FIELDS})`, pageSize: '200', orderBy: 'folder,name', ...ALL_DRIVES, ...(pageToken ? { pageToken } : {}) }),
+          await driveJson(who, '/files', { q: `${quoted(folder.id)} in parents and trashed = false`, fields: `nextPageToken,files(${FIELDS})`, pageSize: '200', orderBy: 'folder,name', ...ALL_DRIVES, ...(pageToken ? { pageToken } : {}) }),
         )
         for (const found of page.files) {
           let file = found
@@ -229,7 +243,11 @@ export async function listFolderTree(userId: string, folderId: string): Promise<
             if (file.shortcutDetails.targetMimeType === GOOGLE_FOLDER) file = { ...file, id: file.shortcutDetails.targetId, mimeType: GOOGLE_FOLDER }
             else {
               // The shortcut's own line has no size or modified time: the target's details are read once.
-              const target = await metadata(userId, file.shortcutDetails.targetId).catch(() => undefined)
+              if (spent()) {
+                truncated = true
+                break
+              }
+              const target = await metadata(who, file.shortcutDetails.targetId).catch(() => undefined)
               if (!target || target.mimeType === GOOGLE_SHORTCUT || target.trashed) continue
               file = target
             }

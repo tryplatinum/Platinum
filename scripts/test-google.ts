@@ -89,6 +89,8 @@ db.table('document_types').push(
 type SignedIn = Extract<Caller, { ok: true }>
 const callerFor = (userId: string, role: 'owner' | 'counselor'): SignedIn => ({ ok: true, userId, firmId: FIRM, role, client: createClient<Database>(FAKE_SUPABASE_URL, 'anon', { auth: { persistSession: false, autoRefreshToken: false } }) })
 const owner = callerFor(USER, 'owner')
+const ME = { userId: USER, firmId: FIRM }
+const THEM = { userId: OTHER_USER, firmId: FIRM }
 const colleague = callerFor(OTHER_USER, 'counselor')
 
 /** The sorter, without a model: the folder comes from the Drive subfolder hint or the file name. */
@@ -123,8 +125,12 @@ const KEY = process.env.GOOGLE_TOKEN_KEY
   const flipped = Buffer.from(parts[3], 'base64url')
   flipped[0] ^= 1
   check('a changed ciphertext is refused', refuses(() => decryptToken([parts[0], parts[1], parts[2], flipped.toString('base64url')].join('.'), USER, KEY)))
-  check('a key given as hex or as plain words also works', decryptToken(encryptToken(secret, USER, 'ab'.repeat(32)), USER, 'ab'.repeat(32)) === secret && decryptToken(encryptToken(secret, USER, 'some words'), USER, 'some words') === secret)
+  check('a key given as hex or as plain words also works', decryptToken(encryptToken(secret, USER, 'ab'.repeat(32)), USER, 'ab'.repeat(32)) === secret && decryptToken(encryptToken(secret, USER, 'a long enough passphrase, 32 or more characters'), USER, 'a long enough passphrase, 32 or more characters') === secret)
   check('an empty key is refused', refuses(() => encryptToken(secret, USER, '')))
+  check('a short word is refused as a key', refuses(() => encryptToken(secret, USER, 'hunter2')))
+  const short = stored.split('.')
+  short[2] = Buffer.from(short[2], 'base64url').subarray(0, 8).toString('base64url')
+  check('a shortened authentication tag is refused', refuses(() => decryptToken(short.join('.'), USER, KEY)))
 }
 
 // ── 2. The state check ──────────────────────────────────────────────────────
@@ -137,7 +143,7 @@ const KEY = process.env.GOOGLE_TOKEN_KEY
   check('a state we signed is accepted, with who started it', claims?.userId === USER && claims.firmId === FIRM && claims.gmail === false)
   check('…not after ten minutes', verifyState(state, nonce, KEY, now + 601_000) === undefined)
   check('…not in another browser (the cookie must match)', verifyState(state, newNonce(), KEY, now) === undefined && verifyState(state, undefined, KEY, now) === undefined)
-  check('…not signed with another key', verifyState(state, nonce, 'another key', now) === undefined)
+  check('…not signed with another key', verifyState(state, nonce, 'another key, also long enough to be accepted', now) === undefined)
   const [payload, signature] = state.split('.')
   const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, 'base64url').toString()), u: OTHER_USER })).toString('base64url')
   check('…not with the user changed', verifyState(`${forged}.${signature}`, nonce, KEY, now) === undefined)
@@ -275,23 +281,23 @@ const cookieOf = (setCookie: string) => setCookie.split(';')[0]
   check('status gives the address and what is allowed', status.connected && status.address === 'sample.counselor@example.com' && status.drive && !status.gmail)
   check('…and never a token', !JSON.stringify(status).includes('token'))
   check('a colleague has no connection of their own', (await connectionStatus(colleague)).connected === false)
-  check('…and cannot read Drive through someone else’s', await throwsWith(() => browseDrive(OTHER_USER, { parent: 'root' }), 'not_connected'))
+  check('…and cannot read Drive through someone else’s', await throwsWith(() => browseDrive(THEM, { parent: 'root' }), 'not_connected'))
 }
 
 // ── 8. Browse and search ────────────────────────────────────────────────────
 
 {
-  const root = await browseDrive(USER, { parent: 'root' })
+  const root = await browseDrive(ME, { parent: 'root' })
   check('My Drive lists its folders', root.entries.some((e) => e.name === 'Students' && e.kind === 'folder'))
-  const kevin = await browseDrive(USER, { parent: 'kevin' })
+  const kevin = await browseDrive(ME, { parent: 'kevin' })
   check('a long folder comes in pages', Boolean(kevin.nextPageToken))
-  const rest = await browseDrive(USER, { parent: 'kevin', pageToken: kevin.nextPageToken })
+  const rest = await browseDrive(ME, { parent: 'kevin', pageToken: kevin.nextPageToken })
   const all = [...kevin.entries, ...rest.entries]
   check('a file too large or of a kind that cannot be stored says so', Boolean(all.find((e) => e.name.endsWith('.mp4'))?.blocked) && all.find((e) => e.name.startsWith('Full application'))?.blocked === REASON.tooLarge && Boolean(all.find((e) => e.name === 'Senior year survey')?.blocked))
   check('a shortcut shows as the file it points to', all.find((e) => e.name.includes('shortcut'))?.id === 'shared-rec')
-  check('Shared with me and shared drives are listed', (await browseDrive(USER, { parent: 'shared' })).entries.some((e) => e.id === 'shared-rec') && (await browseDrive(USER, { parent: 'drives' })).entries[0]?.kind === 'drive')
-  check('a shared drive opens like a folder', (await browseDrive(USER, { parent: 'team-drive' })).entries.some((e) => e.label === 'Google Sheet'))
-  const search = await browseDrive(USER, { parent: 'root', query: "SAT's" }).then(() => browseDrive(USER, { parent: 'root', query: 'transcript' }))
+  check('Shared with me and shared drives are listed', (await browseDrive(ME, { parent: 'shared' })).entries.some((e) => e.id === 'shared-rec') && (await browseDrive(ME, { parent: 'drives' })).entries[0]?.kind === 'drive')
+  check('a shared drive opens like a folder', (await browseDrive(ME, { parent: 'team-drive' })).entries.some((e) => e.label === 'Google Sheet'))
+  const search = await browseDrive(ME, { parent: 'root', query: "SAT's" }).then(() => browseDrive(ME, { parent: 'root', query: 'transcript' }))
   check('search finds files by name across the Drive', search.entries.filter((e) => /transcript/i.test(e.name)).length >= 3)
   check('…and a quote in the search text is escaped', googleCalls.some((c) => c.url.searchParams.get('q')?.includes("SAT\\'s")))
 }
@@ -320,6 +326,21 @@ const cookieOf = (setCookie: string) => setCookie.split(';')[0]
 
 // ── 10. A linked folder: sync in batches, interrupted, repeated ─────────────
 
+/** How many synced rows were ever written to the database in a state other than filed. */
+let unfiledWrites = 0
+{
+  const real = db.fetch
+  db.fetch = async (input, init = {}) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (watchingSync && url.pathname === '/rest/v1/documents' && (init.method === 'POST' || init.method === 'PATCH')) {
+      const body = JSON.parse(String(init.body)) as { file_status?: string }
+      if (init.method === 'POST' && body.file_status !== 'filed') unfiledWrites++
+    }
+    return real(input, init)
+  }
+}
+let watchingSync = false
+
 const kevinDocs = () => db.table('documents').filter((d) => d.student_id === KEVIN)
 const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
 {
@@ -333,9 +354,11 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   let ticks = 0
   syncClock.now = () => Date.now() + Math.floor(ticks++ / 2) * 25_000
   process.env.GOOGLE_SYNC_BATCH = '2'
+  watchingSync = true
   const first = await syncFolder(owner, { id: folder.id })
   check('the first call imports a batch and says more remains', first.more && first.folder.done === 2 && first.folder.total === 9 && kevinDocs().length === 2, `${first.folder.done} of ${first.folder.total}`)
   check('…handing back the rows it filed', first.documents.length === 2 && first.documents.every((d) => d.file_status === 'filed' && d.sorted_by === 'auto'))
+  check('a synced file is written once, already filed: it is never readable before its folder is decided', unfiledWrites === 0, `${unfiledWrites} rows written unfiled`)
 
   // A second caller while one is under way does nothing.
   db.table('student_drive_folders')[0].lease_until = new Date(Date.now() + 60_000).toISOString()
@@ -365,6 +388,8 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   check('what was left out is listed with the reason, by name', skipped.some((s) => s.name.endsWith('.mp4')) && skipped.some((s) => s.name === 'call notes.txt') && skipped.some((s) => s.name.startsWith('Full application') && s.reason === REASON.tooLarge))
   check('…including a second file with the very same contents', skipped.some((s) => s.name === 'Kevin Zhang transcript grades 9-11.pdf' && s.reason === REASON.duplicate))
   check('…but not the Google Form', !skipped.some((s) => /survey/i.test(s.name)))
+  const theirs = (await listFolders(colleague, KEVIN))[0]
+  check('a colleague who did not link the folder gets the reasons and a count, never the file names', theirs.skipped.length > 0 && theirs.skipped.every((s) => s.name === '') && theirs.skippedCount === skipped.length && !JSON.stringify(theirs).includes('.mp4'))
   check('the server’s working state is never sent to the browser', !('sync_state' in result.folder) && !JSON.stringify(result.folder).includes('queue'))
 
   // Again, with nothing changed in Drive.
@@ -397,13 +422,24 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   const expired = await syncFolder(colleague, { id: folder.id })
   check('when Google ends the grant, the folder says “Reconnect Google to sync” and nothing breaks', expired.folder.status === 'reconnect' && !expired.more && kevinDocs().length === 9)
   check('…status says to reconnect', (await connectionStatus(owner)).reconnect === true)
-  check('…and every Drive feature says the same', (await throwsWith(() => browseDrive(USER, { parent: 'root' }), 'reconnect')) && (await throwsWith(() => accessTokenFor(USER), 'reconnect')))
+  check('…and every Drive feature says the same', (await throwsWith(() => browseDrive(ME, { parent: 'root' }), 'reconnect')) && (await throwsWith(() => accessTokenFor(ME), 'reconnect')))
 
   // Reconnecting puts it right.
   setDrive({})
   const again = startConnect(owner, request('/api/google'), {})
   await finishConnect(request(`/api/google?code=fake-code&state=${new URL(again.url).searchParams.get('state')}`, cookieOf(again.setCookie)))
   check('reconnecting lets the folder sync again', (await connectionStatus(owner)).reconnect === false && (await syncFolder(owner, { id: folder.id })).folder.status === 'idle')
+
+  // The person who linked the folder leaves the firm.
+  const members = db.table('firm_members')
+  const mine = members.splice(members.findIndex((m) => m.user_id === USER), 1)[0]
+  forgetAccessTokens()
+  const left = await syncFolder(colleague, { id: folder.id, restart: true })
+  check('a folder linked by someone who has left the firm no longer syncs with their Google account', left.folder.status === 'reconnect' && left.documents.length === 0)
+  members.push(mine)
+  // A connection made in one firm is never used for another.
+  check('a connection is never used for a firm it was not made in', await throwsWith(() => browseDrive({ userId: USER, firmId: '99999999-9999-4999-8999-999999999999' }, { parent: 'root' }), 'not_connected'))
+  db.table('student_drive_folders')[0].status = 'idle'
 
   await unlinkFolder(colleague, folder.id)
   check('unlinking keeps the files already imported', (await listFolders(owner, KEVIN)).length === 0 && kevinDocs().length >= 9)
@@ -412,6 +448,17 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
 // ── 11. Gmail is asked for separately, and Drive survives a "no" ────────────
 
 {
+  // Google can hand back a permission given long ago. Asking for Drive alone never turns sending on.
+  const real = google.fetch
+  google.fetch = async (url, init) => {
+    const res = await real(url, init)
+    if (!url.endsWith('/token') || !(init?.body instanceof URLSearchParams) || init.body.get('grant_type') !== 'authorization_code') return res
+    return new Response(JSON.stringify({ ...((await res.json()) as object), scope: `${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE}` }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const driveOnly = startConnect(owner, request('/api/google'), {})
+  await finishConnect(request(`/api/google?code=fake-code&state=${new URL(driveOnly.url).searchParams.get('state')}`, cookieOf(driveOnly.setCookie)))
+  check('a Drive-only connect never records gmail.send, even if Google hands it back', (await connectionStatus(owner)).gmail === false)
+  google.fetch = real
   const started = startConnect(owner, request('/api/google'), { gmail: true })
   const state = new URL(started.url).searchParams.get('state')
   const declined = await finishConnect(request(`/api/google?error=access_denied&state=${state}`, cookieOf(started.setCookie)))
@@ -426,7 +473,7 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   const before = revokes()
   const status = await disconnect(owner)
   check('disconnect revokes the grant at Google, then deletes the row', revokes() === before + 1 && db.table('google_connections').length === 0 && status.connected === false)
-  check('…after which Drive cannot be read', await throwsWith(() => browseDrive(USER, { parent: 'root' }), 'not_connected'))
+  check('…after which Drive cannot be read', await throwsWith(() => browseDrive(ME, { parent: 'root' }), 'not_connected'))
 }
 
 // ── 13. What was asked of Google, over the whole run ────────────────────────

@@ -8,6 +8,7 @@
 //
 // Nothing here logs a URL, a header or a body: they carry tokens and file names.
 
+import { randomBytes } from 'node:crypto'
 import { fakeGoogle } from './fakeDrive.js'
 
 export const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -20,8 +21,11 @@ const env = (name: string) => (process.env[name] ?? '').trim()
 
 export const clientId = () => env('GOOGLE_CLIENT_ID') || (fakeMode() ? 'fake-client-id' : '')
 export const clientSecret = () => env('GOOGLE_CLIENT_SECRET') || (fakeMode() ? 'fake-client-secret' : '')
-/** The key refresh tokens are encrypted with, and state is signed with. A fixed, worthless key in fake mode. */
-export const tokenKey = () => env('GOOGLE_TOKEN_KEY') || (fakeMode() ? 'fake-mode-key-not-a-secret' : '')
+/** In fake mode with no real key: a key made when the dev server starts and known to nobody, so a state cannot be forged from outside. */
+const fakeKey = randomBytes(32).toString('hex')
+
+/** The key refresh tokens are encrypted with, and state is signed with. */
+export const tokenKey = () => env('GOOGLE_TOKEN_KEY') || (fakeMode() ? fakeKey : '')
 
 /**
  * True when the invented Drive stands in for Google. Throws when GOOGLE_FAKE=1
