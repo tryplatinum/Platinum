@@ -64,7 +64,7 @@ export default function CommandCenter() {
               action={<span className="text-[13px] text-ink-soft">Drafted by AI. Nothing is sent or saved until you approve.</span>}
             />
             {approvals.length === 0 ? (
-              <p className="rounded-xl border border-accent-line bg-surface px-5 py-6 text-center text-sm text-muted">
+              <p className="rounded-card border border-accent-line bg-surface px-5 py-6 text-center text-sm text-muted">
                 Nothing is waiting. Drafts appear here after you log a meeting, draft a parent report, or ask for essay feedback.
               </p>
             ) : (
@@ -117,13 +117,13 @@ export default function CommandCenter() {
 function Tile({ n, label }: { n: number; label: string }) {
   return (
     <div className="rounded-lg bg-canvas px-3 py-2.5">
-      <div className="text-xl font-bold">{n}</div>
+      <div className="nums text-xl font-semibold text-heading">{n}</div>
       <div className="text-xs text-muted">{label}</div>
     </div>
   )
 }
 
-const cardClass = 'flex flex-col gap-3 rounded-xl border border-accent-line bg-surface p-5'
+const cardClass = 'flex flex-col gap-3 rounded-card border border-accent-line bg-surface p-5'
 
 /** One pending item, with enough on the card to decide whether to approve it here or open it. */
 function ApprovalCard({ item }: { item: ApprovalItem }) {

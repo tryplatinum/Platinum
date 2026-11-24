@@ -1,5 +1,6 @@
 // Every route in the app.
 //   /app/…            counselor screens, behind sign-in and a firm (RequireFirm)
+//   /app/styleguide   every shared component in each state; not in the navigation
 //   /student/:id      the counselor's preview of a student's page, also behind sign-in
 //   /s/:token         the student's own page, opened from their secret link, no login
 
@@ -16,6 +17,7 @@ import Students from './screens/counselor/Students'
 import { StudentLinkLayout } from './screens/student/StudentLinkLayout'
 import { StudentHome, StudentProfile } from './screens/student/StudentView'
 import ListDraft from './screens/counselor/ListDraft'
+import Styleguide from './screens/counselor/Styleguide'
 
 // ── Redirects from the v1 URLs, so old links and bookmarks keep working ──
 
@@ -63,6 +65,8 @@ export default function App() {
           <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
           <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />
           <Route path="students/:studentId/list-draft" element={<ListDraft />} />
+          {/* The review surface for brand changes. Not in the navigation. */}
+          <Route path="styleguide" element={<Styleguide />} />
         </Route>
 
         <Route path="/student/:studentId" element={<StudentLayout />}>

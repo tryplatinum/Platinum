@@ -223,7 +223,7 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
                 <li key={p.cipCode} className="border-t border-line first:border-t-0">
                   <button
                     type="button"
-                    className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm hover:bg-canvas"
+                    className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-2"
                     onClick={() => {
                       set({ programs: [...prefs.programs, { cipCode: p.cipCode, cipTitle: p.cipTitle }] })
                       setProgramText('')

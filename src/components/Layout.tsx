@@ -1,18 +1,25 @@
-// App chrome. Counselor: a dark sidebar (a top bar with a menu on narrow
-// screens) and the page. Student: a slim bar and a phone-width column.
+// App chrome. Counselor: a light sidebar on the canvas colour, with the logo at
+// the top (a top bar with a menu on narrow screens), and the page. Student: a
+// slim bar and a phone-width column.
 // The Counselor / Student switcher and the demo controls live in the sidebar
 // footer so they do not compete with the page.
 
+import { ArrowLeft, CalendarDays, ChevronDown, FolderOpen, LayoutDashboard, Menu, Send, Users, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName, pendingApprovalCount, pendingApprovals } from '../lib/derive'
 import { filesWaitingCount } from '../lib/files'
 import { reminderQueue } from '../lib/reminders'
 import { signOut } from '../store/session'
+import { setAppearance, useAppearance } from '../theme'
 import { useData, useStore } from '../store/store'
 import { AiConnection } from './AiConnection'
 import { FolderSettings } from './files/FolderSettings'
-import { Button, Card, Field, Modal, cx, inputClass, useToast } from './ui'
+import { Logo } from './Logo'
+import { Button, Card, Field, Modal, SegmentedControl, cx, inputClass, useToast } from './ui'
+
+/** Navigation and button icons: 20px, stroke 1.75. Always beside a text label. */
+const ICON = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const
 
 export function CounselorLayout() {
   const data = useData()
@@ -22,44 +29,51 @@ export function CounselorLayout() {
   useEffect(() => setMenuOpen(false), [location.pathname, location.search])
 
   const nav = [
-    { to: '/app', label: 'Command center', end: true, badge: pendingApprovalCount(data), badgeLabel: 'waiting for approval' },
-    { to: '/app/students', label: 'Students', end: false, badge: 0, badgeLabel: '' },
-    { to: '/app/meetings', label: 'Meetings', end: false, badge: pendingApprovals(data).filter((a) => a.kind === 'meeting').length, badgeLabel: 'to review' },
-    { to: '/app/messages', label: 'Messages sent', end: false, badge: reminderQueue(data).filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
-    { to: '/app/documents', label: 'Documents', end: false, badge: filesWaitingCount(data), badgeLabel: 'files waiting or to check' },
+    { to: '/app', label: 'Command center', icon: LayoutDashboard, end: true, badge: pendingApprovalCount(data), badgeLabel: 'waiting for approval' },
+    { to: '/app/students', label: 'Students', icon: Users, end: false, badge: 0, badgeLabel: '' },
+    { to: '/app/meetings', label: 'Meetings', icon: CalendarDays, end: false, badge: pendingApprovals(data).filter((a) => a.kind === 'meeting').length, badgeLabel: 'to review' },
+    { to: '/app/messages', label: 'Messages sent', icon: Send, end: false, badge: reminderQueue(data).filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
+    { to: '/app/documents', label: 'Documents', icon: FolderOpen, end: false, badge: filesWaitingCount(data), badgeLabel: 'files waiting or to check' },
   ]
 
   return (
     <div className="flex min-h-full flex-col lg:flex-row">
-      <nav aria-label="Main" className="on-dark flex shrink-0 flex-col bg-sidebar text-sidebar-ink lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:overflow-y-auto">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-7 lg:pb-5 lg:pt-6">
-          <Link to="/app" className="text-lg font-bold text-white">
-            Platinum
+      <nav aria-label="Main" className="flex shrink-0 flex-col border-b border-line bg-sidebar text-sidebar-ink lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+        <div className="flex items-center justify-between px-3 py-2 lg:px-4 lg:pb-4 lg:pt-5">
+          <Link to="/app" className="flex min-h-11 items-center rounded-control">
+            <Logo width={148} />
           </Link>
           <button
             type="button"
-            className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-white hover:bg-sidebar-active lg:hidden"
+            className="flex min-h-11 items-center gap-2 rounded-control px-3 text-sm font-semibold text-heading hover:bg-chip lg:hidden"
             aria-expanded={menuOpen}
             aria-controls="main-menu"
             onClick={() => setMenuOpen(!menuOpen)}
           >
+            {menuOpen ? <X {...ICON} /> : <Menu {...ICON} />}
             {menuOpen ? 'Close' : 'Menu'}
           </button>
         </div>
 
-        <div id="main-menu" className={cx('flex-1 flex-col gap-1 px-4 pb-4 lg:flex', menuOpen ? 'flex' : 'hidden')}>
+        <div id="main-menu" className={cx('flex-1 flex-col gap-1 px-3 pb-4 lg:flex', menuOpen ? 'flex' : 'hidden')}>
           {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                cx('flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 text-sm', isActive ? 'bg-sidebar-active font-semibold text-white' : 'font-medium hover:bg-sidebar-active/60')
+                cx(
+                  'relative flex min-h-11 items-center gap-2.5 rounded-control px-3 text-sm',
+                  isActive
+                    ? 'bg-sidebar-active font-semibold text-heading before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary'
+                    : 'font-medium hover:bg-chip hover:text-heading',
+                )
               }
             >
-              {item.label}
+              <item.icon {...ICON} className="shrink-0" />
+              <span className="min-w-0 flex-1 whitespace-nowrap">{item.label}</span>
               {item.badge > 0 && (
-                <span className="rounded-full bg-white px-2 text-xs font-bold text-sidebar" aria-label={`${item.badge} ${item.badgeLabel}`}>
+                <span className="nums rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary" aria-label={`${item.badge} ${item.badgeLabel}`}>
                   {item.badge}
                 </span>
               )}
@@ -98,18 +112,21 @@ function SidebarMenu() {
   const { resetDemo, startEmpty } = useStore.getState()
   const [settings, setSettings] = useState(false)
   const students = activeStudents(data)
-  const item = 'flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium hover:bg-sidebar-active'
+  const item = 'flex min-h-11 w-full items-center rounded-control px-3 text-left text-sm font-medium hover:bg-surface-2 hover:text-heading'
 
   return (
-    <details className="rounded-lg border border-white/15">
-      <summary className="flex min-h-11 items-center px-3 text-sm font-medium text-white">View and settings</summary>
-      <div className="flex flex-col gap-1 border-t border-white/15 p-2">
+    <details className="group rounded-control border border-line bg-surface">
+      <summary className="flex min-h-11 list-none items-center justify-between gap-2 rounded-control px-3 text-sm font-semibold text-heading [&::-webkit-details-marker]:hidden">
+        View and settings
+        <ChevronDown size={16} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-open:rotate-180" />
+      </summary>
+      <div className="motion-rise flex flex-col gap-1 border-t border-line p-2">
         <label className="px-3 pt-1 text-xs font-semibold text-sidebar-muted" htmlFor="student-view">
           Open the student view as
         </label>
         <select
           id="student-view"
-          className="mx-1 min-h-11 rounded-lg border border-white/20 bg-sidebar px-2 text-sm text-white"
+          className="mx-1 min-h-11 rounded-control border border-line-strong bg-surface px-2 text-sm text-ink disabled:bg-surface-2"
           value=""
           disabled={students.length === 0}
           onChange={(e) => e.target.value && navigate(`/student/${e.target.value}`)}
@@ -161,9 +178,42 @@ function SidebarMenu() {
         <button type="button" className={item} onClick={() => void signOut()}>
           Sign out
         </button>
+        <AppearanceSetting />
       </div>
       {settings && <FirmSettings onClose={() => setSettings(false)} />}
     </details>
+  )
+}
+
+/**
+ * Light or dark. Follows the device until that is switched off; then the
+ * counselor chooses. Kept in this browser, not with the firm.
+ */
+function AppearanceSetting() {
+  const { appearance, theme } = useAppearance()
+  const auto = appearance === 'auto'
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t border-line px-3 pb-1 pt-3">
+      <span className="text-xs font-semibold text-muted">Appearance</span>
+      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+        <input type="checkbox" className="h-5 w-5 shrink-0" checked={auto} onChange={(e) => setAppearance(e.target.checked ? 'auto' : theme)} />
+        <span>
+          Match this device
+          <span className="block text-xs font-normal text-muted">{auto ? `Showing ${theme} now` : 'Off: choose below'}</span>
+        </span>
+      </label>
+      {!auto && (
+        <SegmentedControl
+          label="Appearance"
+          value={theme}
+          onChange={setAppearance}
+          options={[
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+        />
+      )}
+    </div>
   )
 }
 
@@ -251,12 +301,12 @@ export function StudentLayout() {
 
   return (
     <div className="min-h-full">
-      <div className="on-dark flex flex-wrap items-center justify-between gap-2 bg-sidebar px-4 py-1.5 text-sidebar-ink">
-        <label className="flex items-center gap-2 text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-sidebar px-4 py-1.5 text-sidebar-ink">
+        <label className="flex items-center gap-2 text-[13px] font-medium">
           Student view
           <select
             aria-label="Which student"
-            className="min-h-11 rounded-lg border border-white/20 bg-sidebar px-2 text-sm text-white"
+            className="min-h-11 rounded-control border border-line-strong bg-surface px-2 text-sm text-ink"
             value={student.id}
             onChange={(e) => navigate(`/student/${e.target.value}`)}
           >
@@ -267,11 +317,12 @@ export function StudentLayout() {
             ))}
           </select>
         </label>
-        <Link to={`/app/students/${student.id}`} className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-white hover:bg-sidebar-active">
+        <Link to={`/app/students/${student.id}`} className="flex min-h-11 items-center gap-2 rounded-control px-3 text-sm font-semibold text-accent hover:bg-accent-soft">
+          <ArrowLeft {...ICON} />
           Back to counselor view
         </Link>
       </div>
-      <main className="mx-auto flex min-h-[calc(100vh-56px)] max-w-md flex-col gap-4 px-4 py-6">
+      <main className="student-scale mx-auto flex min-h-[calc(100vh-56px)] max-w-md flex-col gap-4 px-4 py-6">
         <Outlet context={student} />
       </main>
     </div>

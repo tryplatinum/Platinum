@@ -12,7 +12,7 @@ import { activeStudents, fullName } from '../../lib/derive'
 import { catchAllFolder, duplicateOf, fileKind, fileTitle, folderById, openFolders, suggestionLine } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { ID, StudentDocument } from '../../types'
-import { Button, Pill, cx, inputBase, useToast } from '../ui'
+import { Button, Pill, Thinking, cx, inputBase, useToast } from '../ui'
 
 /** What the owner-only folders mean for someone who is not the owner. */
 export const hiddenNote = (folderName: string) => `Filed under ${folderName}. Only the firm’s owner can open files in that folder, so it has left your lists.`
@@ -127,10 +127,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
           </Button>
         </div>
       ) : suggesting ? (
-        <p role="status" className="flex items-center gap-2 text-[13px] font-medium text-accent">
-          <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          The AI is reading it. You do not have to wait: choose below and save.
-        </p>
+        <Thinking inline label="The AI is reading it. You do not have to wait: choose below and save." />
       ) : (
         <p className="text-[13px] text-muted">{data.firm.sortFilesAutomatically ? 'No suggestion for this file. Choose where it goes.' : '“Sort files automatically” is off, so there is no suggestion. Choose where it goes.'}</p>
       )}

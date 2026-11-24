@@ -6,6 +6,7 @@
 // when the AI answers, the suggestion (FilingRow). Closing the window with
 // files unsaved keeps them under "Waiting for you" on the Documents screen.
 
+import { Upload } from 'lucide-react'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { FILE_ACCEPT, FILE_TYPES_LABEL, formatBytes } from '../../../shared/files'
 import { fullName } from '../../lib/derive'
@@ -127,7 +128,8 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
   return (
     <Modal title={student ? `Upload files for ${fullName(student)}` : 'Upload files'} onClose={onClose} wide>
       <div className="flex flex-col gap-4">
-        <div {...drop.handlers} className={cx('flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center', drop.over ? 'border-accent bg-accent-soft' : 'border-line-strong bg-canvas')}>
+        <div {...drop.handlers} className={cx('flex flex-col items-center gap-2 rounded-control border-2 border-dashed px-4 py-5 text-center', drop.over ? 'border-accent bg-accent-soft' : 'border-line-strong bg-surface-2')}>
+          <Upload size={20} strokeWidth={1.75} className="text-muted" aria-hidden />
           <p className="text-sm text-ink-soft">Drop files here, or</p>
           <Button variant="primary" onClick={() => input.current?.click()}>
             Choose files
@@ -174,7 +176,7 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
                       {item.stage === 'uploading' && (
                         <div>
                           <div role="progressbar" aria-label={`Uploading ${item.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.progress * 100)} className="h-2 overflow-hidden rounded-full bg-track">
-                            <div className="h-2 bg-accent transition-[width]" style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                            <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round(item.progress * 100)}%` }} />
                           </div>
                           <p className="mt-1 text-[13px] text-muted">{item.progress >= 1 ? 'Checking the file…' : `Uploading… ${Math.round(item.progress * 100)}%`}</p>
                         </div>

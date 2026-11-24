@@ -86,7 +86,7 @@ export default function EssaysTab({ student }: { student: Student }) {
                 type="button"
                 aria-current={selected?.id === e.id}
                 onClick={() => select(e.id)}
-                className={cx('flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-left', selected?.id === e.id ? 'bg-accent-soft' : 'hover:bg-canvas')}
+                className={cx('flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-left', selected?.id === e.id ? 'bg-accent-soft' : 'hover:bg-surface-2')}
               >
                 <span className="min-w-[10rem] flex-1">
                   <span className="block text-sm font-semibold">{e.name}</span>
@@ -254,7 +254,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
             {doc.target} · {draft ? `Draft ${draft.n} · ${wordCount(draft.text)}${doc.wordLimit ? ` of ${doc.wordLimit}` : ''} words · saved ${formatDate(draft.savedOn)}` : 'no draft pasted yet'}
           </p>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-xl text-muted hover:bg-canvas">
+        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-xl text-muted hover:bg-surface-2">
           ×
         </button>
       </div>
