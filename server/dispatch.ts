@@ -11,6 +11,7 @@ import {
   resolveAddress,
   type RecipientContact,
 } from '../shared/dispatch.js'
+import { emailSubject } from '../shared/emailSubject.js'
 import type { QueueChannel, QueueLanguage } from '../shared/outbox.js'
 import { hashToken } from './studentLink.js'
 import { serviceClient } from './supabase.js'
@@ -29,6 +30,8 @@ type OutboxRow = {
   body: string
   body_en: string | null
   status: string
+  /** Who approved it. Email through Gmail is sent from this person's mailbox. */
+  approved_by: string | null
 }
 
 export type DispatchSummary = {
@@ -131,12 +134,16 @@ async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllo
     }
 
     const filled = await withStudentLink(row, row.body, row.body_en)
-    const transport = getTransport()
+    // Chosen per channel, and only after the allowlist check above.
+    const transport = getTransport(row.channel as QueueChannel)
     const result = await transport.send({
       channel: row.channel as QueueChannel,
       to: address.to,
       body: filled.body,
       language: row.language as QueueLanguage,
+      // The outbox has no subject yet: an email gets one from its kind, in its language.
+      ...(address.channel === 'email' ? { subject: emailSubject(row.kind, row.language) } : {}),
+      senderUserId: row.approved_by ?? undefined,
     })
     await markSent(row, result.providerMessageId)
     return 'sent'
@@ -160,7 +167,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
   const now = new Date().toISOString()
   const { data: due, error } = await serviceClient()
     .from('outbox')
-    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status')
+    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by')
     .eq('firm_id', firmId)
     .eq('status', 'queued')
     .lte('send_after', now)
@@ -175,7 +182,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
       .update({ status: 'sending' })
       .eq('id', candidate.id)
       .eq('status', 'queued')
-      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status')
+      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by')
       .maybeSingle()
 
     if (claimed.error) throw new Error(`outbox claim failed: ${claimed.error.message}`)

@@ -182,6 +182,12 @@ export async function fakeGoogle(url: string, init?: RequestInit): Promise<Respo
   }
   if (at.hostname === 'oauth2.googleapis.com' && at.pathname === '/revoke') return json({})
 
+  // The invented Gmail: accepts a message, sends nothing, and answers with an id.
+  if (at.hostname === 'gmail.googleapis.com' && at.pathname === '/gmail/v1/users/me/messages/send' && method === 'POST') {
+    if (new Headers(init?.headers).get('authorization') !== 'Bearer fake-access-token' || state().expired) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
+    return json({ id: `fake-gmail-${Date.now().toString(36)}`, threadId: 'fake-thread', labelIds: ['SENT'] })
+  }
+
   if (at.hostname !== 'www.googleapis.com' || !at.pathname.startsWith('/drive/v3/')) return notFound()
   const headers = new Headers(init?.headers)
   // A revoked grant: Google stops taking the access token too.
