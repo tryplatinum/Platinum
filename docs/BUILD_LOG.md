@@ -42,6 +42,19 @@ M0.3 (branch `m0.3-dispatch`): recipient allowlist, Transport + LogTransport, `P
   - To send a first real email to the allowlist: apply the migration, connect Google in Firm settings, press "Turn on sending from Gmail", put the recipient in `SEND_ALLOWLIST`, set `TRANSPORT_EMAIL=gmail`, approve an email message. `TRANSPORT_EMAIL` was unset in every run here; nothing was sent.
 - Next step: apply the migration, then walk the numbered manual steps in PR 10's description with the real test Google account.
 
+## Email cases in the sample caseload (branch `email-test-cases`, off `google-connect`)
+
+- Agent: Claude Code, for William
+- Date: 2026-11-24
+- State of things: `20261130000001_google_drive.sql` is now applied on the remote, and `src/lib/database.types.ts` was regenerated (William's change, uncommitted). PR 11 was merged into `google-connect`, not `main`: `main` has no `server/transport/gmail.ts` until `google-connect` is merged into it again.
+- What changed: `src/data/seed.ts` only. The sample had email parents but nothing waiting that goes by email. Now it has:
+  - a draft report to Chen Chih-hao (Emily's father, Traditional Chinese, email) and one to Priya Patel (Aarav's mother, English, email);
+  - a late parent task for Carlos Martinez (Sophia's father, email), which waits for approval as a late reminder;
+  - Ethan Nguyen prefers email and has a late task, so his reminder and weekly message go by email.
+- Every address is still `@example.com`. To send for real, edit that person's email in the app to an address in `SEND_ALLOWLIST`.
+- The new cases appear only after "Reset to the sample caseload", which deletes the firm's current data.
+- Checks: `typecheck`, `lint`, `test:notes` pass. Nothing committed, nothing sent.
+
 ## Known issues
 
 - Undo fails on the live database until `20261128000002` is applied.

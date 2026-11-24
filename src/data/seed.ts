@@ -595,6 +595,8 @@ export function buildSeed(): AppData {
     ],
   }
   task(sophia.id, 'FAFSA: finish the parent section', 'financial', 'parent', -4, { ownerParentId: IDS.sophiaMom, detail: 'Locked out of FSA ID.' })
+  // Late, and owned by a parent who reads email: waits for approval as an email reminder.
+  task(sophia.id, 'Send last year’s W-2 forms for the FAFSA', 'financial', 'parent', -3, { ownerParentId: 'p-sophia-dad' })
   task(sophia.id, 'UC PIQ 2: revise after feedback', 'essay', 'student', -2, { status: 'in_progress', attachments: [link('UC PIQs (Google Doc)', gdoc('sophia-piq'), -8)] })
   task(sophia.id, 'Submit UC application', 'application', 'student', 6)
   task(sophia.id, 'Submit Cal State Apply (SDSU, CSULB)', 'application', 'student', 8)
@@ -938,6 +940,8 @@ export function buildSeed(): AppData {
       { id: 'p-ethan-mom', name: 'Linh Nguyen', relationship: 'Mother', language: 'en', channel: 'email', contact: 'linh.nguyen@example.com' },
     ],
   }
+  // Late, and Ethan prefers email (see finishStudent): his reminder goes by email.
+  task(ethan.id, 'Send the clinic supervisor’s name for the shadowing letter', 'recommendation', 'student', -2)
   task(ethan.id, 'Register for the December SAT retake', 'testing', 'student', 5)
   task(ethan.id, 'Shadowing log: reach 20 hours at the clinic', 'planning', 'student', 21, { status: 'in_progress', progressNote: '13 of 20 hours.' })
   task(ethan.id, 'List direct-admit nursing programs with their prerequisites', 'planning', 'student', 12)
@@ -1073,7 +1077,8 @@ export function buildSeed(): AppData {
     return {
       ...s,
       phone: phone(area),
-      preferredChannel: 'text',
+      // One student on email, so a student reminder and the weekly message can be tried on that channel.
+      preferredChannel: s.id === ethan.id ? 'email' : 'text',
       parents,
       reportSettings: { schedule: s.gradYear === senior ? 'after_meetings' : 'monthly', recipientIds: parents.map((p) => p.id) },
     }
@@ -1090,6 +1095,34 @@ export function buildSeed(): AppData {
     subject: 'Progress this week',
     bodyEn: 'Kevin is catching up on the two University of California essays that are still open.',
     bodyLocal: '凯文正在补还没写完的两篇加州大学文书。',
+    source: SAMPLE_SOURCE,
+  })
+
+  // Two more reports waiting for approval, both to parents who read email:
+  // one in Traditional Chinese, one in English.
+  reports.push({
+    id: nid('r'),
+    studentId: emily.id,
+    parentId: 'p-emily-dad',
+    createdOn: d(0),
+    status: 'draft',
+    language: 'zh-Hant',
+    channel: 'email',
+    subject: 'Progress this week',
+    bodyEn: `Hello Mr. Chen, this is Sarah, Emily's counselor. Emily's Cornell application is in and her University of California application goes in this Friday. Next is the Johns Hopkins supplement, with a second draft due ${en(9)}. One item is yours: please confirm the CSS Profile has been sent to Cornell and Rice by ${en(12)}. Thank you.`,
+    bodyLocal: `陳先生您好，我是 Emily 的升學顧問 Sarah。跟您更新一下近況：Emily 的康乃爾申請已經送出，加州大學的申請這個星期五會提交。接下來是約翰霍普金斯的補充文書，第二稿預計${zh(9)}前完成。有一件事要請您幫忙：請在${zh(12)}前確認 CSS Profile 已經寄給康乃爾和萊斯大學。謝謝您！`,
+    source: SAMPLE_SOURCE,
+  })
+  reports.push({
+    id: nid('r'),
+    studentId: aarav.id,
+    parentId: 'p-aarav-mom',
+    createdOn: d(0),
+    status: 'draft',
+    language: 'en',
+    channel: 'email',
+    subject: 'Progress this week',
+    bodyEn: `Hello Mrs. Patel, this is Sarah, Aarav's counselor. Aarav's early applications to Purdue, Georgia Tech and Michigan are submitted, and his University of California application is waiting on one last read. He is on the second drafts of the MIT short answers, due ${en(12)}. One item is yours: please send the CSS Profile to Cornell by ${en(14)}. Thank you.`,
     source: SAMPLE_SOURCE,
   })
 
