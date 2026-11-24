@@ -9,9 +9,11 @@ import { useSearchParams } from 'react-router-dom'
 import { FileRow } from '../../components/files/FileRow'
 import { FilingRow } from '../../components/files/FilingRow'
 import { UploadWindow, useFileDrop } from '../../components/files/UploadWindow'
+import { DrivePicker } from '../../components/google/DrivePicker'
 import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase } from '../../components/ui'
 import { activeStudents, fullName } from '../../lib/derive'
 import { filesToCheck, folderOf, foldersInOrder, isSorting, newFiles, waitingFiles } from '../../lib/files'
+import { driveReady, useGoogleStatus } from '../../services/google'
 import { useData, useStore } from '../../store/store'
 import type { StudentDocument } from '../../types'
 
@@ -20,6 +22,8 @@ export default function Documents() {
   const { refreshFiles } = useStore.getState()
   const [params, setParams] = useSearchParams()
   const [uploading, setUploading] = useState<File[]>()
+  const [drive, setDrive] = useState(false)
+  const google = useGoogleStatus()
   const studentId = params.get('student') ?? ''
   const folderId = params.get('folder') ?? ''
   const setFilter = (key: 'student' | 'folder', value: string) => {
@@ -50,11 +54,20 @@ export default function Documents() {
         title="Documents"
         sub="Files waiting for you, files to check, and everything new across your students."
         actions={
-          <Button variant="primary" onClick={() => setUploading([])}>
-            Upload files
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {driveReady(google) && <Button onClick={() => setDrive(true)}>Add from Google Drive</Button>}
+            <Button variant="primary" onClick={() => setUploading([])}>
+              Upload files
+            </Button>
+          </div>
         }
       />
+      {google?.available && google.connected && google.reconnect && (
+        <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+          Reconnect Google in Firm settings to add from Drive. Files already imported are not affected.
+        </p>
+      )}
+      {drive && <DrivePicker mode="files" onClose={() => setDrive(false)} />}
 
       {uploading && <UploadWindow initialFiles={uploading} onClose={() => setUploading(undefined)} />}
 

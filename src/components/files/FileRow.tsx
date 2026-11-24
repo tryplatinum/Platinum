@@ -88,7 +88,24 @@ export function FilePreview({ doc, onClose }: { doc: StudentDocument; onClose: (
   )
 }
 
-export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: StudentDocument; showStudent?: boolean; showFolder?: boolean }) {
+/** "From Google Drive", with a link that opens the file there. Nothing for a file that did not come from Drive. */
+export function FromDrive({ doc }: { doc: StudentDocument }) {
+  if (doc.source !== 'google_drive') return null
+  return (
+    <>
+      {' · '}
+      {doc.driveUrl ? (
+        <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="font-medium text-ink-soft underline">
+          From Google Drive
+        </a>
+      ) : (
+        'From Google Drive'
+      )}
+    </>
+  )
+}
+
+export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDrive }: { doc: StudentDocument; showStudent?: boolean; showFolder?: boolean; /** The Drive file this was copied from is no longer in its linked folder. */ goneFromDrive?: boolean }) {
   const data = useData()
   const toast = useToast()
   const me = useStore((s) => (s.account.status === 'ready' ? s.account.userId : undefined))
@@ -201,6 +218,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
             )}
             {isNewFile(doc) && <Pill tone="accent">New</Pill>}
             {needsCheck(doc) && <Pill tone="warn">Check this</Pill>}
+            {goneFromDrive && <Pill>No longer in Drive</Pill>}
           </div>
         )}
         <div className="text-[13px] text-muted">
@@ -223,6 +241,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent }: { doc: S
             </>
           )}
           {!stored && !doc.url && ' · name only, no file stored'}
+          <FromDrive doc={doc} />
         </div>
       </div>
 

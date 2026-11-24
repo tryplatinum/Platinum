@@ -541,6 +541,10 @@ export type Database = {
           status: string | null
           storage_path: string | null
           student_id: string | null
+          source: string | null
+          drive_file_id: string | null
+          drive_url: string | null
+          drive_modified_at: string | null
           student_link_id: string | null
           target: string | null
           task_id: string | null
@@ -582,6 +586,10 @@ export type Database = {
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
+          source?: string | null
+          drive_file_id?: string | null
+          drive_url?: string | null
+          drive_modified_at?: string | null
           student_link_id?: string | null
           target?: string | null
           task_id?: string | null
@@ -623,6 +631,10 @@ export type Database = {
           status?: string | null
           storage_path?: string | null
           student_id?: string | null
+          source?: string | null
+          drive_file_id?: string | null
+          drive_url?: string | null
+          drive_modified_at?: string | null
           student_link_id?: string | null
           target?: string | null
           task_id?: string | null
@@ -679,6 +691,39 @@ export type Database = {
             referencedColumns: ["firm_id", "id"]
           },
         ]
+      }
+      google_connections: {
+        Row: {
+          connected_at: string
+          firm_id: string
+          google_address: string
+          last_error: string | null
+          refresh_token_encrypted: string
+          scopes: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          firm_id: string
+          google_address: string
+          last_error?: string | null
+          refresh_token_encrypted: string
+          scopes?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          firm_id?: string
+          google_address?: string
+          last_error?: string | null
+          refresh_token_encrypted?: string
+          scopes?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       firm_members: {
         Row: {
@@ -1192,6 +1237,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      student_drive_folders: {
+        Row: {
+          created_at: string
+          drive_folder_id: string
+          drive_url: string | null
+          firm_id: string
+          folder_name: string
+          id: string
+          last_error: string | null
+          last_synced_at: string | null
+          lease_until: string | null
+          linked_by: string | null
+          missing_file_ids: string[]
+          progress_done: number
+          progress_total: number
+          removed_here_count: number
+          skipped: Json
+          status: string
+          student_id: string
+          sync_state: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          drive_folder_id: string
+          drive_url?: string | null
+          firm_id: string
+          folder_name: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          lease_until?: string | null
+          linked_by?: string | null
+          missing_file_ids?: string[]
+          progress_done?: number
+          progress_total?: number
+          removed_here_count?: number
+          skipped?: Json
+          status?: string
+          student_id: string
+          sync_state?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          drive_folder_id?: string
+          drive_url?: string | null
+          firm_id?: string
+          folder_name?: string
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          lease_until?: string | null
+          linked_by?: string | null
+          missing_file_ids?: string[]
+          progress_done?: number
+          progress_total?: number
+          removed_here_count?: number
+          skipped?: Json
+          status?: string
+          student_id?: string
+          sync_state?: Json
+          updated_at?: string
+        }
+        Relationships: []
       }
       student_links: {
         Row: {

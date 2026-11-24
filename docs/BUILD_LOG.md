@@ -22,6 +22,26 @@ M0.3 (branch `m0.3-dispatch`): recipient allowlist, Transport + LogTransport, `P
   2. `npm run db:types`.
   3. Manual checks in the M0.3 prompt (off-list fail, on-list `log_…`, weekly link URL, old links, undo, LINE fail, Retry, double trigger).
 
+## Google connect (branches `google-connect` PR 10 and `gmail-transport` PR 11)
+
+- Agent: Claude Code, unattended overnight run for William
+- Date: 2026-11-24
+- **Not applied yet:** `supabase/migrations/20261130000001_google_drive.sql`. It is the only local migration not on the remote. The CLI refuses to prompt in an agent session and the run was told not to pass `--yes`, so a person must run `npm run db:push` and confirm, then `npm run db:types` (the new tables and columns are in `src/lib/database.types.ts` by hand until then). Until it is applied every Google feature fails closed (Settings shows no Google row).
+- What exists:
+  - `api/google.ts`: POST actions `status`, `connect`, `disconnect`, `browse`, `import`, `folders`, `link`, `unlink`, `sync`, `import_removed` behind the same caller check and rate limits as `/api/documents`; GET is Google's redirect (checked by signed `state` plus a cookie).
+  - `server/google/`: `config.ts` (settings, the one `google.fetch`), `secrets.ts` (AES-256-GCM for refresh tokens, signed state), `connection.ts` (connect, status, disconnect, access tokens, "reconnect"), `drive.ts` (read-only Drive REST), `driveFiles.ts` (import one file, link, sync in bounded batches), `removedHere.ts` (files deleted here are not imported again), `fakeDrive.ts` (invented Google for `GOOGLE_FAKE=1` under `npm run dev` only).
+  - `shared/google.ts`: Zod shapes for browser input and Google's answers, limits, and the pure sync decision `planSync`.
+  - Browser: `src/services/google.ts`, `src/components/google/` (`GoogleAccount` in Firm settings, `DrivePicker`, `DriveFolders`), buttons on a student's Documents tab and the Documents screen, "From Google Drive" on file rows.
+  - PR 11: `server/transport/gmail.ts` (`GmailTransport`), per-channel routing in `server/transport/index.ts` (`TRANSPORT_EMAIL=gmail`), `shared/emailSubject.ts`, and the dispatcher passing `approved_by` and a subject.
+- Checks: `typecheck`, `lint`, `test:notes` (now also runs `test:google`), `test:outbox`, `build` all pass. The Drive flow was also driven in a real browser against the invented Drive and an in-memory stand-in for the database (`scripts/fakeSupabase.ts`), because the migration is not applied.
+- A separate security review was run over both branches; its fixes are in (connections bound to a firm, a synced file's folder decided before it is stored, Drive file names shown only to the linker and the owner, a trigger that keeps the Drive columns and `storage_path` as the server set them). What was left open is listed in PR 10's description.
+- Not verified: anything against the real database (row level security on the new table, the column grant, the unique index), a real Google sign-in, and AI sorting of synced files with a real key.
+- For Aaron:
+  - The dispatcher now calls `getTransport(row.channel)` and passes `senderUserId: row.approved_by` and, for email, `subject: emailSubject(row.kind, row.language)`. Nothing before that line changed: the allowlist check, the claim and the student-link step are as he wrote them.
+  - `emailSubject` is a proposal. When the outbox has a real subject, pass that instead.
+  - To send a first real email to the allowlist: apply the migration, connect Google in Firm settings, press "Turn on sending from Gmail", put the recipient in `SEND_ALLOWLIST`, set `TRANSPORT_EMAIL=gmail`, approve an email message. `TRANSPORT_EMAIL` was unset in every run here; nothing was sent.
+- Next step: apply the migration, then walk the numbered manual steps in PR 10's description with the real test Google account.
+
 ## Known issues
 
 - Undo fails on the live database until `20261128000002` is applied.
