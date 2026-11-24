@@ -39,6 +39,8 @@ import {
   stillNeeded,
   type DraftRow,
   type NoteForList,
+  typedListNames,
+  typedNameMatches,
 } from '../src/lib/collegeListDraft.js'
 import type { Database, Json } from '../src/lib/database.types.js'
 import type { AiSource, CollegeFit, CollegeListPreferences, DataSource, FitBasis, ID, ListDraftRun, ListMix, Meeting, TestScores } from '../src/types.js'
@@ -189,13 +191,6 @@ function candidateFrom(r: CandidateRow, student: BandStudent, wantedCodes: Reado
   }
 }
 
-/** Lower case, punctuation as spaces: how a typed college name is compared with a directory name. */
-const plain = (text: string) =>
-  text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-
 /** Digits and letters only by the time they reach a filter string (the schema checked them). */
 const quoted = (values: readonly string[]) => values.map((v) => `"${v.replace(/"/g, '')}"`).join(',')
 
@@ -285,21 +280,21 @@ export async function candidatePool(client: Client, studentId: ID, preferences: 
   const prefs = parsePreferences(preferences)
   const student = await readListStudent(client, studentId)
 
-  // Colleges already on the student's list are not proposed again: by their directory link, or,
-  // for a row typed in by hand, when its name is the college's name or one of its aliases.
+  // A college already on the student's list is never proposed again, not even as a
+  // must-include: by its directory link, or, for a row typed in by hand, when the typed name
+  // (brackets and punctuation aside) is the college's name, one of its aliases or its initials.
   const listed = await client.from('colleges').select('name, directory_unitid').eq('student_id', student.id)
   if (listed.error) throw new ListDraftError('database', 'The college list could not be read.')
   const onList = new Set(listed.data.flatMap((c) => (c.directory_unitid === null ? [] : [c.directory_unitid])))
-  // "NYU (Tandon)" is on the list as "NYU (Tandon)" and as "NYU".
-  const typed = new Set(listed.data.filter((c) => c.directory_unitid === null).flatMap((c) => [plain(c.name), plain(c.name.replace(/\([^)]*\)/g, ' '))]).filter(Boolean))
-  const listedByName = (r: CandidateRow) => typed.size > 0 && [r.name, ...(r.aliases ?? [])].some((n) => typed.has(plain(n)))
+  const typed = typedListNames(listed.data.filter((c) => c.directory_unitid === null).map((c) => c.name))
+  const listedByName = (r: CandidateRow) => typedNameMatches(typed, r)
 
   const mustIds = prefs.mustInclude.map((r) => r.unitid).filter((id) => !onList.has(id))
   const leaveOut = [...new Set([...onList, ...mustIds, ...prefs.exclude.map((r) => r.unitid)])]
   const [found, must] = await Promise.all([findCandidates(client, prefs, leaveOut), readColleges(client, mustIds)])
 
   const codes = new Set(prefs.programs.map((p) => p.cipCode))
-  const all = [...must.map((r) => candidateFrom(r, student, codes, true)), ...found.rows.filter((r) => !listedByName(r)).map((r) => candidateFrom(r, student, codes, false))]
+  const all = [...must.filter((r) => !listedByName(r)).map((r) => candidateFrom(r, student, codes, true)), ...found.rows.filter((r) => !listedByName(r)).map((r) => candidateFrom(r, student, codes, false))]
   return { student, preferences: prefs, candidates: capCandidates(all, prefs.mix, CANDIDATE_CAP), matched: found.total }
 }
 

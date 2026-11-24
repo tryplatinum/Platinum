@@ -345,3 +345,54 @@ export function regeneratePreferences(draft: CollegeListDraft, items: CollegeLis
     exclude: uniqueRefs([...(p.exclude ?? []), ...removed.map(ref)], MAX_EXCLUDE),
   }
 }
+
+// ── Already on the list ─────────────────────────────────────────────────────
+// A draft never proposes an institution the student already has. A list row
+// linked to the directory is matched by its directory id. A row typed in by
+// hand is matched by name, as below.
+
+/** Lower case, anything in brackets removed, punctuation as spaces. */
+export const plainCollegeName = (text: string, keepBrackets = false): string =>
+  (keepBrackets ? text : text.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, ' '))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+const SMALL_WORDS = new Set(['of', 'the', 'at', 'and', 'in', 'for', 'a'])
+
+/** "New York University" → "nyu". Many colleges have no alias in the directory, and people type the initials. */
+export const collegeInitials = (name: string): string =>
+  plainCollegeName(name)
+    .split(' ')
+    .filter((word) => word && !SMALL_WORDS.has(word))
+    .map((word) => word[0])
+    .join('')
+
+/**
+ * The ways the typed (unlinked) rows of a list can be recognised: each name
+ * with its brackets removed ("NYU (Tandon)" → "nyu"), and with their contents
+ * kept ("University of California (Berkeley)" → "university of california berkeley").
+ */
+export function typedListNames(names: readonly string[]): Set<string> {
+  return new Set(names.flatMap((name) => [plainCollegeName(name), plainCollegeName(name, true)]).filter(Boolean))
+}
+
+/**
+ * True when a directory college is already on the list under a typed name: the
+ * typed name is the college's name, one of its aliases, or its initials. When
+ * in doubt this says yes: leaving a college out of a draft costs a search,
+ * proposing one the student already has is a mistake.
+ */
+export function typedNameMatches(typed: ReadonlySet<string>, college: { name: string; aliases?: readonly string[] | null }): boolean {
+  if (typed.size === 0) return false
+  const names = [college.name, ...(college.aliases ?? [])].flatMap((name) => [plainCollegeName(name), plainCollegeName(name, true)])
+  if (names.some((name) => name && typed.has(name))) return true
+  const initials = collegeInitials(college.name)
+  return initials.length >= 2 && typed.has(initials)
+}
+
+/** Whether a directory college is already on a student's list, by link or by typed name. */
+export function alreadyOnList(list: readonly { name: string; directoryUnitid?: number | null }[], college: { unitid: number; name: string; aliases?: readonly string[] | null }): boolean {
+  if (list.some((row) => row.directoryUnitid === college.unitid)) return true
+  return typedNameMatches(typedListNames(list.filter((row) => row.directoryUnitid == null).map((row) => row.name)), college)
+}

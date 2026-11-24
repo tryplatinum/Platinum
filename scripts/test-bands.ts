@@ -24,6 +24,9 @@ import {
   notesForListDraft,
   reasonProblem,
   stillNeeded,
+  alreadyOnList,
+  collegeInitials,
+  plainCollegeName,
 } from '../src/lib/collegeListDraft.js'
 import type { CollegeFit, Meeting } from '../src/types.js'
 
@@ -257,6 +260,28 @@ check('the facts behind parent reports and every other AI request never read dra
 check('…and neither do reminders and weekly texts', !DRAFT_WORDS.test(read('../src/lib/reminders.ts')))
 // Once a draft is added, its reason becomes the list row's note and its "why" line the row's fit reason. Students see neither.
 check('the student’s own page shows nothing from a draft, and no list row’s note or fit reason', !/collegeListDraft|fitBasis|fitReason|\.note\b/.test(read('../src/screens/student/StudentView.tsx')))
+
+// ── A draft never proposes a college already on the list ──
+// The directory rows are as the Scorecard has them: New York University has no alias.
+const NYU = { unitid: 193900, name: 'New York University', aliases: [] as string[] }
+const UCLA = { unitid: 110662, name: 'University of California-Los Angeles', aliases: ['UCLA'] }
+const MIT = { unitid: 166683, name: 'Massachusetts Institute of Technology', aliases: ['MIT', 'M.I.T.'] }
+const BERKELEY = { unitid: 110635, name: 'University of California-Berkeley', aliases: [] as string[] }
+const USC = { unitid: 123961, name: 'University of Southern California', aliases: ['USC'] }
+const SOUTH_CAROLINA = { unitid: 218663, name: 'University of South Carolina-Columbia', aliases: [] as string[] }
+const typedRow = (name: string) => ({ name, directoryUnitid: undefined })
+check('brackets and punctuation are removed before comparing', plainCollegeName('NYU (Tandon)') === 'nyu' && plainCollegeName('M.I.T.') === 'm i t' && plainCollegeName('St. John’s College [Annapolis]') === 'st john s college')
+check('initials skip the small words', collegeInitials('New York University') === 'nyu' && collegeInitials('Massachusetts Institute of Technology') === 'mit' && collegeInitials('University of California-Los Angeles') === 'ucla')
+check('“NYU (Tandon)” on the list keeps New York University out of a draft', alreadyOnList([typedRow('NYU (Tandon)')], NYU))
+check('…and so does plain “NYU”, or the full name in any case', alreadyOnList([typedRow('NYU')], NYU) && alreadyOnList([typedRow('new york university')], NYU) && alreadyOnList([typedRow('New York University (Stern)')], NYU))
+check('a typed alias matches', alreadyOnList([typedRow('UCLA')], UCLA) && alreadyOnList([typedRow('M.I.T.')], MIT) && alreadyOnList([typedRow('mit')], MIT))
+check('a campus written in brackets matches the campus', alreadyOnList([typedRow('University of California (Berkeley)')], BERKELEY) && alreadyOnList([typedRow('UC Berkeley')], BERKELEY) === false)
+check('a row linked to the directory matches by its id, whatever it is called', alreadyOnList([{ name: 'My dream school', directoryUnitid: 193900 }], NYU))
+check('…and a linked row’s name is not used to match another college', !alreadyOnList([{ name: 'NYU', directoryUnitid: 110662 }], NYU))
+check('a different college is not matched', !alreadyOnList([typedRow('NYU (Tandon)'), typedRow('UCLA')], MIT) && !alreadyOnList([typedRow('Boston University')], NYU) && !alreadyOnList([], NYU))
+check('“USC” matches Southern California, and not South Carolina-Columbia', alreadyOnList([typedRow('USC')], USC) && !alreadyOnList([typedRow('USC')], SOUTH_CAROLINA))
+const draftSource = read('../server/collegeListDrafts.ts')
+check('the draft applies the rule to must-includes as well as to found candidates', /must\.filter\(\(r\) => !listedByName\(r\)\)/.test(draftSource) && /found\.rows\.filter\(\(r\) => !listedByName\(r\)\)/.test(draftSource))
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
