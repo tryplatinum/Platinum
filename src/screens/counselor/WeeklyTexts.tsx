@@ -18,11 +18,11 @@ import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { WEEKLY_TEXT_MAX, weeklyTextFactLines, weeklyTextFacts } from '../../lib/reminders'
-import { draftWeeklyParentCopy, draftWeeklyText, publicOrigin, type WeeklyDraftOptions } from '../../services/workflows'
+import { draftWeeklyParentCopy, draftWeeklyText, type WeeklyDraftOptions } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
 import type { Student, WeeklyText } from '../../types'
 
-const SENT_FROM_PHONE = 'Logged in Messages sent as sent from your own phone.'
+const SENT_FROM_PHONE = 'You can undo the queued message for 60 seconds.'
 
 /** What the sms: link needs: digits, with a leading + kept. */
 const smsNumber = (phone: string) => phone.trim().replace(/(?!^\+)\D/g, '')
@@ -36,7 +36,6 @@ export default function WeeklyTexts() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [progress, setProgress] = useState<{ done: number; total: number; failed: number }>()
-  const hasLink = Boolean(publicOrigin())
   /** "Also tell parent" where the counselor changed it from how it started. */
   const [tell, setTell] = useState<Record<string, boolean>>({})
 
@@ -126,7 +125,7 @@ export default function WeeklyTexts() {
         <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
           Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]}. A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
           texted automatically. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well, for you to approve on its own.
-          {!hasLink && ' Links are left out of these texts because this address only works on your own computer.'}
+          {' The student link is not included. Copy it from their page right after you generate it. A new link stops the old one.'}
         </p>
         {rows.length === 0 ? (
           <div className="border-t border-line">
@@ -441,7 +440,7 @@ function ParentCopyBlock({ text, student }: { text: WeeklyText; student: Student
                 void navigator.clipboard?.writeText(body)
                 updateWeeklyParentCopy(text.id, { body, bodyEn })
                 sendWeeklyParentCopy(text.id)
-                toast(`Copied. Paste it into ${channel} to ${parent.name}. Logged in Messages sent as its own message.`)
+                toast(`Copied. Paste it into ${channel} to ${parent.name}.`)
               }}
             >
               Copy for {channel}

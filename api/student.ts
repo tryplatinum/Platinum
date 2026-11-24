@@ -4,9 +4,9 @@
 //   POST  one of three writes: mark a task done or not done, leave a progress
 //         note, attach a link to a task. Returns the page again.
 //
-// A student has no login. The token (32 random bytes, stored only as a hash)
-// is the whole credential, so an unknown token and a revoked one get the same
-// 404, requests are rate limited by token and by address, and nothing here
+// A student has no login. The token (32 random bytes) is the whole credential.
+// Only its SHA-256 hash is stored. An unknown token and a revoked one get the
+// same 404. Requests are rate limited by token and by address, and nothing here
 // reveals which of the two it was.
 
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'

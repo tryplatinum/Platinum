@@ -21,7 +21,6 @@ import {
   OwnerChip,
   PlaceholderNote,
   ReviewTag,
-  SENT_NOTE,
   SectionLabel,
   Thinking,
   cx,
@@ -93,7 +92,7 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
               variant="primary"
               onClick={() => {
                 approveAll(meeting.id)
-                toast(`Approved everything from this meeting. ${SENT_NOTE}`)
+                toast(`Approved everything from this meeting.`)
               }}
             >
               Approve everything left
@@ -336,7 +335,7 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
   const pending = update.review === 'pending'
   const decide = (d: Decision) => {
     reviewParentUpdate(meeting.id, update.id, d)
-    if (d === 'approved') toast(`Update to ${parent.name} approved. ${SENT_NOTE}`)
+    if (d === 'approved') toast(`Update to ${parent.name} approved.`)
   }
 
   return (
@@ -427,7 +426,7 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
             variant="primary"
             onClick={() => {
               reviewRecap(meeting.id, 'approved')
-              toast(`Recap shared with ${student.firstName}. ${SENT_NOTE}`)
+              toast(`Recap shared with ${student.firstName}.`)
             }}
           >
             Approve and share

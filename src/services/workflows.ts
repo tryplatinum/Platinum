@@ -29,29 +29,6 @@ export async function prepareBrief(meetingId: ID): Promise<void> {
   useStore.getState().setMeetingBrief(meetingId, await preMeetingBrief(data, meeting, student))
 }
 
-/**
- * The address students can reach this app at, or undefined when the app is
- * running somewhere only this computer can open (localhost, a private network).
- * A link that only works on the counselor's device must never go into a text.
- * Set VITE_PUBLIC_URL to override, for example while testing a deployment's wording locally.
- */
-export function publicOrigin(): string | undefined {
-  const configured = (import.meta.env.VITE_PUBLIC_URL as string | undefined)?.trim().replace(/\/+$/, '')
-  if (configured) return configured
-  const { hostname, origin } = window.location
-  const local = hostname === 'localhost' || hostname === '[::1]' || hostname.endsWith('.local') || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)
-  return local ? undefined : origin
-}
-
-/** The student's own no-login link, made now if they do not have one that can be read back. */
-async function studentTaskLink(studentId: ID): Promise<string | undefined> {
-  const origin = publicOrigin()
-  if (!origin) return undefined
-  const existing = useStore.getState().studentLinks.find((l) => l.studentId === studentId && l.token)
-  const token = existing?.token ?? (await useStore.getState().createStudentLink(studentId))
-  return `${origin}/s/${token}`
-}
-
 export interface WeeklyDraftOptions {
   /** False redrafts without any "thing to remember". */
   useNotes?: boolean
@@ -72,7 +49,7 @@ export async function draftWeeklyText(studentId: ID, { useNotes = true, tellPare
   // and leaves out anything out of date or already mentioned.
   const notes = useNotes ? notesForDraft(data, student, 'student') : []
   // With something personal to say, the task list gives up room for it.
-  const facts = weeklyTextFacts(student, data.firm.counselorFirstName, items, await studentTaskLink(student.id), undefined, notes.length ? WEEKLY_NOTE_ROOM : 0)
+  const facts = weeklyTextFacts(student, data.firm.counselorFirstName, items, undefined, undefined, notes.length ? WEEKLY_NOTE_ROOM : 0)
   // Students have no language setting yet, so the text is in English.
   const draft = await weeklyText(facts, 'en', notes)
   const weekStart = weeklyTextWeek(data.firm.weeklyTextDay)
@@ -83,7 +60,7 @@ export async function draftWeeklyText(studentId: ID, { useNotes = true, tellPare
     try {
       await draftWeeklyParentCopy(student.id)
     } catch (error) {
-      throw new Error(`The text is drafted, but the parent copy is not. ${error instanceof Error ? error.message : 'Try again.'}`)
+      throw new Error(`The text is drafted, but the parent copy is not. ${error instanceof Error ? error.message : 'Try again.'}`, { cause: error })
     }
   }
 }

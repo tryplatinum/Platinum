@@ -31,7 +31,7 @@ export class AiError extends Error {
 // declines, we still surface a refusal error below.
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01'
 const FALLBACK_MODELS = /^claude-(sonnet-5-5|opus-5-5|opus-5|fable-5)/
-const useFallback = (model: string) => process.env.AI_REFUSAL_FALLBACK !== 'off' && FALLBACK_MODELS.test(model)
+const fallbackOn = (model: string) => process.env.AI_REFUSAL_FALLBACK !== 'off' && FALLBACK_MODELS.test(model)
 
 let client: Anthropic | undefined
 
@@ -51,7 +51,7 @@ export async function runFeature<F extends Feature>(feature: F, input: FeatureIn
 
   try {
     let response
-    if (useFallback(model)) {
+    if (fallbackOn(model)) {
       try {
         response = await client.beta.messages.parse({ ...request, betas: [FALLBACK_BETA], fallbacks: 'default' })
       } catch (error) {

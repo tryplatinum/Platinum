@@ -258,6 +258,9 @@ export function buildSeed(): AppData {
       body: bodyLocal ?? bodyEn,
       bodyEn: bodyLocal ? bodyEn : undefined,
       trigger: 'approved',
+      status: 'sent',
+      sendAfter: timestampAt(on, '17:40'),
+      note: 'Legacy simulated send.',
     })
   }
 
@@ -283,6 +286,9 @@ export function buildSeed(): AppData {
       body,
       bodyEn,
       trigger: 'automatic',
+      status: 'sent',
+      sendAfter: timestampAt(on, time),
+      note: 'Legacy simulated send.',
     })
 
   const did = (studentId: ID, on: number, time: string, actor: Actor, text: string) =>
@@ -494,7 +500,7 @@ export function buildSeed(): AppData {
     lastName: 'Chen',
     localName: '陳怡安',
     gradYear: senior,
-    school: 'Pacific Crest Academy',
+    school: 'Ridgewater Academy',
     city: 'Irvine, CA',
     email: 'emily.chen@example.com',
     gpa: 3.94,
@@ -511,7 +517,7 @@ export function buildSeed(): AppData {
     interests: ['Global health', 'Violin'],
     activities: [
       { id: 'act-emily-1', name: 'Science Olympiad', role: 'Captain', detail: 'State finalist in Disease Detectives.' },
-      { id: 'act-emily-2', name: 'Hoag Hospital volunteer', role: 'Patient transport', detail: '180 hours.' },
+      { id: 'act-emily-2', name: 'Larkspur Community Hospital volunteer', role: 'Patient transport', detail: '180 hours.' },
       { id: 'act-emily-3', name: 'Youth Symphony', role: 'Second violin' },
     ],
     counselorNotes:
@@ -567,7 +573,7 @@ export function buildSeed(): AppData {
     firstName: 'Sophia',
     lastName: 'Martinez',
     gradYear: senior,
-    school: 'Mission Hills High School',
+    school: 'Cedar Mesa High School',
     city: 'San Diego, CA',
     email: 'sophia.martinez@example.com',
     gpa: 3.61,
@@ -807,7 +813,7 @@ export function buildSeed(): AppData {
     firstName: 'Daniel',
     lastName: 'Kim',
     gradYear: senior,
-    school: 'Glenridge High School',
+    school: 'Hearthstone High School',
     city: 'La Cañada, CA',
     email: 'daniel.kim@example.com',
     gpa: 3.45,
@@ -1072,6 +1078,20 @@ export function buildSeed(): AppData {
       reportSettings: { schedule: s.gradYear === senior ? 'after_meetings' : 'monthly', recipientIds: parents.map((p) => p.id) },
     }
   }
+
+  reports.push({
+    id: nid('r'),
+    studentId: kevin.id,
+    parentId: IDS.kevinDad,
+    createdOn: d(0),
+    status: 'draft',
+    language: 'zh-Hans',
+    channel: 'wechat',
+    subject: 'Progress this week',
+    bodyEn: 'Kevin is catching up on the two University of California essays that are still open.',
+    bodyLocal: '凯文正在补还没写完的两篇加州大学文书。',
+    source: SAMPLE_SOURCE,
+  })
 
   return {
     firm: { name: 'Alder & Vine College Counseling', weeklyTextDay: 0, counselorName: 'Sarah Lindqvist', counselorFirstName: 'Sarah' },

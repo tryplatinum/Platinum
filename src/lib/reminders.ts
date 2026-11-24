@@ -20,7 +20,7 @@ export interface ReminderDraft {
   studentId: ID
   taskId: ID
   taskTitle: string
-  message: Omit<OutboxMessage, 'id' | 'sentAt' | 'trigger'>
+  message: Omit<OutboxMessage, 'id' | 'sentAt' | 'status' | 'sendAfter' | 'approvedBy' | 'approvedAt' | 'providerMessageId' | 'error' | 'trigger'>
 }
 
 /** A reminder that went out this recently is not queued again. */
@@ -68,7 +68,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
   const rule = (id: ReminderRule['id']) => data.reminderRules.find((r) => r.id === id)!
   const recentlySent = new Set(
     data.outbox
-      .filter((o) => o.dedupeKey && daysBetween(o.sentAt.slice(0, 10), today) < REPEAT_AFTER_DAYS)
+      .filter((o) => o.status !== 'cancelled' && o.dedupeKey && daysBetween(o.sentAt.slice(0, 10), today) < REPEAT_AFTER_DAYS)
       .map((o) => o.dedupeKey),
   )
   const queue: ReminderDraft[] = []

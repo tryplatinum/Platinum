@@ -432,7 +432,13 @@ export interface ParentReport {
 
 export type OutboxKind = 'parent_report' | 'reminder_upcoming' | 'reminder_late' | 'meeting_recap' | 'essay_feedback' | 'weekly_text'
 
-/** One entry in the "Messages sent" log. Nothing is ever really delivered in v0. */
+/** Where a queued message is. Delivery itself arrives in M1. */
+export type OutboxStatus = 'queued' | 'cancelled' | 'sending' | 'sent' | 'failed'
+
+/**
+ * One outbound message. A new row is queued by the database, with the counselor
+ * who approved it, and waits 60 seconds before a sender may deliver it.
+ */
 export interface OutboxMessage {
   id: ID
   sentAt: string
@@ -446,15 +452,22 @@ export interface OutboxMessage {
   body: string
   /** English version, when body is in another language. */
   bodyEn?: string
-  /** 'automatic' = sent by a rule the counselor switched on. 'approved' = counselor pressed the button. */
+  /** 'automatic' = a rule the counselor ran. 'approved' = the counselor pressed the button. Both are approved. */
   trigger: 'automatic' | 'approved'
   taskId?: ID
   /** How it went out, when that is worth saying: "Sent from your own phone". */
   note?: string
-  /** Who approved it, and when. Set on every message with trigger 'approved'. */
+  /** Who approved it, and when. Set on every message. */
   approval?: Approval
   /** Lets the reminder queue know this reminder has already gone out. */
   dedupeKey?: string
+  status: OutboxStatus
+  /** The sender may deliver it only after this instant. Undo is allowed until then. */
+  sendAfter: string
+  approvedBy?: ID
+  approvedAt?: string
+  providerMessageId?: string
+  error?: string
 }
 
 export type ReminderMode = 'automatic' | 'needs_approval' | 'off'
@@ -525,12 +538,10 @@ export interface ParentCopy {
   approval?: Approval
 }
 
-/** A secret link that opens one student's page without a login. */
+/** A secret link that opens one student's page without a login. The token itself is not stored. */
 export interface StudentLink {
   id: ID
   studentId: ID
-  /** The secret. Absent on links made before tokens were kept: those work but cannot be shown again. */
-  token?: string
   createdAt: string
   revokedAt?: string
 }

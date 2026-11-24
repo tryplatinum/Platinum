@@ -18,7 +18,6 @@ import {
   FilterChips,
   Pill,
   PlaceholderNote,
-  SENT_NOTE,
   SectionLabel,
   Thinking,
   cx,
@@ -411,7 +410,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
                 variant="primary"
                 onClick={() => {
                   reviewEssayFeedback(doc.id, 'approved')
-                  toast(`Feedback shared with ${student.firstName}. ${SENT_NOTE}`)
+                  toast(`Feedback shared with ${student.firstName}.`)
                 }}
               >
                 Approve and send to {student.firstName}

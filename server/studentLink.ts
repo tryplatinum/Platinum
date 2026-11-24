@@ -31,9 +31,10 @@ const pad = (value: number) => String(value).padStart(2, '0')
 const isoDate = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
 const daysFromNow = (days: number) => isoDate(new Date(Date.now() + days * 86_400_000))
 
+/** SHA-256 of the link token. The raw token is never written down. */
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
-/** The student a token opens, or undefined when it is unknown or revoked. */
+/** The student a token opens, or undefined when it is unknown or revoked. Lookup is by hash only. */
 export async function findLink(token: string): Promise<Link | undefined> {
   const { data, error } = await serviceClient().from('student_links').select('firm_id, student_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
   if (error) throw new Error(`student link lookup failed: ${error.message}`)

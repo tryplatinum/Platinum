@@ -9,14 +9,15 @@
 
 import { create } from 'zustand'
 import { withFreshIds } from '../data/ids'
-import { ACTIVITY_LIMIT, applyChanges, createStudentLink, diffData, firstNameOf, listStudentLinks, loadAll, revokeStudentLink, type Changes } from '../data/repo'
+import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
-import { notify } from '../lib/notify'
+import { notify, notifyQueued } from '../lib/notify'
+import { validateQueuePayload } from '../../shared/outbox'
 import { studentLinkWrite, type StudentWrite } from '../services/studentLink'
 import { nowTimestamp, todayISO } from '../lib/dates'
 import { fullName } from '../lib/derive'
 import type { MeetingDrafts } from '../services/ai'
-import { simulateSend, type OutgoingMessage } from '../services/outbox'
+import type { OutgoingMessage } from '../services/outbox'
 import type {
   Actor,
   AppData,
@@ -31,6 +32,7 @@ import type {
   ID,
   Meeting,
   NoteUse,
+  OutboxMessage,
   Parent,
   ParentCopy,
   ParentReport,
@@ -107,7 +109,11 @@ interface Actions {
   dismissLegacyData: () => void
   /** Makes a secret link for a student and returns its token. The token cannot be read again later. */
   createStudentLink: (studentId: ID) => Promise<string>
+  /** Replaces a link's secret. The previous token stops working. Returns the new token once. */
+  rotateStudentLink: (linkId: ID) => Promise<string>
   revokeStudentLink: (linkId: ID) => Promise<void>
+  /** Undoes a queued message during its 60-second window. */
+  cancelQueued: (id: ID) => Promise<void>
   updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay'>>) => void
 
   // Students and families
@@ -199,9 +205,8 @@ interface Actions {
   sendWeeklyParentCopy: (id: ID) => void
 
   /**
-   * Writes one message to the "Messages sent" log. Nothing is delivered in v0.
-   * `usedNote` is the thing to remember the message mentioned, if any: it is
-   * marked as mentioned so it is not offered again at the same stage.
+   * Queues one message. The database records the approval and holds it for 60
+   * seconds. `usedNote` is the thing to remember the message mentioned, if any.
    */
   sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
 }
@@ -219,10 +224,21 @@ function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): 
   return { ...data, activity: [{ id: newId(), at: nowTimestamp(), studentId, actor, text }, ...data.activity].slice(0, ACTIVITY_LIMIT) }
 }
 
-/** Adds a message to the log. One a counselor approved carries who approved it and when. */
+/** Adds a queued message in memory. save() asks the database to record the approval. */
 function deliver(data: AppData, message: OutgoingMessage): AppData {
-  const approval = message.approval ?? (message.trigger === 'approved' ? approvalBy(data) : undefined)
-  return { ...data, outbox: [simulateSend({ ...message, approval }), ...data.outbox] }
+  const approval = message.approval ?? approvalBy(data)
+  const now = new Date()
+  const row: OutboxMessage = {
+    ...message,
+    approval,
+    id: newId(),
+    sentAt: now.toISOString(),
+    status: 'queued',
+    sendAfter: new Date(now.getTime() + 60_000).toISOString(),
+    approvedBy: approval.byId,
+    approvedAt: now.toISOString(),
+  }
+  return { ...data, outbox: [row, ...data.outbox] }
 }
 
 /**
@@ -350,16 +366,58 @@ function save(before: AppData, after: AppData, given?: Changes) {
   const { account } = useStore.getState()
   if (account.status !== 'ready') return
   const changes = given ?? diffData(before, after)
-  if (!changes) return
+  const fresh = after.outbox.filter((m) => m.status === 'queued' && !before.outbox.some((o) => o.id === m.id))
+  if (!changes && fresh.length === 0) return
   const firmId = account.firmId
+  const counselorName = after.firm.counselorName
   const queuedAt = failures
   pendingWrites++
   writes = writes
     .then(async () => {
       if (queuedAt !== failures) return
+      const queued: Awaited<ReturnType<typeof queueMessage>>[] = []
       try {
-        await applyChanges(firmId, changes)
+        for (const message of fresh) {
+          const payload = validateQueuePayload({
+            id: message.id,
+            studentId: message.studentId,
+            toKind: message.toKind,
+            toName: message.toName,
+            parentId: message.parentId,
+            channel: message.channel,
+            language: message.language,
+            kind: message.kind,
+            body: message.body,
+            bodyEn: message.bodyEn,
+            trigger: message.trigger,
+            taskId: message.taskId,
+            note: message.note,
+            dedupeKey: message.dedupeKey,
+            approvedBy: message.approval?.by ?? counselorName,
+          })
+          if (!payload.ok) throw new Error(payload.message)
+          queued.push(await queueMessage(payload.value))
+        }
+        if (changes) await applyChanges(firmId, changes)
+        if (queued.length > 0) {
+          const byId = new Map(queued.map((q) => [q.message.id, q.message]))
+          useStore.setState((s) => ({
+            data: {
+              ...s.data,
+              outbox: s.data.outbox.map((m) => byId.get(m.id) ?? m),
+              activity: [...queued.map((q) => q.activity).reverse(), ...s.data.activity].slice(0, ACTIVITY_LIMIT),
+            },
+          }))
+          for (const q of queued) notifyQueued(q.message.id, q.message.sendAfter)
+        }
       } catch (error) {
+        for (const q of queued) {
+          try {
+            await cancelMessage(q.message.id)
+          } catch {
+            // The row may already be gone. The reload below is the source of truth.
+          }
+        }
         failures++
         revision++
         // Undo this change and everything made on top of it, then check against the database.
@@ -430,8 +488,10 @@ export const useStore = create<State & Actions>()((set, get) => {
   const install = (add: AppData | undefined, clear: boolean) => {
     const before = get().data
     const base = clear ? emptyData(before.firm) : before
-    const after = add ? merged(base, add) : base
-    const changes: Changes = (add && diffData(emptyData(before.firm), merged(emptyData(before.firm), add))) || { upsert: {}, delete: {} }
+    // Sample history is not written into the outbox. New messages are queued on approval.
+    const added = add ? { ...add, outbox: [] } : undefined
+    const after = added ? { ...merged(base, added), outbox: base.outbox } : base
+    const changes: Changes = (added && diffData(emptyData(before.firm), merged(emptyData(before.firm), added))) || { upsert: {}, delete: {} }
     changes.clear = clear
     revision++
     set((s) => ({ data: after, studentLinks: clear ? [] : s.studentLinks }))
@@ -502,6 +562,21 @@ export const useStore = create<State & Actions>()((set, get) => {
       const { link, token } = await createStudentLink(account.firmId, studentId, account.userId)
       set((s) => ({ studentLinks: [link, ...s.studentLinks] }))
       return token
+    },
+    rotateStudentLink: async (linkId) => {
+      const { link, token } = await rotateStudentLink(linkId)
+      set((s) => ({ studentLinks: s.studentLinks.map((l) => (l.id === linkId ? link : l)) }))
+      return token
+    },
+    cancelQueued: async (id) => {
+      const result = await cancelMessage(id)
+      set((s) => ({
+        data: {
+          ...s.data,
+          outbox: s.data.outbox.map((m) => (m.id === id ? result.message : m)),
+          activity: [result.activity, ...s.data.activity].slice(0, ACTIVITY_LIMIT),
+        },
+      }))
     },
     revokeStudentLink: async (linkId) => {
       await revokeStudentLink(linkId)
@@ -710,7 +785,6 @@ export const useStore = create<State & Actions>()((set, get) => {
             body: `Hi ${student.firstName}, ${data.firm.counselorFirstName} shared feedback on “${doc.name}”. Open Platinum to read it.`,
             trigger: 'approved',
           })
-          next = logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} shared essay feedback on “${doc.name}”`)
         }
         return next
       }),
@@ -795,7 +869,6 @@ export const useStore = create<State & Actions>()((set, get) => {
             body: `Hi ${student.firstName}, your recap from “${meeting.title}” is ready, with ${meeting.recap.nextSteps.length} next steps. Open Platinum to see it.`,
             trigger: 'approved',
           })
-          next = logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} shared the recap of “${meeting.title}” with ${student.firstName}`)
         }
         return next
       }),
@@ -850,7 +923,6 @@ export const useStore = create<State & Actions>()((set, get) => {
             bodyEn: update.bodyLocal ? update.bodyEn : undefined,
             trigger: 'approved',
           })
-          next = logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} approved the update to ${parent.name}`)
         }
         return next
       }),
@@ -953,7 +1025,7 @@ export const useStore = create<State & Actions>()((set, get) => {
           bodyEn: report.bodyLocal ? report.bodyEn : undefined,
           trigger: 'approved',
         })
-        return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} approved a progress report to ${parent.name}`)
+        return next
       }),
 
     discardReport: (id) => change((data) => ({ ...data, reports: data.reports.filter((r) => r.id !== id || r.status !== 'draft') })),
@@ -988,8 +1060,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         if (!text || !student || text.status !== 'draft' || !text.body.trim()) return data
         let next: AppData = { ...data, weeklyTexts: patchById(data.weeklyTexts, id, (w) => ({ ...w, status: 'sent', approval: approvalBy(data), sentVia: via })) }
         next = deliver(next, { ...toStudent(student), channel: 'text', kind: 'weekly_text', body: text.body, trigger: 'approved', note: 'Sent from your own phone' })
-        next = markNoteUsed(next, text.usedNote, 'weekly_text')
-        return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} sent ${student.firstName} the weekly text`)
+        return markNoteUsed(next, text.usedNote, 'weekly_text')
       }),
 
     skipWeeklyText: (studentId, weekStart) =>
@@ -1053,7 +1124,7 @@ export const useStore = create<State & Actions>()((set, get) => {
           note: 'Parent copy of the weekly text',
           approval,
         })
-        return logActivity(next, student.id, 'counselor', `${data.firm.counselorFirstName} approved a parent copy to ${parent.name}`)
+        return next
       }),
 
     sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),

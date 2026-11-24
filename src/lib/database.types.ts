@@ -373,14 +373,20 @@ export type Database = {
           language: string
           note: string | null
           parent_id: string | null
+          provider_message_id: string | null
+          send_after: string
           sent_at: string
           seq: number
+          status: string
           student_id: string
           task_id: string | null
           to_kind: string
           to_name: string
           trigger: string
           updated_at: string
+          approved_at: string | null
+          approved_by: string | null
+          error: string | null
         }
         Insert: {
           approval?: Json | null
@@ -395,14 +401,20 @@ export type Database = {
           language: string
           note?: string | null
           parent_id?: string | null
+          provider_message_id?: string | null
+          send_after?: string
           sent_at?: string
           seq?: number
+          status?: string
           student_id: string
           task_id?: string | null
           to_kind: string
           to_name: string
           trigger: string
           updated_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          error?: string | null
         }
         Update: {
           approval?: Json | null
@@ -417,14 +429,20 @@ export type Database = {
           language?: string
           note?: string | null
           parent_id?: string | null
+          provider_message_id?: string | null
+          send_after?: string
           sent_at?: string
           seq?: number
+          status?: string
           student_id?: string
           task_id?: string | null
           to_kind?: string
           to_name?: string
           trigger?: string
           updated_at?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          error?: string | null
         }
         Relationships: [
           {
@@ -722,7 +740,6 @@ export type Database = {
           id: string
           revoked_at: string | null
           student_id: string
-          token: string | null
           token_hash: string
           updated_at: string
         }
@@ -733,7 +750,6 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id: string
-          token?: string | null
           token_hash: string
           updated_at?: string
         }
@@ -744,7 +760,6 @@ export type Database = {
           id?: string
           revoked_at?: string | null
           student_id?: string
-          token?: string | null
           token_hash?: string
           updated_at?: string
         }
@@ -1061,6 +1076,14 @@ export type Database = {
           p_task: string
         }
         Returns: undefined
+      }
+      queue_message: {
+        Args: { payload: Json }
+        Returns: Json
+      }
+      cancel_message: {
+        Args: { id: string }
+        Returns: Json
       }
     }
     Enums: {

@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { recipientLine } from '../../components/Bilingual'
 import { LogMeetingModal, StudentFormModal } from '../../components/forms'
 import { StudentTable } from '../../components/StudentTable'
-import { AiTag, Button, Card, CardHeader, Empty, LinkButton, PageHeader, SENT_NOTE, useToast } from '../../components/ui'
+import { AiTag, Button, Card, CardHeader, Empty, LinkButton, PageHeader, useToast } from '../../components/ui'
 import { formatDate, formatDateLong, formatRelative, todayISO } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, pendingApprovals, summarizeAll, weeklyTextRows, type ApprovalItem } from '../../lib/derive'
 import { reminderQueue } from '../../lib/reminders'
@@ -167,7 +167,7 @@ function ApprovalCard({ item }: { item: ApprovalItem }) {
           <Button
             onClick={() => {
               approveAllInMeeting(m.id)
-              toast(`Approved everything from ${student.firstName}’s meeting. ${SENT_NOTE}`)
+              toast(`Approved everything from ${student.firstName}’s meeting.`)
             }}
           >
             Approve all
@@ -204,7 +204,7 @@ function ApprovalCard({ item }: { item: ApprovalItem }) {
             variant="primary"
             onClick={() => {
               approveReport(report.id)
-              toast(`Report to ${parent.name} approved. ${SENT_NOTE}`)
+              toast(`Report to ${parent.name} approved.`)
             }}
           >
             Approve and send
@@ -234,7 +234,7 @@ function ApprovalCard({ item }: { item: ApprovalItem }) {
         <Button
           onClick={() => {
             reviewEssayFeedback(doc.id, 'approved')
-            toast(`Feedback shared with ${student.firstName}. ${SENT_NOTE}`)
+            toast(`Feedback shared with ${student.firstName}.`)
           }}
         >
           Approve and send

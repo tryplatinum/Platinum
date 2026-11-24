@@ -42,7 +42,6 @@ In `.env.local` (git-ignored) for local work, and in the host's settings for a d
 | `VITE_SUPABASE_ANON_KEY` | browser and server | The **anon / publishable** key (`sb_publishable_…` or a JWT with role `anon`). Public by design: row level security decides what it can reach. |
 | `SUPABASE_SERVICE_ROLE_KEY` | server only | The **service role / secret** key (`sb_secret_…`). Bypasses row level security. Used only by the student link function. Never give it a `VITE_` name: anything with that prefix is shipped to the browser. |
 | `ANTHROPIC_API_KEY` | server only | Your Anthropic key. Without it the app still runs and AI drafts are labelled placeholders. |
-| `VITE_PUBLIC_URL` | browser, optional | The address students reach the app at, used for the link in weekly texts. Only needed when you open the app at a different address from the one students use. |
 | `ANTHROPIC_MODEL` | server only, optional | Model for every AI feature. Default `claude-sonnet-5-5`. |
 | `AI_REFUSAL_FALLBACK` | server only, optional | `off` stops the API re-running a declined request on a fallback model. |
 
