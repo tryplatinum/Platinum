@@ -16,7 +16,7 @@ import { FileRow } from '../../components/files/FileRow'
 import { FilingRow } from '../../components/files/FilingRow'
 import { InboxLine } from '../../components/InboxLine'
 import { OnTheirWay } from '../../components/OnTheirWay'
-import { MotionList, Reveal, focusPage, useRoomFor } from '../../components/motion'
+import { MotionList, Reveal, focusPage, useLeaving, useRoomFor } from '../../components/motion'
 import { Button, Card, Empty, LinkButton, PageHeader, cx, inputBase, usePageTitle } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
 import { APPROVAL_TYPE_LABEL, activeStudents, findStudent, fullName, type ApprovalItem } from '../../lib/derive'
@@ -385,7 +385,10 @@ function GroupAction({ group, items }: { group: InboxGroup; items: ApprovalItem[
   )
 }
 
-function RowButton({ row, selected, onOpen }: { row: InboxRow; selected: boolean; onOpen: (key: string) => void }) {
+function RowButton({ row, selected: chosen, onOpen }: { row: InboxRow; selected: boolean; onOpen: (key: string) => void }) {
+  // A row on its way out is no longer the open one: the mark is on the next row at once, and does not travel.
+  const leaving = useLeaving()
+  const selected = chosen && !leaving
   return (
     <button
       type="button"
@@ -393,7 +396,7 @@ function RowButton({ row, selected, onOpen }: { row: InboxRow; selected: boolean
       aria-current={selected ? 'true' : undefined}
       aria-label={row.label}
       onClick={() => onOpen(row.key)}
-      className={cx('flex min-h-11 w-full items-center border-l-2 py-2.5 pl-3.5 pr-4 text-left', selected ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
+      className={cx('flex min-h-11 w-full items-center border-l-2 py-2.5 pl-3.5 pr-4 text-left transition-none', selected ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
     >
       <InboxLine row={row} className="flex-1" />
     </button>
