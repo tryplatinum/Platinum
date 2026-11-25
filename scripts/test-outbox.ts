@@ -11,6 +11,7 @@
 // There Google is the invented one in server/google/fakeDrive.ts and the
 // database is the in-memory stand-in in scripts/fakeSupabase.ts. Nothing is sent.
 
+import { BY_HAND_CHANNELS, canDeliver, messageStatusLabel, sentByHand } from '../src/lib/delivery'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,7 +32,7 @@ import {
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
-import { QUEUE_KINDS, QUEUE_LANGUAGES, UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
+import { QUEUE_CHANNELS, QUEUE_KINDS, QUEUE_LANGUAGES, UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
 import { dispatchFirm } from '../server/dispatch.js'
 import { google } from '../server/google/config.js'
 import { forgetAccessTokens } from '../server/google/connection.js'
@@ -181,6 +182,15 @@ const routed = (channel: 'email' | 'text' | 'line' | 'wechat' | undefined, email
     else process.env.TRANSPORT = before.all
   }
 }
+
+// The screen asks the same rule, so it never offers to send what the dispatcher refuses.
+for (const channel of QUEUE_CHANNELS) {
+  check(`screen and dispatcher agree on ${channel}`, canDeliver(channel) === resolveAddress(channel, { phone: '+15551234567', email: 'a@example.com' }).ok)
+}
+check('by hand: wechat and line only', BY_HAND_CHANNELS.join() === 'wechat,line')
+check('a send on wechat is by hand', sentByHand({ isSend: true, channel: 'wechat' }) && !sentByHand({ isSend: true, channel: 'text' }) && !sentByHand({ isSend: false, channel: 'wechat' }))
+check('a by-hand row never reads as sending or failed', !/[Ss]ending|Failed|Queued/.test(messageStatusLabel({ channel: 'line', status: 'failed', sendAfter: new Date(0).toISOString(), error: 'channel not connected yet.' })))
+check('a connected row reads as before', messageStatusLabel({ channel: 'email', status: 'sent', sendAfter: new Date(0).toISOString() }) === 'Sent')
 check('email stays on the log transport when TRANSPORT_EMAIL is unset', routed('email', undefined) instanceof LogTransport)
 check('email goes through Gmail when TRANSPORT_EMAIL=gmail', routed('email', 'gmail') instanceof GmailTransport)
 check('…whatever the case or spacing', routed('email', ' Gmail ') instanceof GmailTransport)

@@ -9,6 +9,7 @@ import { MotionList } from '../../../components/motion'
 import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, CheckRow, Disclosure, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { findParent, nextMeeting, reportApproval } from '../../../lib/derive'
+import { canDeliver } from '../../../lib/delivery'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { parentReport } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
@@ -189,7 +190,7 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="text-[13px] text-muted">
           {parent?.name ?? 'Parent'} · {CHANNEL_LABEL[report.channel]} · {LANGUAGE_LABEL[report.language]}
         </div>
-        <Pill tone="good">Sent</Pill>
+        <Pill tone="good">{canDeliver(report.channel) ? 'Sent' : 'Approved, sent by hand'}</Pill>
         <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? 'Hide' : 'View'}
         </Button>
@@ -198,7 +199,8 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="motion-rise mt-3 flex flex-col gap-2">
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
-            <ApprovalStamp approval={report.approval} /> Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.
+            <ApprovalStamp approval={report.approval} />{' '}
+            {canDeliver(report.channel) ? 'Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.' : `${CHANNEL_LABEL[report.channel]} is not connected, so Platinum did not send this. It was copied to send by hand.`}
           </p>
         </div>
       )}

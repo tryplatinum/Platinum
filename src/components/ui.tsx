@@ -6,7 +6,7 @@
 
 import { ChevronRight, Inbox, LoaderCircle, Send, X, type LucideIcon } from 'lucide-react'
 import { notify, onNotify, type Notice } from '../lib/notify'
-import { outboxStatusLabel } from '../../shared/outbox'
+import { messageStatusLabel } from '../lib/delivery'
 import { runDispatch } from '../services/dispatch'
 import { useStore } from '../store/store'
 import { undoReminderSkip } from '../data/repo'
@@ -593,7 +593,9 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
     setDispatched(true)
     void runDispatch()
   }, [open, dispatched, cancelled])
-  const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
+  // On a channel that is not connected, the toast says it was approved to send by hand, never that it is being sent.
+  const channel = useStore((s) => s.data.outbox.find((m) => m.id === messageId)?.channel) ?? 'text'
+  const label = messageStatusLabel({ channel, status: 'queued', sendAfter }, now)
   return (
     <>
       <span className="flex flex-col gap-1">

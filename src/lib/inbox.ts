@@ -2,6 +2,7 @@
 // badge and the Students header always give the same number.
 
 import type { AppData, CollegeListDraft, ID, OutboxMessage, StudentDocument } from '../types'
+import { canDeliver } from './delivery'
 import { allPendingApprovals, findStudent, type ApprovalItem } from './derive'
 import { filesToCheck, waitingFiles } from './files'
 import { reminderQueue } from './reminders'
@@ -30,4 +31,4 @@ export const inboxSize = (c: InboxContents) => c.approvals.length + c.toFile.len
 export const inboxCount = (data: AppData) => inboxSize(inboxContents(data))
 
 /** Inside its Undo window, or handed to the counselor's phone and not sent yet. */
-export const messageOnItsWay = (m: OutboxMessage, now: number) => (m.status === 'queued' && Date.parse(m.sendAfter) > now) || (m.status === 'sending' && m.detail === 'phone_waiting')
+export const messageOnItsWay = (m: OutboxMessage, now: number) => canDeliver(m.channel) && ((m.status === 'queued' && Date.parse(m.sendAfter) > now) || (m.status === 'sending' && m.detail === 'phone_waiting'))

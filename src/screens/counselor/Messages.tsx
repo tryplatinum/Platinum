@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, TabPanel, Tabs, PageHeader, cx, inputBase, usePageTitle, useTab, useToast, type TabItem } from '../../components/ui'
 import { previewStudentLink } from '../../../shared/dispatch'
-import { outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
 import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
@@ -16,6 +15,7 @@ import { MotionList } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
 import { formatTimestamp } from '../../lib/dates'
+import { canDeliver, messageStatusLabel, notConnectedLine } from '../../lib/delivery'
 import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
@@ -193,7 +193,7 @@ function OutboxStatus({ message }: { message: OutboxMessage }) {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [counting])
-  return <span className="text-[13px] font-semibold text-ink">{outboxStatusLabel(message, now)}</span>
+  return <span className="text-[13px] font-semibold text-ink">{messageStatusLabel(message, now)}</span>
 }
 
 function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; startOpen?: boolean }) {
@@ -267,7 +267,7 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
           {m.note && <Pill>{m.note}</Pill>}
           <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
-          {m.status === 'failed' && !sentByHand && (
+          {m.status === 'failed' && !sentByHand && canDeliver(m.channel) && (
             <Button variant="quiet" onClick={retry}>
               Retry
             </Button>
@@ -322,7 +322,7 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
       {open ? (
         <div className="motion-rise mt-2 flex flex-col gap-2">
           <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
-          {m.status === 'failed' && m.error && <p className="text-[13px] text-ink-soft">Error: {m.error}</p>}
+          {m.status === 'failed' && m.error && canDeliver(m.channel) && <p className="text-[13px] text-ink-soft">Error: {m.error}</p>}
           <Button
             className="self-start"
             onClick={() => {
@@ -350,10 +350,20 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
   const toast = useToast()
   const waiting = queue.filter((r) => r.mode === 'needs_approval')
   const automatic = queue.filter((r) => r.mode === 'automatic')
+  // Only what Platinum can send itself is queued. The rest stays here to be copied.
+  const sendable = automatic.filter((r) => canDeliver(r.message.channel))
+  const byHand = automatic.length - sendable.length
   const runDailySend = () => {
-    automatic.forEach((r) => sendMessage({ ...r.message, trigger: 'automatic' }))
-    toast(`${automatic.length} ${automatic.length === 1 ? 'reminder is' : 'reminders are'} queued.`)
+    sendable.forEach((r) => sendMessage({ ...r.message, trigger: 'automatic' }))
+    toast(`${sendable.length} ${sendable.length === 1 ? 'reminder is' : 'reminders are'} queued.${byHand > 0 ? ` ${byHand} ${byHand === 1 ? 'is' : 'are'} left for you to copy and send by hand.` : ''}`)
   }
+  const copy = (r: ReminderDraft) =>
+    void copyText(r.message.toKind === 'student' ? textWithStudentLink(r.studentId, r.message.body) : r.message.body)
+      .then(() => {
+        sendMessage({ ...r.message, trigger: 'approved' })
+        toast(`Copied. Paste it into ${CHANNEL_LABEL[r.message.channel]} to ${r.message.toName}.`)
+      })
+      .catch((e: unknown) => toast(`${e instanceof Error ? e.message : 'Nothing was copied.'} This reminder is not marked approved.`))
 
   if (queue.length === 0) {
     return (
@@ -400,14 +410,19 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
           title="Automatic"
           count={automatic.length}
           sub="Rules set to “Automatic”. They are queued when you press the button; nothing goes out on a timer."
-          action={automatic.length > 0 && <Button onClick={runDailySend}>Run the daily send now</Button>}
+          action={sendable.length > 0 && <Button onClick={runDailySend}>{byHand > 0 ? `Run the daily send now · ${sendable.length} of ${automatic.length}` : 'Run the daily send now'}</Button>}
         />
         {automatic.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is scheduled.</p>
         ) : (
           <ul>
             {automatic.map((r) => (
-              <QueueRow key={r.key} reminder={r} action={<Pill tone="accent">Next daily send</Pill>} />
+              <QueueRow
+                key={r.key}
+                reminder={r}
+                action={canDeliver(r.message.channel) ? <Pill tone="accent">Next daily send</Pill> : <Button onClick={() => copy(r)}>Copy for {CHANNEL_LABEL[r.message.channel]}</Button>}
+                note={canDeliver(r.message.channel) ? undefined : notConnectedLine(r.message.channel)}
+              />
             ))}
           </ul>
         )}
@@ -416,7 +431,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
   )
 }
 
-function QueueRow({ reminder, action }: { reminder: ReminderDraft; action: React.ReactNode }) {
+function QueueRow({ reminder, action, note }: { reminder: ReminderDraft; action: React.ReactNode; note?: string }) {
   const m = reminder.message
   return (
     <li className="flex flex-col gap-2 border-t border-line px-5 py-3">
@@ -427,6 +442,7 @@ function QueueRow({ reminder, action }: { reminder: ReminderDraft; action: React
           {action}
         </span>
       </div>
+      {note && <p className="text-[13px] font-medium text-warn">{note}</p>}
       <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
     </li>
   )

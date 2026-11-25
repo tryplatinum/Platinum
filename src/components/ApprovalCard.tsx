@@ -6,11 +6,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../shared/dispatch'
-import { outboxStatusLabel } from '../../shared/outbox'
 import { deciding, rememberSend, useApprovalSends } from '../lib/approvalSends'
+import { messageStatusLabel, notConnectedLine, sentByHand } from '../lib/delivery'
 import { APPROVAL_TYPE_LABEL, findStudent, fullName, type ApprovalItem } from '../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { WEEKLY_TEXT_MAX, reminderQueue } from '../lib/reminders'
+import { copyText, textWithStudentLink } from '../lib/studentLinks'
 import { translateProposal } from '../services/agentClient'
 import { ProposalNotDecided, useData, useStore } from '../store/store'
 import type { DraftParentUpdate, DraftTask, ID, OwnerType, ProfileChange, ProfilePatch } from '../types'
@@ -39,8 +40,11 @@ export function ApprovalCard({
   children,
   actions,
   note,
+  primary,
 }: {
   item: ApprovalItem
+  /** The one filled button of the view it is in. Everywhere else the decision is an outlined button. */
+  primary?: boolean
   compact?: boolean
   showStudent?: boolean
   /** The heading around the card already says what it is. */
@@ -84,6 +88,9 @@ export function ApprovalCard({
   const recap = item.kind === 'recap' ? meeting?.recap : undefined
   // Nothing to send or save: the database would refuse it.
   const blank = !item.preview.trim() && (item.isSend || item.kind === 'remember' || item.kind === 'task')
+  // A channel Platinum cannot send on: the counselor copies the text and sends it themselves.
+  const byHand = sentByHand(item) && !weekly
+  const [copying, setCopying] = useState(false)
 
   const run = (work: () => void | Promise<void>, outcome: 'approved' | 'discarded', fallback: string) => {
     setError(undefined)
@@ -97,7 +104,7 @@ export function ApprovalCard({
       })
   }
 
-  const onApprove = () => {
+  const onApprove = (copied = false) => {
     // Decided at once, in the same press: the card only shows it afterwards.
     let work: void | Promise<void>
     try {
@@ -107,8 +114,23 @@ export function ApprovalCard({
       return
     }
     void run(() => work, 'approved', 'Could not approve.')
-      .then(() => toast(item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
+      .then(() => toast(copied && item.channel ? `Copied. Paste it into ${CHANNEL_LABEL[item.channel]}${item.toName ? ` to ${item.toName}` : ''}.` : item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
       .catch(() => undefined)
+  }
+
+  /** By hand: nothing is approved or logged unless the text reached the clipboard. */
+  const onCopy = async () => {
+    setCopying(true)
+    setError(undefined)
+    try {
+      await copyText(textWithStudentLink(item.studentId, item.preview))
+    } catch (e) {
+      setError(`${reasonOf(e, 'Nothing was copied. Please try again.')} This message is not marked approved.`)
+      return
+    } finally {
+      setCopying(false)
+    }
+    onApprove(true)
   }
 
   const onDiscard = () => {
@@ -151,6 +173,7 @@ export function ApprovalCard({
               </span>
             )}
           </div>
+          {byHand && item.channel && !leaving && <p className="mt-1 text-[13px] font-medium text-warn">{notConnectedLine(item.channel)}</p>}
           {children ? (
             <div className="mt-3">{children}</div>
           ) : profile ? (
@@ -188,7 +211,7 @@ export function ApprovalCard({
           {leaving ? (
             <span className="motion-fade inline-flex min-h-11 items-center">
               {settled === 'approved' || (weekly && !settled) ? (
-                <Pill tone="good">Approved</Pill>
+                <Pill tone="good">{byHand ? 'Copied' : 'Approved'}</Pill>
               ) : (
                 settled && <Pill>{settled === 'skipped' || weekly ? 'Skipped' : 'Discarded'}</Pill>
               )}
@@ -197,15 +220,19 @@ export function ApprovalCard({
             <SendState messageId={sending} />
           ) : weekly ? (
             student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
+          ) : byHand && item.channel ? (
+            <Button variant={primary === false ? 'secondary' : 'primary'} data-action="approve" onClick={() => void onCopy()} disabled={blank} busy={busy || copying}>
+              Copy for {CHANNEL_LABEL[item.channel]}
+            </Button>
           ) : (
-            <Button variant="primary" onClick={onApprove} disabled={blank} busy={busy}>
+            <Button variant={primary === false ? 'secondary' : 'primary'} data-action="approve" onClick={() => onApprove()} disabled={blank} busy={busy}>
               {item.isSend ? <SendLabel>Approve and send</SendLabel> : 'Approve'}
             </Button>
           )}
           {!leaving && (
             <>
               {canEdit(item) && !sending && (
-                <Button onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
+                <Button data-action="edit" onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
                   {editing ? 'Done' : 'Edit'}
                 </Button>
               )}
@@ -282,12 +309,13 @@ export function SendState({ messageId }: { messageId: ID }) {
   }, [counting])
 
   if (!message) return <span className="text-[13px] font-semibold text-bad">Not queued. Nothing was sent.</span>
-  if (!counting) return <span className="text-[13px] font-semibold text-ink">{message.status === 'queued' ? 'Approved. Sending now.' : outboxStatusLabel(message, now)}</span>
+  const byHand = sentByHand({ isSend: true, channel: message.channel })
+  if (!counting) return <span className="text-[13px] font-semibold text-ink">{message.status === 'queued' && !byHand ? 'Approved. Sending now.' : messageStatusLabel(message, now)}</span>
   return (
     <span className="motion-fade flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="flex flex-col gap-1">
         <span className="nums text-[13px] font-semibold text-ink">
-          Approved. Sending in {left} {left === 1 ? 'second' : 'seconds'}.
+          {byHand ? 'Copied and approved. Undo for' : 'Approved. Sending in'} {left} {left === 1 ? 'second' : 'seconds'}.
         </span>
         <TimeLeft from={message.approvedAt ?? message.sentAt} until={message.sendAfter} className="text-accent" />
       </span>
@@ -321,11 +349,11 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
   const toast = useToast()
   const [confirming, setConfirming] = useState(false)
   const [working, setWorking] = useState(false)
-  // A weekly text is sent by hand, so it cannot be approved along with the rest.
-  const approvable = items.filter((i) => i.kind !== 'weekly_text')
+  // A weekly text, and a message on a channel that is not connected, are sent by hand: they cannot be approved along with the rest.
+  const approvable = items.filter((i) => i.kind !== 'weekly_text' && !sentByHand(i))
   const left = items.length - approvable.length
   const sends = approvable.filter((i) => i.isSend).length
-  const leftLine = `${left} weekly ${left === 1 ? 'text is' : 'texts are'} left for you to send by hand.`
+  const leftLine = `${left} ${left === 1 ? 'is' : 'are'} left for you to copy and send by hand.`
   if (items.length < 2 || approvable.length === 0) return null
 
   const approveAll = async () => {
@@ -352,7 +380,7 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
     <>
       {/* Secondary: the filled button is the decision on one draft. */}
       <Button onClick={() => setConfirming(true)} busy={working}>
-        Approve all
+        {left > 0 ? `Approve ${approvable.length} of ${items.length}` : 'Approve all'}
       </Button>
       {confirming && (
         <Modal title={title} onClose={() => setConfirming(false)}>

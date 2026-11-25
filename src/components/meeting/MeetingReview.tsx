@@ -12,7 +12,8 @@ import { CHANNEL_LABEL } from '../../lib/language'
 import { draftMeeting } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
 import type { Approval, DraftPersonalNote, DraftTask, Meeting, ProfileChange, Review, Student } from '../../types'
-import { ApprovalCard } from '../ApprovalCard'
+import { sentByHand } from '../../lib/delivery'
+import { ApprovalCard, approveItem } from '../ApprovalCard'
 import { Bilingual, recipientLine } from '../Bilingual'
 import {
   AiErrorNote,
@@ -35,13 +36,17 @@ import {
 export function MeetingReview({ meeting, student }: { meeting: Meeting; student: Student }) {
   const approveAll = useStore((s) => s.approveAllInMeeting)
   const toast = useToast()
+  const data = useData()
   const { busy, error, run } = useAi()
   const sections = reviewSections(meeting)
   const settled = sections.filter((s) => s.pending === 0).length
   const pending = pendingInMeeting(meeting)
   const ai = meeting.ai
   /** Parent updates and the recap are queued as messages when they are approved. */
-  const sends = sections.filter((s) => s.key === 'parents' || s.key === 'recap').reduce((n, s) => n + s.pending, 0)
+  const waiting = meetingApprovals(data, meeting)
+  // A message on a channel that is not connected is copied and sent by hand, so it is left out of "everything".
+  const byHand = waiting.filter(sentByHand)
+  const sends = waiting.filter((i) => i.isSend && !sentByHand(i)).length
   const number = (key: ReviewSection['key']) => sections.findIndex((s) => s.key === key) + 1
   const section = (key: ReviewSection['key']) => sections.find((s) => s.key === key)
   // Redrafting replaces every draft, so it is offered only while none has been reviewed.
@@ -91,14 +96,23 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
               Redraft with AI
             </Button>
           )}
-          {pending > 0 && (
+          {waiting.length > byHand.length && (
             <Button
               onClick={() => {
-                approveAll(meeting.id)
-                toast(sends > 0 ? `Approved everything from this meeting. ${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.` : 'Approved everything from this meeting.')
+                if (byHand.length === 0) approveAll(meeting.id)
+                else for (const item of waiting) if (!sentByHand(item)) void approveItem(item)
+                toast(
+                  [
+                    byHand.length === 0 ? 'Approved everything from this meeting.' : 'Approved the rest from this meeting.',
+                    sends > 0 && `${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.`,
+                    byHand.length > 0 && `${byHand.length} ${byHand.length === 1 ? 'is' : 'are'} left for you to copy and send by hand.`,
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
+                )
               }}
             >
-              {sends > 0 ? <SendLabel>Approve and send everything left</SendLabel> : 'Approve everything left'}
+              {sends > 0 ? <SendLabel>{byHand.length > 0 ? 'Approve and send the rest' : 'Approve and send everything left'}</SendLabel> : byHand.length > 0 ? 'Approve the rest' : 'Approve everything left'}
             </Button>
           )}
         </div>

@@ -14,6 +14,8 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../services/ai'
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
+import { canDeliver, notConnectedLine } from '../lib/delivery'
+import { copyText, textWithStudentLink } from '../lib/studentLinks'
 import { AiErrorNote, AiTag, Button, CheckRow, PlaceholderNote, SectionLabel, SendLabel, Thinking, textareaClass, useToast } from './ui'
 
 const CHANNEL_NOUN = { text: 'text message', email: 'email', wechat: 'WeChat message', line: 'LINE message' } as const
@@ -89,10 +91,19 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
     }, d.toKind === 'student' ? d.usedNote : undefined)
-    toast('Approved. Sending in 60 seconds.')
+    toast(canDeliver(d.channel) ? 'Approved. Sending in 60 seconds.' : `Copied. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`)
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()
     else setDrafts((all) => all.map((x, j) => (j === i ? { ...x, sent: true } : x)))
+  }
+
+  /** On a channel that is not connected: nothing is approved or logged unless the text reached the clipboard. */
+  const copyThenSend = (i: number) => {
+    const d = drafts[i]
+    setError(undefined)
+    void copyText(d.toKind === 'student' ? textWithStudentLink(student.id, d.body) : d.body)
+      .then(() => send(i))
+      .catch((e: unknown) => setError(`${e instanceof Error ? e.message : 'Nothing was copied.'} This message is not marked approved.`))
   }
 
   const patch = (i: number, fields: Partial<ReminderMessage>) => setDrafts((d) => d.map((x, j) => (j === i ? { ...x, ...fields } : x)))
@@ -143,7 +154,16 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             )}
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
-                <span className="motion-fade text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in 60 seconds.</span>
+                <span className="motion-fade text-[13px] font-semibold text-good">
+                  {canDeliver(d.channel) ? `Approved. Sending to ${d.toName} in 60 seconds.` : `Copied and approved. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`}
+                </span>
+              ) : !canDeliver(d.channel) ? (
+                <>
+                  <Button variant="primary" aria-label={`Copy for ${CHANNEL_LABEL[d.channel]}, to ${d.toName}`} onClick={() => copyThenSend(i)} disabled={loading > 0 || !d.body.trim()}>
+                    Copy for {CHANNEL_LABEL[d.channel]}
+                  </Button>
+                  <span className="text-[13px] font-medium text-warn">{notConnectedLine(d.channel)}</span>
+                </>
               ) : (
                 <Button variant="primary" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
                   <SendLabel>Approve and send</SendLabel>
@@ -171,7 +191,12 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
           {drafts.some((d) => d.sent) ? 'Close' : 'Cancel'}
         </Button>
         <span className="basis-full text-xs text-muted">
-          Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.
+          {(() => {
+            const channel = drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))
+            return canDeliver(channel)
+              ? `Goes by ${CHANNEL_LABEL[channel]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.`
+              : `${notConnectedLine(channel)} Each message is approved and logged on its own, and can be undone for 60 seconds.`
+          })()}
         </span>
       </div>
     </div>
