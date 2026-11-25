@@ -2,9 +2,9 @@
 // so texts they approve are sent from their own number. The phone is the
 // signed-in person's own, not the firm's.
 //
-// The device key is shown once, right after connecting, as text and as a QR
-// code that opens /phone-setup on the phone. It is held only in this
-// component's state and is gone when the dialog closes.
+// Connecting shows a one-time code and a QR code for /phone-setup. The code is
+// not a device key, and the URL does not contain one. The phone exchanges the
+// code for the key.
 
 import { useEffect, useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
@@ -52,7 +52,7 @@ export function YourPhone() {
   const [error, setError] = useState<string>()
   const [connecting, setConnecting] = useState(false)
   const [label, setLabel] = useState('My iPhone')
-  const [key, setKey] = useState<string>()
+  const [setup, setSetup] = useState<{ code: string; expiresAt: string }>()
   const [number, setNumber] = useState('')
 
   useEffect(() => {
@@ -89,20 +89,20 @@ export function YourPhone() {
 
   const connect = () =>
     run(async () => {
-      const { key: fresh } = await callPhone<{ key: string }>('connect', { label: label.trim(), noticeShown: true })
-      setKey(fresh)
+      const fresh = await callPhone<{ code: string; expiresAt: string }>('connect', { label: label.trim(), noticeShown: true })
+      setSetup(fresh)
       setConnecting(false)
       return callPhone('status')
     })
 
   const disconnect = () => {
-    if (!window.confirm('Disconnect this phone? Texts you approve will go back to “Open in Messages” until you connect a phone again.')) return
-    setKey(undefined)
-    void run(() => callPhone('disconnect'), 'Phone disconnected.')
+    if (!window.confirm('Revoke this phone? The shortcut stops working immediately. Texts you approve go back to “Open in Messages” until you pair a phone again.')) return
+    setSetup(undefined)
+    void run(() => callPhone('disconnect'), 'Phone revoked.')
   }
 
   const { device, gmail } = status
-  const setupUrl = key ? `${window.location.origin}/phone-setup#k=${key}` : undefined
+  const setupUrl = setup ? `${window.location.origin}/phone-setup` : undefined
   const canConnect = gmail.connected && gmail.allowed
 
   return (
@@ -170,28 +170,27 @@ export function YourPhone() {
         </form>
       )}
 
-      {key && setupUrl && (
+      {setup && setupUrl && (
         <div className="flex flex-col gap-3 rounded-lg border border-accent-line bg-accent-soft p-3">
-          <p className="text-sm font-semibold text-heading">Scan this with your iPhone’s camera</p>
+          <p className="text-sm font-semibold text-heading">Scan this with your iPhone’s camera, then type this code</p>
           <div className="flex flex-wrap items-start gap-4">
             <QrCode value={setupUrl} />
             <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <p className="text-[13px] text-ink-soft">It opens the setup page on your phone with the device key filled in. Or copy the key and type it into the shortcut yourself:</p>
-              <code className="block break-all rounded-lg bg-surface px-3 py-2 text-[13px]">{key}</code>
+              <p className="text-[13px] text-ink-soft">The page has no key in the address. Type this code there. It works once and expires in 10 minutes.</p>
+              <code className="block break-all rounded-lg bg-surface px-3 py-2 text-lg tracking-widest">{setup.code}</code>
               <Button
                 className="self-start"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(key)
-                  toast('Key copied.')
+                  void navigator.clipboard?.writeText(setup.code)
+                  toast('Code copied.')
                 }}
               >
-                Copy key
+                Copy code
               </Button>
             </div>
           </div>
-          <p className="text-[13px] font-semibold text-warn">This key is shown only this once. When you close this, it cannot be shown again; connect the phone again to get a new one.</p>
-          <Button className="self-start" variant="quiet" onClick={() => setKey(undefined)}>
-            I have set up my phone, hide the key
+          <Button className="self-start" variant="quiet" onClick={() => setSetup(undefined)}>
+            Hide the code
           </Button>
         </div>
       )}
@@ -200,7 +199,7 @@ export function YourPhone() {
         <>
           <p className="text-[13px] text-ink-soft">
             Wake emails go to <span className="break-all font-semibold">{device.wakeEmail}</span>.{' '}
-            {device.lastSeenAt ? `Last heard from ${new Date(device.lastSeenAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Not heard from yet.'}
+            {device.lastSeenAt ? `Last used ${new Date(device.lastSeenAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Not used yet.'}
             {device.state === 'stopped' && ' Three texts in a row got no answer, so new texts go to “Open in Messages” until a test succeeds.'}
           </p>
           <form
@@ -228,7 +227,7 @@ export function YourPhone() {
               Refresh
             </Button>
             <Button disabled={busy} onClick={disconnect}>
-              Disconnect phone
+              Revoke this phone
             </Button>
           </div>
         </>

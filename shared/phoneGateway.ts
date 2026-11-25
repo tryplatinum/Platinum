@@ -10,8 +10,13 @@ export const PHONE_ENDPOINT = '/api/phone'
 
 /** A job nobody took is given up after this long. */
 export const JOB_EXPIRES_MS = 10 * 60_000
-/** A phone that took a job has this long to report. */
-export const JOB_LEASE_MS = 2 * 60_000
+/** A phone that took a job has this long to report. After that the job returns to the queue. */
+export const JOB_LEASE_MS = 10 * 60_000
+/** A setup code works once and only this long. */
+export const SETUP_CODE_MS = 10 * 60_000
+/** A device key lasts this long, then the phone must be paired again. */
+export const DEVICE_KEY_MS = 90 * 24 * 60 * 60 * 1000
+export const PAIR_AGAIN = 'Pair your phone again'
 /** At most one wake email per phone in this time. */
 export const WAKE_GAP_MS = 20_000
 export const CLAIMS_PER_HOUR = 20
@@ -35,10 +40,10 @@ export const WAKE_SUBJECT = /^Platinum wake [a-z0-9]{6}$/
 export const JOB_STATUSES = ['pending', 'claimed', 'submitted', 'failed', 'unknown', 'expired', 'cancelled'] as const
 export type JobStatus = (typeof JOB_STATUSES)[number]
 
-/** Every allowed move. Anything not listed is refused, and nothing returns to pending. */
+/** Every allowed move. A claim that is not reported in time returns to pending. */
 const MOVES: Record<JobStatus, readonly JobStatus[]> = {
   pending: ['claimed', 'expired', 'cancelled'],
-  claimed: ['submitted', 'failed', 'unknown'],
+  claimed: ['submitted', 'failed', 'unknown', 'pending'],
   // A late report from the phone, or the counselor's answer.
   unknown: ['submitted', 'failed'],
   submitted: [],
@@ -50,6 +55,11 @@ const MOVES: Record<JobStatus, readonly JobStatus[]> = {
 export function jobCanMove(from: string, to: string): boolean {
   return Object.hasOwn(MOVES, from) && (MOVES[from as JobStatus] as readonly string[]).includes(to)
 }
+
+const FINAL_JOB_STATUSES = ['submitted', 'failed', 'expired', 'cancelled'] as const
+
+/** A job that will not be claimed again. Its text is cleared. */
+export const jobIsFinal = (status: string) => (FINAL_JOB_STATUSES as readonly string[]).includes(status)
 
 /** A job that ended with no answer from the phone. */
 export const jobWentUnanswered = (status: string) => status === 'expired' || status === 'unknown'
@@ -116,6 +126,7 @@ export const reportInput = z.object({
   error: z.string().max(2000).optional(),
 })
 export const connectInput = z.object({ label: z.string().trim().min(1).max(80), noticeShown: z.boolean().optional() })
+export const pairInput = z.object({ code: z.string().trim().min(4).max(16) })
 export const numberInput = z.object({ phone: z.string().trim().max(40) })
 export const resolveInput = z.object({ jobId: uuid.optional(), outboxId: uuid.optional(), sent: z.boolean() }).refine((v) => Boolean(v.jobId) !== Boolean(v.outboxId))
 export const cancelInput = z.object({ outboxId: uuid })

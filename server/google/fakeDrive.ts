@@ -28,7 +28,7 @@ const SHORTCUT = 'application/vnd.google-apps.shortcut'
 const PDF = 'application/pdf'
 
 export const FAKE_ADDRESS = 'sample.counselor@example.com'
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
 
 interface FakeFile {

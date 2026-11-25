@@ -17,10 +17,10 @@
 // claims a job the dispatcher made. No answer but `connect` holds a device
 // key, and nothing logs a key, a number or message text.
 
-import { cancelInput, connectInput, numberInput, reportInput, resolveInput } from '../shared/phoneGateway.js'
+import { cancelInput, connectInput, numberInput, pairInput, reportInput, resolveInput } from '../shared/phoneGateway.js'
 import { PhoneError } from '../server/phoneGateway/config.js'
-import { cancelWaiting, connectPhone, disconnectPhone, phoneStatus, resolveUnknown, saveOwnNumber, sendTest, wakeNow } from '../server/phoneGateway/counselor.js'
-import { claimNext, deviceForKey, report } from '../server/phoneGateway/device.js'
+import { cancelWaiting, connectPhone, disconnectPhone, pairWithCode, phoneStatus, resolveUnknown, saveOwnNumber, sendTest, wakeNow } from '../server/phoneGateway/counselor.js'
+import { claimNext, deviceForKey, pairAgainBody, report } from '../server/phoneGateway/device.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, serviceConfigured, type Caller } from '../server/supabase.js'
 
@@ -79,8 +79,8 @@ const COUNSELOR: Record<string, (caller: SignedIn, body: unknown) => Promise<unk
 
 async function fromPhone(action: 'claim' | 'report', body: unknown, request: Request): Promise<Response> {
   const device = await deviceForKey(request)
-  // Unknown and revoked keys get the same answer, and a Shortcut that reads `next` stops.
-  if (!device) return json({ next: 'none' }, 401)
+  // Unknown, revoked, and expired keys get the same answer, and a Shortcut that reads `next` stops.
+  if (device === 'pair_again') return json(pairAgainBody(), 401)
   if (rateLimited(`phone:${device.id}`, MAX_PER_DEVICE)) return json({ next: 'none' }, 429)
   if (action === 'claim') return json(await claimNext(device))
   const parsed = reportInput.safeParse(body)
@@ -104,6 +104,11 @@ export async function POST(request: Request): Promise<Response> {
   const action = typeof body?.action === 'string' ? body.action : ''
 
   try {
+    if (action === 'pair') {
+      const parsed = pairInput.safeParse(body)
+      if (!parsed.success) return fail('That request was not understood.', 400)
+      return json({ ok: true, data: await pairWithCode(parsed.data.code) })
+    }
     if (action === 'claim' || action === 'report') return await fromPhone(action, body, request)
 
     const handler = Object.hasOwn(COUNSELOR, action) ? COUNSELOR[action] : undefined

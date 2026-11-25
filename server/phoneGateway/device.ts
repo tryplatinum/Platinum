@@ -5,7 +5,7 @@
 // A job is handed out once. A job whose outcome is not confirmed is never
 // handed out again.
 
-import { CLAIMS_PER_DAY, CLAIMS_PER_HOUR, PHONE_REASON, type ClaimAnswer } from '../../shared/phoneGateway.js'
+import { CLAIMS_PER_DAY, CLAIMS_PER_HOUR, JOB_LEASE_MS, PAIR_AGAIN, PHONE_REASON, type ClaimAnswer } from '../../shared/phoneGateway.js'
 import { serviceClient } from '../supabase.js'
 import { onAllowlist, textViaPhone, type Device, type Job } from './config.js'
 import { moveJob, noteClaimed, sweepJobs } from './jobs.js'
@@ -13,16 +13,19 @@ import { hashKey, looksLikeKey, sameHash } from './keys.js'
 
 const db = () => serviceClient()
 
-/** The phone this request's key belongs to. Undefined for no key, an unknown key or a revoked one. */
-export async function deviceForKey(request: Request): Promise<Device | undefined> {
+/** The phone this request's key belongs to. `pair_again` for a missing, revoked, or expired key. */
+export async function deviceForKey(request: Request): Promise<Device | 'pair_again'> {
   const key = request.headers.get('authorization')?.match(/^Bearer\s+(\S+)$/i)?.[1]
-  if (!key || !looksLikeKey(key)) return undefined
+  if (!key || !looksLikeKey(key)) return 'pair_again'
   const hash = hashKey(key)
   const { data, error } = await db().from('phone_devices').select('*').eq('key_hash', hash).maybeSingle()
-  if (error || !data) return undefined
-  if (!sameHash(data.key_hash, hash) || data.revoked_at) return undefined
+  if (error || !data || !sameHash(data.key_hash, hash)) return 'pair_again'
+  if (data.revoked_at) return 'pair_again'
+  if (data.key_expires_at && Date.parse(data.key_expires_at) <= Date.now()) return 'pair_again'
   return data
 }
+
+export const pairAgainBody = () => ({ next: 'none' as const, message: PAIR_AGAIN })
 
 async function claimsSince(deviceId: string, since: number, atMost: number): Promise<number> {
   const { data, error } = await db().from('phone_send_jobs').select('id').eq('device_id', deviceId).gte('claimed_at', new Date(since).toISOString()).limit(atMost)
@@ -62,9 +65,9 @@ export async function claimNext(device: Device): Promise<ClaimAnswer> {
     if (!job || !job.claim_id) return { next: 'none' }
     await noteClaimed(job, device.id)
 
-    const why = await refusal(job)
-    if (why) {
-      await moveJob(job, 'failed', { actor: 'dispatcher' }, { error: why })
+    const why = job.body ? await refusal(job) : 'The message could not be checked.'
+    if (why || !job.body) {
+      await moveJob(job, 'failed', { actor: 'dispatcher' }, { error: why ?? 'The message could not be checked.' })
       continue
     }
     return { next: 'send', job_id: job.id, claim_id: job.claim_id, to_phone: job.to_phone, body: job.body }
@@ -82,8 +85,15 @@ const tidy = (text: string | undefined) => (text ?? '').replace(/[\p{Cc}]+/gu, '
  */
 export async function report(device: Device, input: { job_id: string; claim_id: string; result: 'submitted' | 'failed'; error?: string }): Promise<boolean> {
   const { data: job, error } = await db().from('phone_send_jobs').select('*').eq('id', input.job_id).eq('device_id', device.id).maybeSingle()
-  if (error || !job || !job.claim_id || job.claim_id !== input.claim_id) return false
+  if (error || !job || !job.claim_id || job.claim_id !== input.claim_id || job.device_id !== device.id) return false
   if (job.status === input.result) return true
+  const opened = job.claimed_at ? Date.parse(job.claimed_at) : Number.NaN
+  if (job.status === 'claimed' && (!Number.isFinite(opened) || Date.now() - opened > JOB_LEASE_MS)) {
+    // Not the body, the number, or the key. The job goes back to the queue.
+    console.error('[phone] late report rejected')
+    await moveJob(job, 'pending', { actor: 'device', actorId: device.id, late: true }, { claim_id: null, claimed_at: null, lease_expires_at: null })
+    return false
+  }
   if (job.status !== 'claimed' && job.status !== 'unknown') return false
   const late = job.status === 'unknown'
   const reason = input.result === 'failed' ? `Your phone could not send it${tidy(input.error) ? `: ${tidy(input.error)}` : '.'}` : null

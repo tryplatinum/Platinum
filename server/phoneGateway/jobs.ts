@@ -5,7 +5,7 @@
 //
 // Nothing here sends anything, and nothing logs a number or message text.
 
-import { PHONE_REASON, STOP_AFTER, jobCanMove, phoneHasStopped, type JobStatus } from '../../shared/phoneGateway.js'
+import { PHONE_REASON, STOP_AFTER, jobCanMove, jobIsFinal, phoneHasStopped, type JobStatus } from '../../shared/phoneGateway.js'
 import { serviceClient } from '../supabase.js'
 import type { Job } from './config.js'
 
@@ -68,11 +68,14 @@ async function tellOutbox(job: Job, to: JobStatus, by: By): Promise<void> {
 
 /**
  * Moves a job to a new status, or returns undefined when the rules refuse the
- * move or someone else changed the job first. Nothing ever returns to pending.
+ * move or someone else changed the job first. A claim that is not reported in
+ * time returns to pending. A finished job drops its text in the same update.
  */
-export async function moveJob(job: Job, to: JobStatus, by: By, fields: Partial<Pick<Job, 'error' | 'reported_at'>> = {}): Promise<Job | undefined> {
+export async function moveJob(job: Job, to: JobStatus, by: By, fields: Partial<Pick<Job, 'error' | 'reported_at' | 'claim_id' | 'claimed_at' | 'lease_expires_at' | 'body'>> = {}): Promise<Job | undefined> {
   if (!jobCanMove(job.status, to)) return undefined
-  const { data, error } = await db().from('phone_send_jobs').update({ status: to, ...fields }).eq('id', job.id).eq('status', job.status).select('*').maybeSingle()
+  // The phone already has the text from the claim response. A finished row does not keep it.
+  const patch = jobIsFinal(to) ? { ...fields, body: null } : fields
+  const { data, error } = await db().from('phone_send_jobs').update({ status: to, ...patch }).eq('id', job.id).eq('status', job.status).select('*').maybeSingle()
   if (error) throw new Error('the phone job could not be updated')
   if (!data) return undefined
   await recordEvent(data.id, job.status, to, by)
@@ -101,8 +104,8 @@ export async function createJob(input: { outboxId: string | null; deviceId: stri
 
 /**
  * Gives up on jobs nobody answered: a waiting job past its ten minutes becomes
- * expired; a job a phone took and did not report on within two minutes becomes
- * unknown. An unknown job is never handed out again, because it may have been sent.
+ * expired. A job a phone took and did not report on within ten minutes goes
+ * back to the queue. The text stays, so the next claim can hand it out again.
  *
  * Runs whenever a phone asks for work, whenever a counselor looks at their
  * phone's status, and whenever the dispatcher runs. Returns how many jobs it moved.
@@ -115,7 +118,9 @@ export async function sweepJobs(): Promise<number> {
   for (const job of waiting.data ?? []) if (await moveJob(job, 'expired', { actor: 'sweep' })) moved++
   const taken = await db().from('phone_send_jobs').select('*').eq('status', 'claimed').lt('lease_expires_at', now).limit(50)
   if (taken.error) throw new Error('could not read the claimed jobs')
-  for (const job of taken.data ?? []) if (await moveJob(job, 'unknown', { actor: 'sweep' })) moved++
+  for (const job of taken.data ?? []) {
+    if (await moveJob(job, 'pending', { actor: 'sweep' }, { claim_id: null, claimed_at: null, lease_expires_at: null })) moved++
+  }
   return moved
 }
 

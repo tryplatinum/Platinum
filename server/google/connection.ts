@@ -34,6 +34,7 @@ export class GoogleError extends Error {
 }
 
 export const RECONNECT_MESSAGE = 'Google has ended this connection. Reconnect Google in Firm settings.'
+export const DRIVE_RECONNECT_MESSAGE = 'Reconnect Google Drive'
 
 /** Google features need the three Google settings and the service role (the only role that can read a connection). */
 export const googleAvailable = () => googleConfigured() && serviceConfigured()
@@ -53,15 +54,18 @@ async function rowOf(userId: string) {
 // ── Status ──────────────────────────────────────────────────────────────────
 
 export async function connectionStatus(caller: SignedIn): Promise<GoogleStatus> {
-  if (!googleAvailable()) return { available: false, connected: false, drive: false, gmail: false, reconnect: false }
+  if (!googleAvailable()) return { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
   const row = await rowOf(caller.userId)
   // A connection made while in another firm is not this firm's.
-  if (!row || row.firm_id !== caller.firmId) return { available: true, connected: false, drive: false, gmail: false, reconnect: false }
+  if (!row || row.firm_id !== caller.firmId) return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+  const drive = row.scopes.includes(DRIVE_SCOPE)
   return {
     available: true,
     connected: true,
     address: row.google_address,
-    drive: row.scopes.includes(DRIVE_SCOPE),
+    drive,
+    // An older grant could read every file. It is not used for Drive.
+    driveReconnect: !drive,
     gmail: row.scopes.includes(GMAIL_SEND_SCOPE),
     reconnect: row.last_error === 'reconnect',
   }
@@ -105,7 +109,8 @@ export function startConnect(caller: SignedIn, request: Request, options: { gmai
       scope: options.gmail ? `${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE}` : DRIVE_SCOPE,
       access_type: 'offline',
       prompt: 'consent',
-      include_granted_scopes: 'true',
+      // Do not keep an older Drive permission. Gmail is asked for on its own when it is wanted.
+      include_granted_scopes: 'false',
       state,
     })}`
   }
@@ -199,7 +204,7 @@ export async function disconnect(caller: SignedIn): Promise<GoogleStatus> {
     if (error) throw new Error(`deleting the Google connection failed: ${error.message}`)
     cached.delete(caller.userId)
   }
-  return { available: true, connected: false, drive: false, gmail: false, reconnect: false }
+  return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
 }
 
 // ── Access tokens ───────────────────────────────────────────────────────────
@@ -231,7 +236,10 @@ export async function accessTokenFor(who: Who, scope: string = DRIVE_SCOPE): Pro
     throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
   }
   if (row.last_error === 'reconnect') throw new GoogleError('reconnect', RECONNECT_MESSAGE, 409)
-  if (!row.scopes.includes(scope)) throw new GoogleError('reconnect', scope === GMAIL_SEND_SCOPE ? 'Sending from Gmail is not turned on for this Google account.' : RECONNECT_MESSAGE, 409)
+  if (!row.scopes.includes(scope)) {
+    const message = scope === GMAIL_SEND_SCOPE ? 'Sending from Gmail is not turned on for this Google account.' : scope === DRIVE_SCOPE ? DRIVE_RECONNECT_MESSAGE : RECONNECT_MESSAGE
+    throw new GoogleError('reconnect', message, 409)
+  }
 
   const hit = cached.get(userId)
   if (hit && hit.until > Date.now() && hit.scopes.includes(scope) && hit.connectedAt === row.connected_at) return hit.token

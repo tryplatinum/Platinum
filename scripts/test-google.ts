@@ -257,12 +257,12 @@ const cookieOf = (setCookie: string) => setCookie.split(';')[0]
   const p = url.searchParams
   check('the consent address is Google’s, for the authorization code flow', url.origin + url.pathname === 'https://accounts.google.com/o/oauth2/v2/auth' && p.get('response_type') === 'code')
   check('…with offline access and prompt=consent', p.get('access_type') === 'offline' && p.get('prompt') === 'consent')
-  check('…asking for drive.readonly and nothing else', p.get('scope') === DRIVE_SCOPE)
+  check('…asking for drive.file and nothing else', p.get('scope') === DRIVE_SCOPE)
   check('…sending the person back to /api/google on this address', p.get('redirect_uri') === 'http://localhost:5173/api/google')
   check('…with our client id and never the secret', p.get('client_id') === process.env.GOOGLE_CLIENT_ID && !started.url.includes('test-client-secret'))
   check('…and a state tied to this browser by an HttpOnly cookie', Boolean(p.get('state')) && /HttpOnly/.test(started.setCookie) && /SameSite=Lax/.test(started.setCookie) && started.setCookie.startsWith(`${STATE_COOKIE}=`))
   const withGmail = new URL(startConnect(owner, request('/api/google'), { gmail: true }).url).searchParams
-  check('turning on Gmail asks for gmail.send on top, keeping what was granted', withGmail.get('scope') === `${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE}` && withGmail.get('include_granted_scopes') === 'true')
+  check('turning on Gmail asks for gmail.send on top, and does not keep an older grant', withGmail.get('scope') === `${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE}` && withGmail.get('include_granted_scopes') === 'false')
 
   const state = p.get('state')!
   const before = googleCalls.length
@@ -281,25 +281,26 @@ const cookieOf = (setCookie: string) => setCookie.split(';')[0]
   check('status gives the address and what is allowed', status.connected && status.address === 'sample.counselor@example.com' && status.drive && !status.gmail)
   check('…and never a token', !JSON.stringify(status).includes('token'))
   check('a colleague has no connection of their own', (await connectionStatus(colleague)).connected === false)
-  check('…and cannot read Drive through someone else’s', await throwsWith(() => browseDrive(THEM, { parent: 'root' }), 'not_connected'))
+  check('…and cannot read Drive through someone else’s', await throwsWith(() => browseDrive(THEM, { parent: 'kevin' }), 'not_connected'))
 }
 
 // ── 8. Browse and search ────────────────────────────────────────────────────
 
 {
-  const root = await browseDrive(ME, { parent: 'root' })
-  check('My Drive lists its folders', root.entries.some((e) => e.name === 'Students' && e.kind === 'folder'))
+  check(
+    'searching the whole Drive is refused',
+    (await throwsWith(() => browseDrive(ME, { parent: 'root' }), 'refused')) &&
+      (await throwsWith(() => browseDrive(ME, { parent: 'shared' }), 'refused')) &&
+      (await throwsWith(() => browseDrive(ME, { parent: 'drives' }), 'refused')) &&
+      (await throwsWith(() => browseDrive(ME, { parent: 'root', query: 'transcript' }), 'refused')),
+  )
   const kevin = await browseDrive(ME, { parent: 'kevin' })
   check('a long folder comes in pages', Boolean(kevin.nextPageToken))
   const rest = await browseDrive(ME, { parent: 'kevin', pageToken: kevin.nextPageToken })
   const all = [...kevin.entries, ...rest.entries]
   check('a file too large or of a kind that cannot be stored says so', Boolean(all.find((e) => e.name.endsWith('.mp4'))?.blocked) && all.find((e) => e.name.startsWith('Full application'))?.blocked === REASON.tooLarge && Boolean(all.find((e) => e.name === 'Senior year survey')?.blocked))
   check('a shortcut shows as the file it points to', all.find((e) => e.name.includes('shortcut'))?.id === 'shared-rec')
-  check('Shared with me and shared drives are listed', (await browseDrive(ME, { parent: 'shared' })).entries.some((e) => e.id === 'shared-rec') && (await browseDrive(ME, { parent: 'drives' })).entries[0]?.kind === 'drive')
-  check('a shared drive opens like a folder', (await browseDrive(ME, { parent: 'team-drive' })).entries.some((e) => e.label === 'Google Sheet'))
-  const search = await browseDrive(ME, { parent: 'root', query: "SAT's" }).then(() => browseDrive(ME, { parent: 'root', query: 'transcript' }))
-  check('search finds files by name across the Drive', search.entries.filter((e) => /transcript/i.test(e.name)).length >= 3)
-  check('…and a quote in the search text is escaped', googleCalls.some((c) => c.url.searchParams.get('q')?.includes("SAT\\'s")))
+  check('a picked folder can still be listed, without searching every drive', all.some((e) => e.kind === 'folder' || e.kind === 'file') && googleCalls.every((c) => c.url.searchParams.get('corpora') !== 'allDrives'))
 }
 
 // ── 9. Importing picked files ───────────────────────────────────────────────
@@ -422,7 +423,7 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   const expired = await syncFolder(colleague, { id: folder.id })
   check('when Google ends the grant, the folder says “Reconnect Google to sync” and nothing breaks', expired.folder.status === 'reconnect' && !expired.more && kevinDocs().length === 9)
   check('…status says to reconnect', (await connectionStatus(owner)).reconnect === true)
-  check('…and every Drive feature says the same', (await throwsWith(() => browseDrive(ME, { parent: 'root' }), 'reconnect')) && (await throwsWith(() => accessTokenFor(ME), 'reconnect')))
+  check('…and every Drive feature says the same', (await throwsWith(() => browseDrive(ME, { parent: 'kevin' }), 'reconnect')) && (await throwsWith(() => accessTokenFor(ME), 'reconnect')))
 
   // Reconnecting puts it right.
   setDrive({})
@@ -438,7 +439,7 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   check('a folder linked by someone who has left the firm no longer syncs with their Google account', left.folder.status === 'reconnect' && left.documents.length === 0)
   members.push(mine)
   // A connection made in one firm is never used for another.
-  check('a connection is never used for a firm it was not made in', await throwsWith(() => browseDrive({ userId: USER, firmId: '99999999-9999-4999-8999-999999999999' }, { parent: 'root' }), 'not_connected'))
+  check('a connection is never used for a firm it was not made in', await throwsWith(() => browseDrive({ userId: USER, firmId: '99999999-9999-4999-8999-999999999999' }, { parent: 'kevin' }), 'not_connected'))
   db.table('student_drive_folders')[0].status = 'idle'
 
   await unlinkFolder(colleague, folder.id)
@@ -473,7 +474,7 @@ const byDrive = (id: string) => kevinDocs().find((d) => d.drive_file_id === id)
   const before = revokes()
   const status = await disconnect(owner)
   check('disconnect revokes the grant at Google, then deletes the row', revokes() === before + 1 && db.table('google_connections').length === 0 && status.connected === false)
-  check('…after which Drive cannot be read', await throwsWith(() => browseDrive(ME, { parent: 'root' }), 'not_connected'))
+  check('…after which Drive cannot be read', await throwsWith(() => browseDrive(ME, { parent: 'kevin' }), 'not_connected'))
 }
 
 // ── 13. What was asked of Google, over the whole run ────────────────────────

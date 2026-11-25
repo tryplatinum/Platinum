@@ -51,7 +51,7 @@ export async function callGoogle<T>(action: string, body: Record<string, unknown
 
 // ── Status ──────────────────────────────────────────────────────────────────
 
-const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, gmail: false, reconnect: false }
+const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
 
 let status: GoogleStatus | undefined
 let loading: Promise<void> | undefined

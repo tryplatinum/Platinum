@@ -1291,6 +1291,7 @@ export type Database = {
           first_seen_at: string | null
           id: string
           key_hash: string
+          key_expires_at: string
           label: string
           last_seen_at: string | null
           last_wake_at: string | null
@@ -1307,6 +1308,7 @@ export type Database = {
           first_seen_at?: string | null
           id?: string
           key_hash: string
+          key_expires_at?: string
           label: string
           last_seen_at?: string | null
           last_wake_at?: string | null
@@ -1323,6 +1325,7 @@ export type Database = {
           first_seen_at?: string | null
           id?: string
           key_hash?: string
+          key_expires_at?: string
           label?: string
           last_seen_at?: string | null
           last_wake_at?: string | null
@@ -1341,6 +1344,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      phone_setup_codes: {
+        Row: {
+          code_hash: string
+          counselor_id: string
+          created_at: string
+          expires_at: string
+          firm_id: string
+          id: string
+          label: string
+          notice_shown: boolean
+          used_at: string | null
+        }
+        Insert: {
+          code_hash: string
+          counselor_id: string
+          created_at?: string
+          expires_at: string
+          firm_id: string
+          id?: string
+          label: string
+          notice_shown?: boolean
+          used_at?: string | null
+        }
+        Update: {
+          code_hash?: string
+          counselor_id?: string
+          created_at?: string
+          expires_at?: string
+          firm_id?: string
+          id?: string
+          label?: string
+          notice_shown?: boolean
+          used_at?: string | null
+        }
+        Relationships: []
       }
       phone_job_events: {
         Row: {
@@ -1385,7 +1424,7 @@ export type Database = {
       }
       phone_send_jobs: {
         Row: {
-          body: string
+          body: string | null
           claim_id: string | null
           claimed_at: string | null
           created_at: string
@@ -1415,7 +1454,7 @@ export type Database = {
           to_phone: string
         }
         Update: {
-          body?: string
+          body?: string | null
           claim_id?: string | null
           claimed_at?: string | null
           created_at?: string

@@ -1,5 +1,31 @@
 # Build log
 
+## SEC-FIX-W1 (branch `sec-fix-w1`)
+
+Narrower Drive access, safer phone pairing, and a time limit on student uploads.
+
+**Migration, written and not pushed:** `supabase/migrations/20261203000001_phone_pairing.sql`. Remote was at `20261202000001`. SEC-FIX-A1 has `20261204000001` locally; push this one first, or `db push` will want `--include-all`. After pushing, run `npm run db:types` (the types in `src/lib/database.types.ts` were edited by hand to match). It:
+- lets `phone_send_jobs.body` be null and clears it on rows already submitted, failed, expired or cancelled
+- adds `phone_devices.key_expires_at` (existing devices get 90 days from their `created_at`)
+- adds `phone_setup_codes` (hash only, single use, 10 minutes; RLS on, service role only)
+- changes `claim_phone_send_job` to a 10-minute lease
+
+**Drive.** The scope is `drive.file`, not `drive.readonly`. The app no longer lists My Drive, shared drives or search results; `browseDrive` refuses `root`, `shared`, `drives` and a query. Files and folders are chosen in Google Picker (`DrivePicker.tsx`), which gets a short-lived access token from `POST /api/google { action: 'picker' }`. The Picker needs `VITE_GOOGLE_PICKER_KEY` (a browser key restricted to the Picker API and this site) and `VITE_GOOGLE_APP_ID` (the Cloud project number). A connection without `drive.file` shows "Reconnect Google Drive" (`GoogleStatus.driveReconnect`), and every Drive call says the same until the counselor reconnects. Consent asks with `include_granted_scopes=false`, so the old scope is not carried over.
+
+What `drive.file` cannot do: list the rest of a linked folder. Folder sync now sees only files the counselor picked or this app created, so a linked folder no longer picks up new files dropped into it in Drive. Under `GOOGLE_FAKE=1` the Picker is not available (it is Google's own UI), so choosing files needs a real Google project.
+
+**Phone pairing.** "Connect your phone" shows an 8-character setup code (no 0/O/1/I), valid 10 minutes and once. `/phone-setup` has no key in its address: the phone types the code, the page posts `{ action: 'pair', code }` to `/api/phone`, and shows the device key once. Pairing revokes any earlier phone. A device key lasts 90 days. A revoked, expired or unknown key gets 401 `{ "next": "none", "message": "Pair your phone again" }`. Settings shows "Last used" and "Revoke this phone" (sets `revoked_at`).
+
+**Claims.** Only the device that claimed a job can report it, within 10 minutes of the claim. A later report is refused, logged as `[phone] late report rejected` (no number or text), recorded as a late event, and the job goes back to `pending`. The sweep does the same for a claim whose lease ran out. A job's `body` is set to null in the same update that makes it submitted, failed, expired or cancelled. `unknown` is still accepted for rows made before this change. Trade-off: a phone that sent a text but never reported can now be handed that text again after 10 minutes.
+
+**Student uploads.** Supabase Storage takes no expiry for a signed upload URL (the route uses the project's fixed `uploadSignedUrlExpirationTime`), so the limit is enforced by the server: `finishStudentUpload` refuses and removes an upload finished more than `STUDENT_UPLOAD_SECONDS` (300) after its URL was issued, and the next start clears unfinished ones older than that. Five minutes, not 60 seconds, because a 25 MB upload from a phone can take minutes.
+
+**Not done here (SEC-FIX-A1's file):** the log transport (`server/transport/log.ts`) prints the whole body, which can hold a substituted student link. The phone path itself logs no body.
+
+Checks: `typecheck`, `lint`, `test:notes` (now with the upload window) and `test:outbox` (phone: setup code single use and expiry, 90-day key, wrong device, expired claim back to the queue, late report rejected, bodies cleared on final status, no `#k=` in the setup screens) all pass.
+
+Manual checks after the push: Google consent shows only "See, edit, create and delete only the specific Google Drive files you use with this app"; pairing uses a code and an 11-minute-old code is refused; "Revoke this phone" makes the Shortcut's next request fail; a sent phone text's `phone_send_jobs.body` is null; finishing a student upload after 5 minutes is refused.
+
 ## M4b-4 (branch `m4b4-agent-speed`)
 
 Agent speed, second pass. The main model is still `claude-sonnet-5-5`. `AGENT_FAST_MODEL` is empty. When set, only the meeting brief and the essay brainstorm use it. Parent messages stay on the main model.

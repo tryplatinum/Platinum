@@ -15,7 +15,7 @@
 
 import { browseInput, connectInput, folderInput, foldersInput, importInput, linkInput, syncInput } from '../shared/google.js'
 import { FileError } from '../server/documentSorting.js'
-import { GoogleError, clearStateCookie, connectionStatus, disconnect, finishConnect, startConnect } from '../server/google/connection.js'
+import { GoogleError, accessTokenFor, clearStateCookie, connectionStatus, disconnect, finishConnect, startConnect } from '../server/google/connection.js'
 import { browseDrive } from '../server/google/drive.js'
 import { importDriveFile, importRemovedAgain, linkFolder, listFolders, syncFolder, unlinkFolder } from '../server/google/driveFiles.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
@@ -48,6 +48,8 @@ function checked<T>(shape: { safeParse: (value: unknown) => { success: true; dat
 const ACTIONS: Record<string, (caller: SignedIn, body: unknown, request: Request) => Promise<Answer>> = {
   /** The connected address and what it may do. Never a token. */
   status: async (caller) => ({ data: await connectionStatus(caller) }),
+  /** A short-lived access token so the browser can open the Google Picker. Never a refresh token. */
+  picker: async (caller) => ({ data: { token: await accessTokenFor({ userId: caller.userId, firmId: caller.firmId }) } }),
   /** The address of Google's consent screen, and the cookie that ties the answer to this browser. */
   connect: async (caller, body, request) => {
     const { url, setCookie } = startConnect(caller, request, checked(connectInput, body))

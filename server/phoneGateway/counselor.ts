@@ -6,11 +6,11 @@
 // answer holds a key or a hash.
 
 import { normalizePhone } from '../../shared/dispatch.js'
-import { PHONE_REASON, SEEN_RECENTLY_MS, TEST_BODY, phoneStateLabel, type JobStatus, type PhoneJobLine, type PhoneState, type PhoneStatus } from '../../shared/phoneGateway.js'
+import { DEVICE_KEY_MS, PHONE_REASON, SEEN_RECENTLY_MS, SETUP_CODE_MS, TEST_BODY, phoneStateLabel, type JobStatus, type PhoneJobLine, type PhoneState, type PhoneStatus } from '../../shared/phoneGateway.js'
 import { serviceClient, serviceConfigured } from '../supabase.js'
 import { PhoneError, activeDevice, gmailOf, onAllowlist, textViaPhone, type Counselor, type Device, type Job } from './config.js'
 import { createJob, deviceHasStopped, moveJob, sweepJobs } from './jobs.js'
-import { hashKey, newDeviceKey } from './keys.js'
+import { hashKey, newDeviceKey, newSetupCode } from './keys.js'
 import { wakeDevice } from './wake.js'
 
 const db = () => serviceClient()
@@ -82,36 +82,72 @@ export async function phoneStatus(who: Counselor): Promise<PhoneStatus> {
 }
 
 /**
- * Connects a phone. The wake address is the counselor's own connected Gmail
- * address; no other address is asked for. Any phone they had is revoked. The
- * key is returned ONCE and only its hash is kept.
+ * Starts pairing. Returns a short code once. The phone exchanges it for a
+ * device key. The code is stored only as a hash and is not a URL.
  */
-export async function connectPhone(who: Counselor, input: { label: string; noticeShown?: boolean }): Promise<{ key: string }> {
+export async function connectPhone(who: Counselor, input: { label: string; noticeShown?: boolean }): Promise<{ code: string; expiresAt: string }> {
   const gmail = await gmailOf(who)
   if (!gmail.connected || !gmail.address) throw new PhoneError('Connect Gmail first')
   if (!onAllowlist('email', gmail.address)) throw new PhoneError('That address is not on the allowed list yet')
 
-  const earlier = await devicesOf(who)
   const now = new Date().toISOString()
-  const revoked = await db().from('phone_devices').update({ revoked_at: now }).eq('counselor_id', who.userId).is('revoked_at', null)
+  const retired = await db().from('phone_setup_codes').update({ used_at: now }).eq('counselor_id', who.userId).is('used_at', null)
+  if (retired.error) throw new Error('the earlier code could not be retired')
+
+  const code = newSetupCode()
+  const expiresAt = new Date(Date.now() + SETUP_CODE_MS).toISOString()
+  const { error } = await db().from('phone_setup_codes').insert({
+    firm_id: who.firmId,
+    counselor_id: who.userId,
+    code_hash: hashKey(code),
+    notice_shown: Boolean(input.noticeShown),
+    label: input.label,
+    expires_at: expiresAt,
+  })
+  if (error) throw new Error('the setup code could not be saved')
+  return { code, expiresAt }
+}
+
+/**
+ * Turns a setup code into a device key. The code works once. Any phone this
+ * counselor already had is revoked. The key is returned once; only its hash is kept.
+ */
+export async function pairWithCode(code: string): Promise<{ key: string; expiresAt: string }> {
+  const hash = hashKey(code.trim().toUpperCase())
+  const found = await db().from('phone_setup_codes').select('*').eq('code_hash', hash).maybeSingle()
+  if (found.error) throw new Error('the setup code could not be read')
+  const row = found.data
+  if (!row || row.used_at || Date.parse(row.expires_at) <= Date.now()) throw new PhoneError('That code has expired. Pair your phone again.', 400)
+
+  const spent = await db().from('phone_setup_codes').update({ used_at: new Date().toISOString() }).eq('id', row.id).is('used_at', null).select('id').maybeSingle()
+  if (spent.error || !spent.data) throw new PhoneError('That code has expired. Pair your phone again.', 400)
+
+  const gmail = await gmailOf({ userId: row.counselor_id, firmId: row.firm_id })
+  if (!gmail.connected || !gmail.address) throw new PhoneError('Connect Gmail first')
+  if (!onAllowlist('email', gmail.address)) throw new PhoneError('That address is not on the allowed list yet')
+
+  const earlier = await devicesOf({ userId: row.counselor_id, firmId: row.firm_id })
+  const now = new Date().toISOString()
+  const revoked = await db().from('phone_devices').update({ revoked_at: now }).eq('counselor_id', row.counselor_id).is('revoked_at', null)
   if (revoked.error) throw new Error('the earlier phone could not be disconnected')
 
   const key = newDeviceKey()
+  const expiresAt = new Date(Date.now() + DEVICE_KEY_MS).toISOString()
   const { error } = await db()
     .from('phone_devices')
     .insert({
-      firm_id: who.firmId,
-      counselor_id: who.userId,
+      firm_id: row.firm_id,
+      counselor_id: row.counselor_id,
       platform: 'ios_shortcut',
-      label: input.label,
+      label: row.label,
       key_hash: hashKey(key),
+      key_expires_at: expiresAt,
       wake_email: gmail.address,
-      // Carried over, so reconnecting does not ask for the number or show the notice again.
       own_phone: earlier.find((d) => d.own_phone)?.own_phone ?? null,
-      notice_shown_at: input.noticeShown ? now : (earlier.find((d) => d.notice_shown_at)?.notice_shown_at ?? null),
+      notice_shown_at: row.notice_shown ? now : (earlier.find((d) => d.notice_shown_at)?.notice_shown_at ?? null),
     })
   if (error) throw new Error('the phone could not be saved')
-  return { key }
+  return { key, expiresAt }
 }
 
 async function requireDevice(who: Counselor): Promise<Device> {

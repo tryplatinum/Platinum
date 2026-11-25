@@ -10,10 +10,10 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { linkIsExpired } from '../shared/dispatch.js'
-import { STUDENT_FILES_PER_DAY, STUDENT_TOTAL_BYTES, DOCUMENTS_BUCKET } from '../shared/files.js'
+import { STUDENT_FILES_PER_DAY, STUDENT_TOTAL_BYTES, STUDENT_UPLOAD_SECONDS, DOCUMENTS_BUCKET, uploadWindowClosed } from '../shared/files.js'
 import type { StudentUpload, StudentUploadTicket, StudentWrite } from '../shared/student.js'
 import type { AppData, Attachment, CollegeApp, EssayFeedback, Meeting, Recap, StudentDocument, Task } from '../src/types.js'
-import { FileError, checkDeclared, confirmUpload, removeAbandonedUploads, sortStudentDrop, uploadingRow } from './documentSorting.js'
+import { FileError, checkDeclared, confirmUpload, removeAbandonedUploads, removeObjects, sortStudentDrop, uploadingRow } from './documentSorting.js'
 import { serviceClient } from './supabase.js'
 
 export interface Link {
@@ -251,8 +251,8 @@ const asLinkError = (error: unknown): never => {
 /**
  * Step 1. Checks the declared size and type and the link's limits, creates the
  * documents row (file_status 'uploading') and returns a one-time signed upload
- * token for that row's exact path. Uploads this student abandoned over an hour
- * ago are removed first, with their objects.
+ * token for that row's exact path. Uploads this student started more than
+ * STUDENT_UPLOAD_SECONDS ago and never finished are removed first, with their objects.
  */
 export async function startStudentUpload(link: Link, upload: Extract<StudentUpload, { action: 'start_upload' }>): Promise<StudentUploadTicket> {
   const db = serviceClient()
@@ -263,7 +263,7 @@ export async function startStudentUpload(link: Link, upload: Extract<StudentUplo
       return asLinkError(error)
     }
   })()
-  await removeAbandonedUploads(db, link.firmId, link.studentId)
+  await removeAbandonedUploads(db, link.firmId, link.studentId, STUDENT_UPLOAD_SECONDS * 1000)
 
   const existing = await db.from('documents').select('size_bytes, created_at, uploaded_by_kind').eq('firm_id', link.firmId).eq('student_id', link.studentId).not('storage_path', 'is', null)
   if (existing.error) throw new Error(`student upload lookup failed: ${existing.error.message}`)
@@ -278,6 +278,7 @@ export async function startStudentUpload(link: Link, upload: Extract<StudentUplo
   const row = { ...uploadingRow({ firmId: link.firmId, studentId: link.studentId, ...declared, by: 'student_link', today: day }), student_link_id: link.id ?? null }
   const made = await db.from('documents').insert(row)
   if (made.error) throw new Error(`student upload row failed: ${made.error.message}`)
+  // Supabase Storage takes no expiry for an upload URL; it lasts the project's fixed time. finishStudentUpload enforces STUDENT_UPLOAD_SECONDS.
   const signed = await db.storage.from(DOCUMENTS_BUCKET).createSignedUploadUrl(row.storage_path)
   if (signed.error || !signed.data?.token) {
     await db.from('documents').delete().eq('id', row.id).eq('firm_id', link.firmId)
@@ -299,6 +300,11 @@ export async function finishStudentUpload(link: Link, documentId: string): Promi
   if (found.error) throw new Error(`student upload lookup failed: ${found.error.message}`)
   const row = found.data
   if (!row) throw new StudentLinkError('That upload was not found. Add the file again.', 404)
+  if (uploadWindowClosed(row.created_at)) {
+    await removeObjects(db, [row.storage_path!]).catch(() => undefined)
+    await db.from('documents').delete().eq('id', row.id).eq('firm_id', link.firmId)
+    throw new StudentLinkError('That upload took too long. Add the file again.', 410)
+  }
 
   const { bytes, hash } = await confirmUpload(db, row).catch(asLinkError)
   const saved = await db.from('documents').update({ size_bytes: bytes.length, content_hash: hash, file_status: 'sorting' }).eq('id', row.id).eq('file_status', 'uploading')
