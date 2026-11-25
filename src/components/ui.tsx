@@ -530,8 +530,27 @@ export function Tabs<T extends string>({ tabs, param = 'tab', label }: { tabs: T
     const box = list.current
     if (el && box && (el.offsetLeft < box.scrollLeft || el.offsetLeft + el.offsetWidth > box.scrollLeft + box.clientWidth)) box.scrollLeft = el.offsetLeft - 16
   }, [current])
+  // Where the row is cut off, that edge fades, so it reads as "there is more this way".
+  const [more, setMore] = useState({ left: false, right: false })
+  useEffect(() => {
+    const box = list.current
+    if (!box) return
+    const measure = () => {
+      const left = box.scrollLeft > 1
+      const right = box.scrollLeft + box.clientWidth < box.scrollWidth - 1
+      setMore((was) => (was.left === left && was.right === right ? was : { left, right }))
+    }
+    measure()
+    box.addEventListener('scroll', measure, { passive: true })
+    const watch = new ResizeObserver(measure)
+    watch.observe(box)
+    return () => {
+      box.removeEventListener('scroll', measure)
+      watch.disconnect()
+    }
+  }, [current, tabs.length])
   return (
-    <div ref={list} role="tablist" aria-label={label} className="relative flex gap-1 overflow-x-auto border-b border-line" onKeyDown={(e) => arrowNav(e, tabs.map((t) => t.key), current, select)}>
+    <div ref={list} role="tablist" aria-label={label} className={cx('relative flex gap-1 overflow-x-auto border-b border-line', more.left && 'mask-l-from-[calc(100%-2.5rem)]', more.right && 'mask-r-from-[calc(100%-2.5rem)]')} onKeyDown={(e) => arrowNav(e, tabs.map((t) => t.key), current, select)}>
       {marker && <span aria-hidden className="motion-marker absolute bottom-0 left-0 h-0.5 w-px bg-accent" style={{ transform: `translateX(${marker.x}px) scaleX(${marker.width})` }} />}
       {tabs.map((t) => (
         <button

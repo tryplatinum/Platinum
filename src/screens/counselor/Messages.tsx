@@ -4,6 +4,7 @@
 // Approved messages wait 60 seconds, then go out through the allowlist, and can
 // still be copied and sent by hand; the page says so at the top.
 
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, TabPanel, Tabs, PageHeader, cx, inputBase, usePageTitle, useTab, useToast, type TabItem } from '../../components/ui'
@@ -11,7 +12,7 @@ import { previewStudentLink } from '../../../shared/dispatch'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
 import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
-import { MotionList } from '../../components/motion'
+import { MotionList, Reveal, useReveal } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
 import { formatTimestamp } from '../../lib/dates'
@@ -45,16 +46,27 @@ export default function Messages() {
     { key: 'queue', label: 'Scheduled reminders', count: queue.length },
   ]
   const tab = useTab(tabs)
+  const how = useReveal()
   usePageTitle('Messages')
   // The rules moved to Settings.
   if (params.get('tab') === 'rules') return <Navigate to="/app/settings#reminder-rules" replace />
 
   return (
     <>
-      <PageHeader title="Messages" />
-      <p className="rounded-card border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-        <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
-      </p>
+      <PageHeader
+        title="Messages"
+        pill={
+          <button type="button" {...how.button} className="flex min-h-11 items-center gap-1 rounded-control text-[13px] font-semibold text-accent">
+            <ChevronRight size={16} strokeWidth={1.75} className="motion-chevron shrink-0" aria-hidden />
+            How sending works
+          </button>
+        }
+      />
+      <Reveal open={how.open} id={how.id} className="-mt-3">
+        <p className="rounded-card border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
+          <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
+        </p>
+      </Reveal>
       <Tabs tabs={tabs} label="Messages" />
       <TabPanel tab={tab} label={tabs.find((t) => t.key === tab)?.label ?? ''}>
         {tab === 'sent' && <Sent />}

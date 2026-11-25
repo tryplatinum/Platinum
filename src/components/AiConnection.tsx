@@ -18,6 +18,10 @@ export function AiConnection() {
   }, [])
 
   if (status === undefined) return null
+  // No answer at all says nothing about the key: the request may simply have failed. A built
+  // app stays quiet then, so "placeholders" is only ever shown when the server itself says so.
+  // Where there really is no endpoint, every draft is marked a placeholder where it appears.
+  if (status === null && import.meta.env.PROD) return null
   const live = Boolean(status?.hasKey && status.hasAuth)
   const detail = !status
     ? 'This deployment has no AI endpoint. Drafts are placeholders.'

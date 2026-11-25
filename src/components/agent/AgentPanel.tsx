@@ -10,6 +10,7 @@
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { assistantPrompts } from '../../lib/assistantPrompts'
 import { proposalSummary, type AgentHistoryMessage, type AgentProposalKind, type AgentProposalOut, type AgentProposalStatus, type AgentTurnSource } from '../../../shared/agent'
 import { useApprovalSends } from '../../lib/approvalSends'
 import { findStudent, fullName, proposalApproval } from '../../lib/derive'
@@ -22,8 +23,6 @@ import { Button, Card, Empty, Pill, Skeleton, Thinking, cx, textareaClass } from
 
 const OPEN_KEY = 'platinum.agentPanel'
 
-const STUDENT_PROMPTS = ["What's overdue?", 'Prep me for our next meeting', 'Draft a parent update'] as const
-const GENERAL_PROMPTS = ['Who needs attention this week?', "What's waiting for approval?", 'Who is behind?'] as const
 
 const KIND_LABEL: Record<AgentProposalKind, string> = {
   message: 'Message',
@@ -193,7 +192,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const studentId = student ? student.id : null
   const threadKey = studentId ?? 'all'
   const title = student ? `Assistant · ${fullName(student)}` : 'Assistant · All students'
-  const prompts = student ? STUDENT_PROMPTS : GENERAL_PROMPTS
+  const prompts = assistantPrompts(pathname, student?.firstName)
 
   const [threads, setThreads] = useState<Record<string, ThreadUi>>({})
   const thread = threads[threadKey] ?? EMPTY_THREAD
@@ -457,14 +456,25 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
           )}
           {showSuggestions && (
-            <Empty title={student ? 'Ask about this student.' : 'Ask about the caseload.'}>
+            <Empty
+              title={
+                <>
+                  <span className="block font-display text-base font-semibold text-heading">{student ? `Ask about ${student.firstName}` : 'Ask about your students'}</span>
+                  <span className="mt-1 block">Choose one to put it in the box, or write your own. Nothing is sent until you press Send.</span>
+                </>
+              }
+            >
               <div className="flex w-full flex-col gap-2">
                 {prompts.map((prompt) => (
                   <button
                     key={prompt}
                     type="button"
                     disabled={thread.pending}
-                    onClick={() => submit(prompt)}
+                    onClick={() => {
+                      // Fills the box and stops there: the counselor reads it, changes it if they like, and sends it.
+                      patch(threadKey, (current) => ({ ...current, draft: prompt }))
+                      inputRef.current?.focus()
+                    }}
                     className="min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-left text-sm font-medium text-heading hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {prompt}
@@ -505,7 +515,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
             }}
           />
           <div className="mt-2 flex justify-end">
-            <Button type="submit" variant="primary" disabled={thread.pending || thread.draft.trim() === ''}>
+            <Button type="submit" variant="remind" disabled={thread.pending || thread.draft.trim() === ''}>
               Send
             </Button>
           </div>

@@ -75,6 +75,21 @@ function Waiting({ s }: { s: StudentSummary }) {
   )
 }
 
+/** What a student is waiting on, on one line: who, what, how late, and when they were last reminded. */
+function WaitingLine({ s }: { s: StudentSummary }) {
+  const data = useData()
+  const w = s.waitingOn
+  if (!w) return null
+  const reminded = lastReminder(data, w.task.id)
+  return (
+    <>
+      <span className="font-medium">{w.label}:</span> {w.task.title}{' '}
+      <span className={w.daysLate > 0 ? 'font-semibold text-bad' : 'text-muted'}>· {w.daysLate > 0 ? `${w.daysLate} ${w.daysLate === 1 ? 'day' : 'days'} late` : `due ${formatDate(w.task.dueDate)}`}</span>
+      {reminded && <span className="text-muted"> · reminded {formatDate(reminded.slice(0, 10))}</span>}
+    </>
+  )
+}
+
 /** Remind the person it waits on, or open the student when it waits on the counselor. */
 function Act({ s, open, onToggle, className, short }: { s: StudentSummary; open: boolean; onToggle: () => void; className?: string; /** "Remind", where the line beside it says who. */ short?: boolean }) {
   const w = s.waitingOn
@@ -132,19 +147,39 @@ export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; 
               )}
             </li>
           )
+        // A phone card: who and the button on one line, progress, then the deadline and what it waits on as one line each.
+        const d = s.nextDeadline
+        const near = d ? daysFromToday(d.date) <= NEAR_DAYS : false
         return (
-          <li key={s.student.id} className="flex flex-col gap-3 border-t border-line px-5 py-4 first:border-t-0">
-            <div>
-              <Who s={s} />
+          <li key={s.student.id} className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0 sm:px-5">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <Link to={`/app/students/${s.student.id}`} className="tap-link font-semibold text-heading hover:text-accent hover:underline">
+                  {fullName(s.student)}
+                </Link>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  Class of {s.student.gradYear}
+                  <StatusPill status={s.status} />
+                </div>
+              </div>
+              <Act s={s} open={open} short onToggle={() => setReminding(open ? undefined : s.student.id)} className="shrink-0" />
             </div>
             <Progress s={s} />
-            <NextDeadline s={s} />
-            <div className="flex flex-col gap-2">
-              <div>
-                <p className="text-xs font-semibold text-muted">Waiting on</p>
-                <Waiting s={s} />
-              </div>
-              <Act s={s} open={open} onToggle={() => setReminding(open ? undefined : s.student.id)} className="self-start" />
+            <div className="text-[13px] leading-snug">
+              <p className="truncate">
+                <span className="text-muted">Next: </span>
+                {d ? (
+                  <>
+                    <span className="font-medium">{d.label}</span> <span className={near ? 'font-semibold text-bad' : 'text-muted'}>· {formatDate(d.date)}, {dueText(d.date)}</span>
+                  </>
+                ) : (
+                  <span className="text-muted">no deadline set</span>
+                )}
+              </p>
+              <p className="line-clamp-2">
+                <span className="text-muted">Waiting on: </span>
+                {s.waitingOn ? <WaitingLine s={s} /> : <span className="text-muted">nothing open</span>}
+              </p>
             </div>
             {open && s.waitingOn && (
               <div className="motion-rise">
