@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
+import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, Pill, cx, textareaClass, useToast } from '../../components/ui'
 import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from '../../components/WeeklyTextSend'
 import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
@@ -26,7 +26,6 @@ import type { Student, WeeklyText } from '../../types'
 
 export default function WeeklyTexts() {
   const data = useData()
-  const updateFirm = useStore((s) => s.updateFirm)
   const toast = useToast()
   const rows = weeklyTextRows(data)
   const done = weeklyTextsDone(data)
@@ -96,21 +95,9 @@ export default function WeeklyTexts() {
           count={rows.length}
           sub="One short text per student: next meeting, late tasks, what is due, and their task link. You send each one from your own phone."
           action={
-            <>
-              <label className="flex items-center gap-2 text-[13px] text-muted">
-                Weekly text day
-                <select className={inputBase} value={data.firm.weeklyTextDay} onChange={(e) => updateFirm({ weeklyTextDay: Number(e.target.value) })}>
-                  {WEEKDAYS.map((name, day) => (
-                    <option key={name} value={day}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <Button variant="primary" onClick={() => void draftAll()} disabled={Boolean(progress) || undrafted === 0}>
                 {progress ? `Drafting ${progress.done} of ${progress.total}…` : undrafted ? `Draft all (${undrafted})` : 'All drafted'}
               </Button>
-            </>
           }
         />
         {progress && (
@@ -120,7 +107,11 @@ export default function WeeklyTexts() {
           </p>
         )}
         <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
-          Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]}. A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
+          Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]} (
+          <Link to="/app/settings#reminder-rules" className="font-medium text-accent hover:underline">
+            change the day
+          </Link>
+          ). A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
           texted automatically. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well, for you to approve on its own.
           {' The student link is added when the text is sent (shown as “[student link added when sent]” in the draft).'}
         </p>

@@ -169,7 +169,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                         ? 'Reading the folder…'
                         : folder.status === 'reconnect'
                           ? folder.mine
-                            ? 'Your Google connection has ended. Reconnect it in Firm settings. Files already imported are not affected.'
+                            ? 'Your Google connection has ended. Reconnect it in Settings. Files already imported are not affected.'
                             : 'The colleague who linked this folder needs to reconnect Google. Files already imported are not affected.'
                           : folder.status === 'error'
                             ? (folder.lastError ?? 'The last sync stopped.')

@@ -1,5 +1,5 @@
 // Light and dark. By default the app follows the device and changes with it.
-// A person can turn that off in "View and settings" and choose one; the choice
+// A person can turn that off in Settings and choose one; the choice
 // is kept in this browser only, so it is theirs and not the firm's.
 //
 // The look itself is all in src/index.css: the dark values are the same tokens

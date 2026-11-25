@@ -1,4 +1,4 @@
-// Firm settings, Folders: the firm's own list of folders files are sorted
+// Settings, Folders: the firm's own list of folders files are sorted
 // into, and the switch for sorting with AI. Only the firm's owner can change
 // either; the database refuses anyone else, and this screen says so.
 
@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { foldersInOrder } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { DocumentType, FolderSensitivity } from '../../types'
-import { Button, Pill, SectionLabel, cx, inputBase } from '../ui'
+import { Button, Card, CardHeader, Pill, SectionLabel, cx, inputBase } from '../ui'
 
 const WHO: Record<FolderSensitivity, string> = { standard: 'Everyone in the firm', restricted: 'Owner only', firm_only: 'Owner only (firm paperwork)' }
 
@@ -64,8 +64,8 @@ export function FolderSettings() {
   const folders = foldersInOrder(data)
 
   return (
-    <section className="flex flex-col gap-3 border-t border-line pt-4">
-      <h3 className="text-base font-semibold">Folders</h3>
+    <Card className="flex flex-col items-stretch gap-3 p-5">
+      <CardHeader size="section" title="Folders" />
       {!owner && <p className="rounded-lg bg-canvas px-3 py-2 text-[13px] text-muted">Only the firm’s owner can change the folders and this setting.</p>}
 
       <label className="flex min-h-11 items-start gap-3">
@@ -117,6 +117,6 @@ export function FolderSettings() {
 
       {owner && (editing === 'new' ? <FolderForm onDone={() => setEditing(undefined)} /> : <Button onClick={() => setEditing('new')}>Add a folder</Button>)}
       <SectionLabel className="normal-case tracking-normal">Archiving moves nothing: files keep their folder and show it as archived. It only stops new files going in.</SectionLabel>
-    </section>
+    </Card>
   )
 }

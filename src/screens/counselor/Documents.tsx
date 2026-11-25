@@ -5,7 +5,7 @@
 // it. It is not shown on any student's page before that.
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { FileRow } from '../../components/files/FileRow'
 import { FilingRow } from '../../components/files/FilingRow'
 import { UploadWindow, useFileDrop } from '../../components/files/UploadWindow'
@@ -64,7 +64,7 @@ export default function Documents() {
       />
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in Firm settings to add from Drive. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive. Files already imported are not affected.
         </p>
       )}
       {drive && <DrivePicker mode="files" onClose={() => setDrive(false)} />}

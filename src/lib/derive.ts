@@ -265,8 +265,8 @@ export function reviewSections(m: Meeting): ReviewSection[] {
     if (ai.parentUpdates.length) sections.push({ key: 'parents', label: 'Parent update', pending: countPending(ai.parentUpdates), total: ai.parentUpdates.length })
   }
   if (m.recap) sections.push({ key: 'recap', label: 'Recap for the student', pending: m.recap.review === 'pending' ? 1 : 0, total: 1 })
-  if (ai?.profileChanges.length) sections.push({ key: 'profile', label: 'Profile changes', pending: countPending(ai.profileChanges), total: ai.profileChanges.length })
   if (ai?.personalNotes?.length) sections.push({ key: 'remember', label: 'Things to remember', pending: countPending(ai.personalNotes), total: ai.personalNotes.length })
+  if (ai?.profileChanges.length) sections.push({ key: 'profile', label: 'Profile changes', pending: countPending(ai.profileChanges), total: ai.profileChanges.length })
   return sections
 }
 

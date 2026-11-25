@@ -208,7 +208,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
             </Card>
           )}
           <Card className="flex flex-col gap-2 p-5">
-            <CardHeader title="Reminders for this student" count={reminders.length} action={reminders.length > 0 && <LinkButton to="/app/messages?tab=queue">Open the queue</LinkButton>} />
+            <CardHeader title="Reminders for this student" count={reminders.length} action={reminders.length > 0 && <LinkButton to="/app/messages?tab=queue">Open scheduled reminders</LinkButton>} />
             {reminders.length === 0 ? (
               <p className="text-sm text-muted">No reminders are due for {student.firstName}’s tasks.</p>
             ) : (

@@ -1,4 +1,4 @@
-// Firm settings, "Messaging", "Your phone": connect the counselor's own iPhone
+// Settings, Your phone: connect the counselor's own iPhone
 // so texts they approve are sent from their own number. The phone is the
 // signed-in person's own, not the firm's.
 //
@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { PHONE_NOTICE, jobsCsv, secondsBetween, type JobStatus, type PhoneStatus } from '../../../shared/phoneGateway'
 import { callPhone, phoneReason } from '../../services/phone'
-import { Button, Field, Pill, SectionLabel, inputClass, useToast, type Tone } from '../ui'
+import { Button, Card, Field, Pill, SectionLabel, inputClass, useToast, type Tone } from '../ui'
 
 const JOB_LABEL: Record<JobStatus, string> = {
   pending: 'Waiting for your phone',
@@ -106,13 +106,10 @@ export function YourPhone() {
   const canConnect = gmail.connected && gmail.allowed
 
   return (
-    <section aria-labelledby="your-phone" className="flex flex-col gap-3 border-t border-line pt-5">
-      <SectionLabel>Messaging</SectionLabel>
+    <Card className="flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 id="your-phone" className="text-sm font-semibold text-heading">
-            Your phone
-          </h3>
+          <h2 className="text-lg font-semibold">Your phone</h2>
           {device ? (
             <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
               <span className="font-semibold">{device.label}</span>
@@ -280,6 +277,6 @@ export function YourPhone() {
           <p className="text-[13px] text-muted">“To phone” is the time from the text being made to your phone taking it. “To report” is from then until your phone said how it went.</p>
         </div>
       )}
-    </section>
+    </Card>
   )
 }

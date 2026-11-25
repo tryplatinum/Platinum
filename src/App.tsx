@@ -3,18 +3,18 @@
 //   /app/styleguide   every shared component in each state; not in the navigation
 //   /student/:id      the counselor's preview of a student's page, also behind sign-in
 //   /s/:token         the student's own page, opened from their secret link, no login
-//   /phone-setup      opened on the counselor's own phone from the QR code in Firm settings, no login
+//   /phone-setup      opened on the counselor's own phone from the QR code in Settings, no login
 
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
 import { RequireFirm } from './components/RequireFirm'
 import Activity from './screens/counselor/Activity'
 import Inbox from './screens/counselor/Approvals'
-import CommandCenter from './screens/counselor/CommandCenter'
 import Documents from './screens/counselor/Documents'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import PhoneSetup from './screens/PhoneSetup'
+import Settings from './screens/counselor/Settings'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
@@ -23,7 +23,7 @@ import { StudentHome, StudentProfile } from './screens/student/StudentView'
 import ListDraft from './screens/counselor/ListDraft'
 import Styleguide from './screens/counselor/Styleguide'
 
-// ── Redirects from the v1 URLs, so old links and bookmarks keep working ──
+// ── Redirects from earlier URLs, so old links and bookmarks keep working ──
 
 /** A meeting or its brief now opens in the Meetings area with the student selected. */
 function MeetingRedirect() {
@@ -58,17 +58,18 @@ export default function App() {
       <Route element={<RequireFirm />}>
         <Route path="/app" element={<CounselorLayout />}>
           <Route index element={<Inbox />} />
-          <Route path="overview" element={<CommandCenter />} />
           <Route path="activity" element={<Activity />} />
           <Route path="students" element={<Students />} />
           <Route path="students/:studentId" element={<StudentPage />} />
           <Route path="meetings" element={<Meetings />} />
           <Route path="messages" element={<Messages />} />
           <Route path="documents" element={<Documents />} />
+          <Route path="settings" element={<Settings />} />
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
           <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />
           <Route path="students/:studentId/documents/:docId" element={<EssayRedirect />} />
+          <Route path="overview" element={<Navigate to="/app/students" replace />} />
           <Route path="notes" element={<Navigate to="/app/meetings?log=1" replace />} />
           <Route path="reports" element={<Navigate to="/app/messages?kind=parent_report" replace />} />
           <Route path="notifications" element={<Navigate to="/app/messages?tab=queue" replace />} />

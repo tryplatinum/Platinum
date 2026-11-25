@@ -1,12 +1,12 @@
-// Messages sent. Sent: the log of everything that "went out". Weekly texts: the
-// week's short text to each student. Queue: reminders that are due under the
-// rules. Rules: what is automatic and what waits.
+// Messages. Sent: the log of everything that "went out". Weekly texts: the
+// week's short text to each student. Scheduled reminders: reminders that are
+// due under the firm's rules, which are set in Settings.
 // Approved messages wait 60 seconds, then go out through the allowlist, and can
 // still be copied and sent by hand; the page says so at the top.
 
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Button, Card, CardHeader, Empty, Pill, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { Button, Card, CardHeader, Empty, Pill, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
 import { STUDENT_LINK_PLACEHOLDER, previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
@@ -17,7 +17,7 @@ import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
-import type { OutboxKind, OutboxMessage, ReminderMode } from '../../types'
+import type { OutboxKind, OutboxMessage } from '../../types'
 import WeeklyTexts from './WeeklyTexts'
 
 const KIND_LABEL: Record<OutboxKind, string> = {
@@ -29,28 +29,25 @@ const KIND_LABEL: Record<OutboxKind, string> = {
   weekly_text: 'Weekly text',
 }
 
-const MODES: { value: ReminderMode; label: string }[] = [
-  { value: 'automatic', label: 'Automatic' },
-  { value: 'needs_approval', label: 'Ask me first' },
-  { value: 'off', label: 'Off' },
-]
-
-type TabKey = 'sent' | 'weekly' | 'queue' | 'rules'
+/** `queue` is the key in links made before the tab was called Scheduled reminders. */
+type TabKey = 'sent' | 'weekly' | 'queue'
 
 export default function Messages() {
   const data = useData()
+  const [params] = useSearchParams()
   const queue = reminderQueue(data)
   const tabs: TabItem<TabKey>[] = [
     { key: 'sent', label: 'Sent' },
     { key: 'weekly', label: 'Weekly texts', count: weeklyTextRows(data).length },
-    { key: 'queue', label: 'Queue', count: queue.length },
-    { key: 'rules', label: 'Rules' },
+    { key: 'queue', label: 'Scheduled reminders', count: queue.length },
   ]
   const tab = useTab(tabs)
+  // The rules moved to Settings.
+  if (params.get('tab') === 'rules') return <Navigate to="/app/settings#reminder-rules" replace />
 
   return (
     <>
-      <PageHeader title="Messages sent" />
+      <PageHeader title="Messages" />
       <p className="rounded-lg border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
         <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
       </p>
@@ -58,7 +55,6 @@ export default function Messages() {
       {tab === 'sent' && <Sent />}
       {tab === 'weekly' && <WeeklyTexts />}
       {tab === 'queue' && <Queue queue={queue} />}
-      {tab === 'rules' && <Rules />}
     </>
   )
 }
@@ -332,7 +328,7 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
   )
 }
 
-// ── Queue ───────────────────────────────────────────────────────────────────
+// ── Scheduled reminders ───────────────────────────────────────────────────────────────────
 
 function Queue({ queue }: { queue: ReminderDraft[] }) {
   const sendMessage = useStore((s) => s.sendMessage)
@@ -348,7 +344,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
     return (
       <Card>
         <Empty title="No reminders are due. They appear here when a task is close to its due date or late, according to your rules.">
-          <Link to="?tab=rules" className="font-semibold text-accent underline">
+          <Link to="/app/settings#reminder-rules" className="font-semibold text-accent underline">
             See the rules
           </Link>
         </Empty>
@@ -406,38 +402,5 @@ function QueueRow({ reminder, action }: { reminder: ReminderDraft; action: React
       </div>
       <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
     </li>
-  )
-}
-
-// ── Rules ───────────────────────────────────────────────────────────────────
-
-function Rules() {
-  const rules = useData().reminderRules
-  const updateRule = useStore((s) => s.updateRule)
-  return (
-    <Card>
-      <CardHeader size="section" className="px-5 py-4" title="Reminder rules" sub="These decide which reminders appear in the queue, and whether they wait for you." />
-      <ul>
-        {rules.map((rule) => (
-          <li key={rule.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
-            <div className="min-w-[14rem] flex-1">
-              <p className="text-sm font-semibold">{rule.label}</p>
-              <p className="text-[13px] text-muted">{rule.description}</p>
-            </div>
-            {rule.id !== 'student_late' && rule.id !== 'parent_late' && (
-              <label className="flex items-center gap-2 text-[13px] text-muted">
-                <input type="number" min={1} max={14} className={cx(inputBase, 'w-16 text-center')} value={rule.days} onChange={(e) => updateRule(rule.id, { days: Math.max(1, Number(e.target.value) || 1) })} aria-label={`Days for: ${rule.label}`} />
-                {rule.id === 'parent_escalation' ? 'days late' : 'days before'}
-              </label>
-            )}
-            <SegmentedControl label={`Mode for: ${rule.label}`} value={rule.mode} onChange={(mode) => updateRule(rule.id, { mode })} options={MODES} />
-          </li>
-        ))}
-      </ul>
-      <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
-        Queue reminders use fixed wording. Reminders you start with a “Remind” button are drafted by the AI and always wait for you. Anything else the AI writes (reports, recaps, feedback) always waits for your approval, whatever these are set
-        to.
-      </p>
-    </Card>
   )
 }
