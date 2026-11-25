@@ -213,15 +213,19 @@ async function ownJob(who: Counselor, by: { jobId?: string; outboxId?: string })
   return data
 }
 
-/** The counselor's answer for a text the phone took but never confirmed. */
-export async function resolveUnknown(who: Counselor, input: { jobId?: string; outboxId?: string; sent: boolean }): Promise<void> {
+/**
+ * The counselor's answer for a text the phone took but never confirmed: it was
+ * sent, it was not, or they are sending it again (the browser then queues a new
+ * approval through queue_message; this only settles the old row).
+ */
+export async function resolveUnknown(who: Counselor, input: { jobId?: string; outboxId?: string; sent: boolean; again?: boolean }): Promise<void> {
   const job = await ownJob(who, input)
   const by = { actor: 'counselor' as const, actorId: who.userId }
   const moved =
     job.status === 'unknown'
       ? input.sent
         ? await moveJob(job, 'submitted', by, { reported_at: new Date().toISOString() })
-        : await moveJob(job, 'failed', by, { reported_at: new Date().toISOString(), error: PHONE_REASON.notSent })
+        : await moveJob(job, 'failed', by, { reported_at: new Date().toISOString(), error: input.again ? PHONE_REASON.sentAgain : PHONE_REASON.notSent })
       : undefined
   if (!moved) throw new PhoneError('That text is no longer waiting for an answer.')
 }

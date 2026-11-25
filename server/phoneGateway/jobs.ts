@@ -62,16 +62,16 @@ async function tellOutbox(job: Job, to: JobStatus, by: By): Promise<void> {
     const { error } = await db().from('outbox').update(patch).eq('id', row.id).eq('status', 'sending')
     if (error) console.error('[phone] outbox not updated:', error.message)
   }
-  const { error } = await db().from('activity').insert({ firm_id: row.firm_id, student_id: row.student_id, actor: 'system', text: line })
+  const { error } = await db().from('activity').insert({ firm_id: row.firm_id, student_id: row.student_id, actor: by.actor === 'counselor' ? 'counselor' : 'system', text: line })
   if (error) console.error('[phone] activity not written:', error.message)
 }
 
 /**
  * Moves a job to a new status, or returns undefined when the rules refuse the
- * move or someone else changed the job first. A claim that is not reported in
- * time returns to pending. A finished job drops its text in the same update.
+ * move or someone else changed the job first. A finished job drops its text in
+ * the same update.
  */
-export async function moveJob(job: Job, to: JobStatus, by: By, fields: Partial<Pick<Job, 'error' | 'reported_at' | 'claim_id' | 'claimed_at' | 'lease_expires_at' | 'body'>> = {}): Promise<Job | undefined> {
+export async function moveJob(job: Job, to: JobStatus, by: By, fields: Partial<Pick<Job, 'error' | 'reported_at'>> = {}): Promise<Job | undefined> {
   if (!jobCanMove(job.status, to)) return undefined
   // The phone already has the text from the claim response. A finished row does not keep it.
   const patch = jobIsFinal(to) ? { ...fields, body: null } : fields
@@ -104,8 +104,9 @@ export async function createJob(input: { outboxId: string | null; deviceId: stri
 
 /**
  * Gives up on jobs nobody answered: a waiting job past its ten minutes becomes
- * expired. A job a phone took and did not report on within ten minutes goes
- * back to the queue. The text stays, so the next claim can hand it out again.
+ * expired. A job a phone took and did not report on within ten minutes becomes
+ * unknown (unconfirmed). It is never handed out again: the phone may have sent
+ * it, so the counselor decides.
  *
  * Runs whenever a phone asks for work, whenever a counselor looks at their
  * phone's status, and whenever the dispatcher runs. Returns how many jobs it moved.
@@ -118,9 +119,7 @@ export async function sweepJobs(): Promise<number> {
   for (const job of waiting.data ?? []) if (await moveJob(job, 'expired', { actor: 'sweep' })) moved++
   const taken = await db().from('phone_send_jobs').select('*').eq('status', 'claimed').lt('lease_expires_at', now).limit(50)
   if (taken.error) throw new Error('could not read the claimed jobs')
-  for (const job of taken.data ?? []) {
-    if (await moveJob(job, 'pending', { actor: 'sweep' }, { claim_id: null, claimed_at: null, lease_expires_at: null })) moved++
-  }
+  for (const job of taken.data ?? []) if (await moveJob(job, 'unknown', { actor: 'sweep' })) moved++
   return moved
 }
 

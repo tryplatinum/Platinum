@@ -20,7 +20,7 @@ DRAFT. These steps were written before anything was tried on a real iPhone. Will
 
 ## What the shortcut does
 
-It sends a request to the site address with the device key and `{"action":"claim"}`. If the answer has `"next":"send"`, it sends `body` to `to_phone` with Messages, then sends `{"action":"report","job_id":…,"claim_id":…,"result":"submitted"}` (or `"failed"` with an `error`). It repeats until the answer is `{"next":"none"}`. A report must come within 10 minutes of the claim; a later one is refused and the text goes back to the queue. If the answer says "Pair your phone again", the key was revoked or has expired: get a new setup code in Firm settings.
+It sends a request to the site address with the device key and `{"action":"claim"}`. If the answer has `"next":"send"`, it sends `body` to `to_phone` with Messages, then sends `{"action":"report","job_id":…,"claim_id":…,"result":"submitted"}` (or `"failed"` with an `error`). It repeats until the answer is `{"next":"none"}`. A report should come within 10 minutes of the claim. After that the text shows as unconfirmed in Messages and is never handed out again; a later report still settles it. If the answer says "Pair your phone again", the key was revoked or has expired: get a new setup code in Firm settings.
 
 The shortcut only sends. It never reads your messages and uploads nothing except whether each text was handed to Messages.
 

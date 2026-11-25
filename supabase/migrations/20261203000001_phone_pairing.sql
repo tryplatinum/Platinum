@@ -3,8 +3,8 @@
 -- A setup code is stored only as a hash, works once, and lasts ten minutes.
 -- The device key expires. A finished job does not keep its text: that text can
 -- hold a student link, and the phone already received it in the claim response.
--- The claim lease is ten minutes. After that the server puts the job back on
--- the queue (it does not stay claimed).
+-- The claim lease is ten minutes. After that the server marks the job unknown
+-- (unconfirmed). It is never claimed again; the counselor decides.
 
 alter table public.phone_send_jobs alter column body drop not null;
 
@@ -41,9 +41,8 @@ alter table public.phone_setup_codes enable row level security;
 revoke all on table public.phone_setup_codes from public, anon, authenticated;
 grant all on table public.phone_setup_codes to service_role;
 
--- Same claim as before, with a ten-minute lease. The phone has that long to
--- report. A later report is rejected by the server, which returns the job to
--- pending so another claim can take it.
+-- Same claim as before, with a ten-minute lease. Only pending jobs of this
+-- device are claimed, so an unconfirmed job is never handed out again.
 create or replace function public.claim_phone_send_job(device uuid)
 returns setof public.phone_send_jobs
 language sql

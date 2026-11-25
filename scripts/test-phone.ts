@@ -63,11 +63,11 @@ function check(name: string, pass: boolean, detail = ''): void {
 // ── 1. Job status: every move ───────────────────────────────────────────────
 
 {
-  const allowed = new Set(['pending>claimed', 'pending>expired', 'pending>cancelled', 'claimed>submitted', 'claimed>failed', 'claimed>unknown', 'claimed>pending', 'unknown>submitted', 'unknown>failed'])
+  const allowed = new Set(['pending>claimed', 'pending>expired', 'pending>cancelled', 'claimed>submitted', 'claimed>failed', 'claimed>unknown', 'unknown>submitted', 'unknown>failed'])
   let wrong = 0
   for (const from of JOB_STATUSES) for (const to of JOB_STATUSES) if (jobCanMove(from, to) !== allowed.has(`${from}>${to}`)) wrong++
   check('every allowed move passes and every other move is refused', wrong === 0, `${JOB_STATUSES.length * JOB_STATUSES.length} pairs tried`)
-  check('only a claim that was not reported in time returns to pending', JOB_STATUSES.filter((from) => jobCanMove(from, 'pending')).join() === 'claimed')
+  check('nothing ever returns to pending, so nothing is handed out twice', JOB_STATUSES.every((from) => !jobCanMove(from, 'pending')))
   check('submitted, failed, expired and cancelled are final; pending, claimed and unknown are not', ['submitted', 'failed', 'expired', 'cancelled'].every(jobIsFinal) && !['pending', 'claimed', 'unknown'].some(jobIsFinal))
   check('a finished job goes nowhere', ['submitted', 'failed', 'expired', 'cancelled'].every((from) => JOB_STATUSES.every((to) => !jobCanMove(from, to))))
   check('an unknown status is refused, not a crash', !jobCanMove('__proto__', 'claimed') && !jobCanMove('pending', 'delivered') && !jobCanMove('', ''))
@@ -444,54 +444,69 @@ check('a submitted job no longer holds its text', jobOf(one)?.body === null)
   check('…and the sweep is the actor on record', events().some((e) => e.job_id === jobOf(late)?.id && e.from_status === 'pending' && e.to_status === 'expired' && e.actor === 'sweep'))
   check('an expired job no longer holds its text', jobOf(late)?.body === null)
 
-  // The lease runs out before the phone reports: the sweep puts the job back on the queue.
+  // Another phone, of another counselor, to prove no other device can claim or settle a job.
+  const OTHER_KEY = 'B'.repeat(43)
+  devices().push({ id: '88888888-8888-4888-8888-888888888882', firm_id: FIRM, counselor_id: '55555555-5555-4555-8555-555555555559', platform: 'ios_shortcut', label: 'Another phone', key_hash: hashKey(OTHER_KEY), key_expires_at: new Date(Date.now() + DEVICE_KEY_MS).toISOString(), wake_email: 'other@example.com', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null, created_at: new Date().toISOString() })
+
+  // The lease runs out before the phone reports: the job becomes unconfirmed, never pending.
   clearJobs()
   const silent = queue()
   await dispatch({ phone: true })
   const claim = await call(KEY_NOW, { action: 'claim' })
   jobOf(silent)!.lease_expires_at = new Date(Date.now() - 1000).toISOString()
   await call('token-lin', { action: 'status' })
-  check('a job the phone took and did not report on in ten minutes goes back to the queue', claim.json.next === 'send' && jobOf(silent)?.status === 'pending' && jobOf(silent)?.claim_id === null && jobOf(silent)?.body === BODY)
-  check('…the message still waits for the phone', rowOf(silent).status === 'sending' && rowOf(silent).delivery_detail === 'phone_waiting')
-  const staleReport = await call(KEY_NOW, { action: 'report', job_id: claim.json.job_id, claim_id: claim.json.claim_id, result: 'submitted' })
-  check('a report on the old claim is refused', staleReport.status === 409 && jobOf(silent)?.status === 'pending' && rowOf(silent).status === 'sending')
-  const reclaim = await call(KEY_NOW, { action: 'claim' })
-  check('…and the next claim hands it out again, with a new claim id', reclaim.json.job_id === jobOf(silent)?.id && reclaim.json.claim_id !== claim.json.claim_id && reclaim.json.body === BODY)
-
-  // The phone reports after its ten minutes, before any sweep: rejected, logged, and back to the queue.
+  check('an expired claim becomes unconfirmed, not pending', claim.json.next === 'send' && jobOf(silent)?.status === 'unknown' && jobOf(silent)?.claim_id === claim.json.claim_id)
+  check('…the message says “Not confirmed” and is still held, so the dispatcher will not send it again', rowOf(silent).status === 'sending' && rowOf(silent).delivery_detail === 'phone_unknown' && !canSendByHand({ channel: 'text', status: 'sending', detail: 'phone_unknown' }))
+  check('…with the sweep on record', events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'claimed' && e.to_status === 'unknown' && e.actor === 'sweep'))
+  const never = [await call(KEY_NOW, { action: 'claim' }), await call(OTHER_KEY, { action: 'claim' }), await call(KEY_NOW, { action: 'claim' })]
+  check('an unconfirmed job is never claimed again, by this phone or any other', never.every((a) => a.text === '{"next":"none"}') && jobOf(silent)?.status === 'unknown' && (await dispatch({ phone: true })).processed === 0 && jobs().length === 1)
+  const fromOther = await call(OTHER_KEY, { action: 'report', job_id: claim.json.job_id, claim_id: claim.json.claim_id, result: 'submitted' })
+  check('another device cannot settle it, even with the right ids', fromOther.status === 409 && jobOf(silent)?.status === 'unknown')
   const printedBefore = printed.length
-  jobOf(silent)!.claimed_at = new Date(Date.now() - JOB_LEASE_MS - 1000).toISOString()
-  const lateReport = await call(KEY_NOW, { action: 'report', job_id: reclaim.json.job_id, claim_id: reclaim.json.claim_id, result: 'submitted' })
-  check('a report later than ten minutes after the claim is rejected', lateReport.status === 409 && jobOf(silent)?.status === 'pending' && rowOf(silent).status === 'sending')
-  check('…logged, with no number or text', printed.slice(printedBefore).some((line) => line.includes('late report rejected')))
-  check('…and recorded as late, from the device', events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'claimed' && e.to_status === 'pending' && e.actor === 'device' && e.late === true))
+  const lateReport = await call(KEY_NOW, { action: 'report', job_id: claim.json.job_id, claim_id: claim.json.claim_id, result: 'submitted' })
+  check('a late report from the claiming device still resolves it', lateReport.json.ok === true && jobOf(silent)?.status === 'submitted' && rowOf(silent).status === 'sent' && rowOf(silent).delivery_detail === 'phone_sent' && jobOf(silent)?.body === null)
+  check('…logged as late, with no number or text', printed.slice(printedBefore).some((line) => line.includes('[phone] late report')))
+  check('…and recorded as late, from the device', events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'unknown' && e.to_status === 'submitted' && e.actor === 'device' && e.late === true))
 
-  // Another device's key, with the right job id and claim id.
-  const OTHER_KEY = 'B'.repeat(43)
-  devices().push({ id: '88888888-8888-4888-8888-888888888882', firm_id: FIRM, counselor_id: '55555555-5555-4555-8555-555555555559', platform: 'ios_shortcut', label: 'Another phone', key_hash: hashKey(OTHER_KEY), key_expires_at: new Date(Date.now() + DEVICE_KEY_MS).toISOString(), wake_email: 'other@example.com', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null, created_at: new Date().toISOString() })
+  // The phone reports after its ten minutes, before any sweep has run: accepted as late.
+  clearJobs()
+  const slow = queue()
+  await dispatch({ phone: true })
+  const slowClaim = await call(KEY_NOW, { action: 'claim' })
+  jobOf(slow)!.claimed_at = new Date(Date.now() - JOB_LEASE_MS - 1000).toISOString()
+  const slowReport = await call(KEY_NOW, { action: 'report', job_id: slowClaim.json.job_id, claim_id: slowClaim.json.claim_id, result: 'failed', error: 'No service' })
+  check('a report after ten minutes but before the sweep is accepted, and recorded as late', slowReport.json.ok === true && jobOf(slow)?.status === 'failed' && rowOf(slow).status === 'failed' && events().some((e) => e.job_id === jobOf(slow)?.id && e.from_status === 'claimed' && e.to_status === 'failed' && e.late === true))
+
+  // On time, only the claiming device can report.
+  clearJobs()
+  const onTimeRow = queue()
+  await dispatch({ phone: true })
   const mine = await call(KEY_NOW, { action: 'claim' })
   const theirs = await call(OTHER_KEY, { action: 'report', job_id: mine.json.job_id, claim_id: mine.json.claim_id, result: 'submitted' })
-  check('only the device that claimed a job can report it', theirs.status === 409 && jobOf(silent)?.status === 'claimed' && rowOf(silent).status === 'sending')
-  check('…and another device is never handed it', (await call(OTHER_KEY, { action: 'claim' })).text === '{"next":"none"}')
-  devices().find((d) => d.key_hash === hashKey(OTHER_KEY))!.revoked_at = new Date().toISOString()
+  check('only the device that claimed a job can report it', theirs.status === 409 && jobOf(onTimeRow)?.status === 'claimed' && rowOf(onTimeRow).status === 'sending')
   const onTime = await call(KEY_NOW, { action: 'report', job_id: mine.json.job_id, claim_id: mine.json.claim_id, result: 'submitted' })
-  check('the claiming device, on time, settles it', onTime.json.ok === true && jobOf(silent)?.status === 'submitted' && rowOf(silent).status === 'sent' && jobOf(silent)?.body === null)
+  check('the claiming device, on time, settles it, not marked late', onTime.json.ok === true && jobOf(onTimeRow)?.status === 'submitted' && events().some((e) => e.job_id === jobOf(onTimeRow)?.id && e.to_status === 'submitted' && e.late === false))
+  devices().find((d) => d.key_hash === hashKey(OTHER_KEY))!.revoked_at = new Date().toISOString()
 
-  // A job left "unknown" from before the lease rule: the counselor answers for it.
+  // The counselor decides.
   clearJobs()
-  const askNo = queue()
+  const askAgain = queue()
   const askYes = queue()
   await dispatch({ phone: true })
   for (let i = 0; i < 2; i++) await call(KEY_NOW, { action: 'claim' })
-  for (const j of jobs()) {
-    j.status = 'unknown'
-    outbox().find((r) => r.id === j.outbox_id)!.delivery_detail = 'phone_unknown'
-  }
-  const no = await call('token-lin', { action: 'resolve', outboxId: askNo, sent: false })
-  check('“It was not sent” fails the message with “Counselor confirmed it was not sent”', no.status === 200 && jobOf(askNo)?.status === 'failed' && rowOf(askNo).status === 'failed' && rowOf(askNo).error === 'Counselor confirmed it was not sent' && canSendByHand({ channel: 'text', status: 'failed', detail: String(rowOf(askNo).delivery_detail) }))
+  jobs().forEach((j) => (j.lease_expires_at = new Date(Date.now() - 1000).toISOString()))
+  await call('token-lin', { action: 'status' })
+  check('(both are unconfirmed)', jobs().every((j) => j.status === 'unknown'))
+  const activityBefore = db.table('activity').length
   const yes = await call('token-lin', { action: 'resolve', jobId: jobOf(askYes)?.id, sent: true })
   check('“It was sent” marks it sent from the phone', yes.status === 200 && jobOf(askYes)?.status === 'submitted' && rowOf(askYes).status === 'sent' && events().some((e) => e.job_id === jobOf(askYes)?.id && e.actor === 'counselor' && e.actor_id === LIN))
-  check('an answer can be given once', (await call('token-lin', { action: 'resolve', outboxId: askNo, sent: true })).status === 409 && jobOf(askNo)?.status === 'failed')
+  check('…and writes an activity row with the counselor as the actor', db.table('activity').slice(activityBefore).some((a) => a.actor === 'counselor' && /You confirmed your phone sent/.test(String(a.text))))
+  const jobsBefore = jobs().length
+  const again = await call('token-lin', { action: 'resolve', outboxId: askAgain, sent: false, again: true })
+  check('“Send again” settles the old row as not confirmed, sent again', again.status === 200 && jobOf(askAgain)?.status === 'failed' && rowOf(askAgain).status === 'failed' && rowOf(askAgain).error === PHONE_REASON.sentAgain)
+  check('…and makes no job itself: the new text is a new approval through queue_message', jobs().length === jobsBefore && (await dispatch({ phone: true })).processed === 0)
+  check('“It was sent” and “Send again” cannot both be asked', (await call('token-lin', { action: 'resolve', outboxId: askYes, sent: true, again: true })).status === 400)
+  check('an answer can be given once', (await call('token-lin', { action: 'resolve', outboxId: askAgain, sent: true })).status === 409 && jobOf(askAgain)?.status === 'failed')
   check('a colleague cannot answer for someone else’s phone', (await call('token-no-gmail', { action: 'resolve', outboxId: askYes, sent: false })).status === 404)
 }
 
@@ -508,7 +523,7 @@ check('a submitted job no longer holds its text', jobOf(one)?.body === null)
   // No phone asks and nobody opens a page: only the dispatcher runs.
   const run = await dispatch({ phone: true })
   check('a dispatcher run gives up on a job nobody took, with no page open and no phone asking', jobOf(silent)?.status === 'expired' && rowOf(silent).status === 'failed' && rowOf(silent).delivery_detail === 'phone_expired')
-  check('…and puts a job the phone took and never reported on back on the queue', jobOf(stale)?.status === 'pending' && rowOf(stale).delivery_detail === 'phone_waiting' && rowOf(stale).status === 'sending')
+  check('…and marks a job the phone took and never reported on as unconfirmed, never pending', jobOf(stale)?.status === 'unknown' && rowOf(stale).delivery_detail === 'phone_unknown' && rowOf(stale).status === 'sending')
   check('…and says how many it swept, so the browser reloads', run.swept === 2 && run.processed === 0)
   check('the sweep runs with TRANSPORT_TEXT unset too, and sends nothing', await (async () => {
     const late = queue()

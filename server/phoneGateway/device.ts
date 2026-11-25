@@ -79,23 +79,20 @@ export async function claimNext(device: Device): Promise<ClaimAnswer> {
 const tidy = (text: string | undefined) => (text ?? '').replace(/[\p{Cc}]+/gu, ' ').trim().slice(0, 160)
 
 /**
- * The phone says how a job went. Refused unless the claim id is the one this
- * job was handed out with. The same report twice changes nothing. A report for
- * a job that had been given up on (unknown) is accepted, and noted as late.
+ * The phone says how a job went. Refused unless it comes from the device that
+ * claimed the job, with the claim id it was handed out with. The same report
+ * twice changes nothing. A report after the ten-minute lease (or for a job
+ * already unconfirmed) is accepted, logged and recorded as late.
  */
 export async function report(device: Device, input: { job_id: string; claim_id: string; result: 'submitted' | 'failed'; error?: string }): Promise<boolean> {
   const { data: job, error } = await db().from('phone_send_jobs').select('*').eq('id', input.job_id).eq('device_id', device.id).maybeSingle()
   if (error || !job || !job.claim_id || job.claim_id !== input.claim_id || job.device_id !== device.id) return false
   if (job.status === input.result) return true
-  const opened = job.claimed_at ? Date.parse(job.claimed_at) : Number.NaN
-  if (job.status === 'claimed' && (!Number.isFinite(opened) || Date.now() - opened > JOB_LEASE_MS)) {
-    // Not the body, the number, or the key. The job goes back to the queue.
-    console.error('[phone] late report rejected')
-    await moveJob(job, 'pending', { actor: 'device', actorId: device.id, late: true }, { claim_id: null, claimed_at: null, lease_expires_at: null })
-    return false
-  }
   if (job.status !== 'claimed' && job.status !== 'unknown') return false
-  const late = job.status === 'unknown'
+  const opened = job.claimed_at ? Date.parse(job.claimed_at) : Number.NaN
+  const late = job.status === 'unknown' || !Number.isFinite(opened) || Date.now() - opened > JOB_LEASE_MS
+  // Not the body, the number, or the key.
+  if (late) console.error('[phone] late report')
   const reason = input.result === 'failed' ? `Your phone could not send it${tidy(input.error) ? `: ${tidy(input.error)}` : '.'}` : null
   const moved = await moveJob(job, input.result, { actor: 'device', actorId: device.id, late }, { reported_at: new Date().toISOString(), error: reason })
   if (moved) return true
