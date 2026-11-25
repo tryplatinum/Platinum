@@ -41,8 +41,24 @@ export function useMediaQuery(query: string): boolean {
 
 /** A laptop: the sidebar is beside the page. The same width as Tailwind's `lg`. */
 export const useIsLaptop = () => useMediaQuery('(min-width: 64rem)')
-/** Wide enough for a table. The same width as Tailwind's `md`. */
-export const useIsWide = () => useMediaQuery('(min-width: 48rem)')
+
+/**
+ * Whether the element has `px` of room, so a table can become stacked cards.
+ * It goes by the space it really has: the assistant can be open beside it.
+ */
+export function useRoomFor(ref: RefObject<HTMLElement | null>, px: number): boolean {
+  const [room, setRoom] = useState(() => window.innerWidth >= px)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setRoom(el.clientWidth >= px)
+    measure()
+    const watch = new ResizeObserver(measure)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [ref, px])
+  return room
+}
 
 // ── Focus that is never lost ────────────────────────────────────────────────
 

@@ -273,7 +273,7 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
               <input className={inputClass} value={f.location} onChange={(e) => set({ location: e.target.value })} />
             </Field>
           </div>
-          <p className="text-[13px] text-muted">Platinum keeps your schedule. It does not send calendar invitations in v0.</p>
+          <p className="text-[13px] text-muted">Platinum keeps your schedule. It does not send calendar invitations.</p>
           <FormActions
             onClose={onClose}
             submit={meeting ? 'Save' : 'Schedule'}

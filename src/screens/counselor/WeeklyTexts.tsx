@@ -13,7 +13,8 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, Pill, cx, textareaClass, useToast } from '../../components/ui'
+import { MotionList } from '../../components/motion'
+import { AiErrorNote, AiTag, Button, Card, CardHeader, CheckRow, Disclosure, Empty, Note, Pill, ProgressBar, cx, textareaClass, useToast } from '../../components/ui'
 import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from '../../components/WeeklyTextSend'
 import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
@@ -95,16 +96,20 @@ export default function WeeklyTexts() {
           count={rows.length}
           sub="One short text per student: next meeting, late tasks, what is due, and their task link. You send each one from your own phone."
           action={
-              <Button variant="primary" onClick={() => void draftAll()} disabled={Boolean(progress) || undrafted === 0}>
+              // Secondary: each draft is still read and sent on its own.
+              <Button onClick={() => void draftAll()} busy={Boolean(progress)} disabled={undrafted === 0}>
                 {progress ? `Drafting ${progress.done} of ${progress.total}…` : undrafted ? `Draft all (${undrafted})` : 'All drafted'}
               </Button>
           }
         />
         {progress && (
-          <p role="status" className="border-t border-line px-5 py-3 text-sm text-ink-soft">
-            Drafted {progress.done} of {progress.total}
-            {progress.failed > 0 && `, ${progress.failed} could not be drafted`}. You can read the ones that are ready while the rest are prepared.
-          </p>
+          <div className="flex flex-col gap-2 border-t border-line px-5 py-3">
+            <p role="status" className="text-sm text-ink-soft">
+              Drafted {progress.done} of {progress.total}
+              {progress.failed > 0 && `, ${progress.failed} could not be drafted`}. You can read the ones that are ready while the rest are prepared.
+            </p>
+            <ProgressBar label="Drafting the weekly texts" done={progress.done} total={progress.total} />
+          </div>
         )}
         <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
           Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]} (
@@ -120,7 +125,7 @@ export default function WeeklyTexts() {
             <Empty title={done.length ? 'All of this week’s texts are sent or skipped.' : 'No student needs a text this week. They appear here when something is late, due in the next 7 days, or a meeting is coming up.'} />
           </div>
         ) : (
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {rows.map((row) => (
               <Row
                 key={row.student.id}
@@ -132,7 +137,7 @@ export default function WeeklyTexts() {
                 onDraft={(options) => void draft(row, options)}
               />
             ))}
-          </ul>
+          </MotionList>
         )}
       </Card>
 
@@ -168,105 +173,120 @@ function Row({
   const phone = student.phone?.trim()
   const over = weeklyTextTooLong(text)
 
-  return (
-    <li className="flex flex-col gap-3 border-t border-line px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Link to={`/app/students/${student.id}`} className="text-sm font-semibold text-accent hover:underline">
-            {fullName(student)}
-          </Link>
-          <span className="text-[13px] text-muted">{phone || 'no phone number'}</span>
-          {draft?.source && <AiTag source={draft.source} />}
-        </span>
-        <Button variant="quiet" onClick={() => skipWeeklyText(student.id, row.weekStart)}>
-          Skip this week
-        </Button>
-      </div>
+  const name = (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center text-sm font-semibold text-accent hover:underline">
+        {fullName(student)}
+      </Link>
+      <span className="text-[13px] text-muted">{phone || 'no phone number'}</span>
+      {draft?.source && <AiTag source={draft.source} />}
+    </span>
+  )
+  const skip = (
+    <Button variant="quiet" aria-label={`Skip ${student.firstName} this week`} onClick={() => skipWeeklyText(student.id, row.weekStart)}>
+      Skip this week
+    </Button>
+  )
+  const tell = parent.offered && parent.parent && (
+    <CheckRow
+      checked={parent.ticked}
+      disabled={busy || draft?.parentCopy?.status === 'sent'}
+      onChange={onTellParent}
+      hint={draft ? `${parent.parent.name}, by ${CHANNEL_LABEL[parent.parent.channel]}. A separate short message, approved on its own.` : `${parent.parent.name}, by ${CHANNEL_LABEL[parent.parent.channel]}`}
+    >
+      Also tell parent
+    </CheckRow>
+  )
+  const factsUsed = (
+    <Disclosure label="Facts used, computed by Platinum" count={facts.length}>
+      <ul className="space-y-0.5 rounded-control border border-line p-3 text-[13px] leading-relaxed text-ink-soft">
+        {facts.map((line) => (
+          <li key={line} className="break-words">
+            {line}
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  )
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div className="rounded-lg border border-line p-3">
-          <p className="text-xs font-semibold text-muted">Facts used, computed by Platinum</p>
-          <ul className="mt-1 space-y-0.5 text-[13px] leading-relaxed text-ink-soft">
-            {facts.map((line) => (
-              <li key={line} className="break-words">
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {draft ? (
-            <>
-              <textarea
-                className={cx(textareaClass, 'min-h-32')}
-                aria-label={`Text to ${student.firstName}`}
-                value={previewStudentLink(text)}
-                onChange={(e) => setText(e.target.value.split(STUDENT_LINK_PREVIEW).join(STUDENT_LINK_PLACEHOLDER))}
-                onBlur={() => updateWeeklyText(draft.id, text)}
-              />
-              <p className={cx('text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
-                {weeklyTextLength(text)} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
-              </p>
-              {draft.lead && (
-                <p className="text-[13px] text-ink-soft">
-                  <strong>Leads with:</strong> {draft.lead.title}
-                  <span className="text-muted">
-                    {' '}
-                    · the AI’s choice of the most urgent task{draft.lead.changedOrder ? ', ahead of one that is more overdue' : ', which is also the most overdue'}
-                    {draft.lead.reason && `. Its reason: ${draft.lead.reason}`}
-                  </span>
-                </p>
-              )}
-              {draft.usedNote && (
-                <p className="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
-                  <span>
-                    <strong>Used:</strong> {draft.usedNote.text}
-                  </span>
-                  <Button variant="quiet" className="-my-2" disabled={busy} onClick={() => onDraft({ useNotes: false })}>
-                    Redraft without it
-                  </Button>
-                </p>
-              )}
-              {draft.source?.kind === 'placeholder' && (
-                <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-                  <strong>Fixed template, not AI wording.</strong> {draft.source.reason}
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="rounded-lg bg-canvas px-3 py-4 text-sm text-muted">{busy ? 'Drafting…' : 'No draft yet.'}</p>
-          )}
-          <AiErrorNote message={error} />
-
-          <div className="flex flex-wrap items-center gap-2">
-            {!draft ? (
-              <Button onClick={() => onDraft()} disabled={busy}>
-                {busy ? 'Drafting…' : 'Draft'}
-              </Button>
-            ) : (
-              <WeeklyTextSend draft={draft} student={student} text={text}>
-                <Button variant="quiet" onClick={() => onDraft()} disabled={busy}>
-                  {busy ? 'Drafting…' : 'Draft again'}
-                </Button>
-              </WeeklyTextSend>
-            )}
-          </div>
-          {draft && <WeeklyTextSendNote student={student} />}
-        </div>
-      </div>
-
-      {parent.offered && parent.parent && (
-        <label className="flex min-h-11 flex-wrap items-center gap-2 text-sm">
-          <input type="checkbox" className="h-4 w-4" checked={parent.ticked} disabled={busy || draft?.parentCopy?.status === 'sent'} onChange={(e) => onTellParent(e.target.checked)} />
-          Also tell parent
-          <span className="text-[13px] text-muted">
-            ({parent.parent.name}, by {CHANNEL_LABEL[parent.parent.channel]}. A separate short message, approved on its own.)
+  // Nothing to read yet: one line a student, with the facts a press away.
+  if (!draft) {
+    return (
+      <div className="flex flex-col px-4 py-2 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <span className="min-w-[12rem] flex-1">{name}</span>
+          {tell}
+          <span className="flex flex-wrap items-center gap-1">
+            <Button onClick={() => onDraft()} busy={busy} aria-label={`Draft the text to ${student.firstName}`}>
+              {busy ? 'Drafting…' : 'Draft'}
+            </Button>
+            {skip}
           </span>
-        </label>
-      )}
-      {draft?.parentCopy && <ParentCopyBlock text={draft} student={student} />}
-    </li>
+        </div>
+        {factsUsed}
+        <AiErrorNote message={error} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="motion-fade flex flex-col gap-3 px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {name}
+        {skip}
+      </div>
+      {factsUsed}
+
+      <div className="flex flex-col gap-2">
+        <textarea
+          className={cx(textareaClass, 'min-h-32')}
+          aria-label={`Text to ${student.firstName}`}
+          value={previewStudentLink(text)}
+          onChange={(e) => setText(e.target.value.split(STUDENT_LINK_PREVIEW).join(STUDENT_LINK_PLACEHOLDER))}
+          onBlur={() => updateWeeklyText(draft.id, text)}
+        />
+        <p className={cx('nums text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
+          {weeklyTextLength(text)} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
+        </p>
+        {draft.lead && (
+          <p className="text-[13px] text-ink-soft">
+            <strong>Leads with:</strong> {draft.lead.title}
+            <span className="text-muted">
+              {' '}
+              · the AI’s choice of the most urgent task{draft.lead.changedOrder ? ', ahead of one that is more overdue' : ', which is also the most overdue'}
+              {draft.lead.reason && `. Its reason: ${draft.lead.reason}`}
+            </span>
+          </p>
+        )}
+        {draft.usedNote && (
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
+            <span>
+              <strong>Used:</strong> {draft.usedNote.text}
+            </span>
+            <Button variant="quiet" className="-my-2" disabled={busy} onClick={() => onDraft({ useNotes: false })}>
+              Redraft without it
+            </Button>
+          </p>
+        )}
+        {draft.source?.kind === 'placeholder' && (
+          <Note tone="warn">
+            <strong>Fixed template, not AI wording.</strong> {draft.source.reason}
+          </Note>
+        )}
+        <AiErrorNote message={error} />
+        <div className="flex flex-wrap items-center gap-2">
+          <WeeklyTextSend draft={draft} student={student} text={text}>
+            <Button variant="quiet" onClick={() => onDraft()} busy={busy}>
+              {busy ? 'Drafting…' : 'Draft again'}
+            </Button>
+          </WeeklyTextSend>
+        </div>
+        <WeeklyTextSendNote student={student} />
+      </div>
+
+      {tell}
+      {draft.parentCopy && <ParentCopyBlock text={draft} student={student} />}
+    </div>
   )
 }
 
@@ -295,7 +315,7 @@ function Done() {
                 ) : (
                   <>
                     <Pill>Skipped</Pill>
-                    <Button variant="quiet" onClick={() => unskip(w.id)}>
+                    <Button variant="quiet" aria-label={`Undo skipping ${student?.firstName ?? 'this student'}`} onClick={() => unskip(w.id)}>
                       Undo
                     </Button>
                   </>

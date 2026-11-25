@@ -333,7 +333,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
       )}
 
       {/* Feedback */}
-      <div className="flex flex-col gap-3 rounded-lg border border-accent-line bg-accent-soft p-4">
+      <div tabIndex={-1} data-focus-home className="flex flex-col gap-3 rounded-control border border-accent-line bg-accent-soft p-4 focus:outline-none">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-semibold">{feedback?.review === 'approved' ? 'Feedback sent' : 'Feedback draft'}</span>
           {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Discarded'}</Pill>)}

@@ -3,7 +3,7 @@
 // The Inbox, the assistant panel and the student's own tabs all use this
 // card, so a draft reads and is edited the same way wherever it is met.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../shared/dispatch'
 import { outboxStatusLabel } from '../../shared/outbox'
@@ -14,7 +14,7 @@ import { WEEKLY_TEXT_MAX, reminderQueue } from '../lib/reminders'
 import { translateProposal } from '../services/agentClient'
 import { ProposalNotDecided, useData, useStore } from '../store/store'
 import type { DraftParentUpdate, DraftTask, ID, OwnerType, ProfileChange, ProfilePatch } from '../types'
-import { TimeLeft, useLeaving } from './motion'
+import { TimeLeft, focusPage, useLeaving } from './motion'
 import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from './WeeklyTextSend'
 import { Button, Field, Modal, Pill, SendLabel, cx, inputBase, inputClass, textareaClass, useToast } from './ui'
 
@@ -58,8 +58,23 @@ export function ApprovalCard({
   const [skipping, setSkipping] = useState(false)
   const [settled, setSettled] = useState<'approved' | 'discarded'>()
   const [error, setError] = useState<string>()
+  const root = useRef<HTMLDivElement>(null)
   const student = findStudent(data, item.studentId)
   const busy = useApprovalSends((s) => Boolean(item.proposalId && s.deciding[item.proposalId]))
+
+  // Where the card is replaced by its outcome rather than leaving a list, focus stays in that place.
+  useLayoutEffect(() => {
+    const el = root.current
+    return () => {
+      if (!el?.contains(document.activeElement)) return
+      const home = el.closest<HTMLElement>('[data-focus-home]')
+      queueMicrotask(() => {
+        if (el.isConnected || (document.activeElement && document.activeElement !== document.body)) return
+        if (home?.isConnected) home.focus({ preventScroll: true })
+        else focusPage()
+      })
+    }
+  }, [])
   const messageId = useApprovalSends((s) => (item.proposalId ? s.messageOf[item.proposalId] : undefined))
   // A draft whose message is already on its way is not offered for approval again.
   const sending = data.outbox.some((m) => m.id === messageId && m.status !== 'cancelled') ? messageId : undefined
@@ -116,7 +131,7 @@ export function ApprovalCard({
   }
 
   return (
-    <div className={cx('flex flex-col gap-3', compact ? 'w-full' : 'px-4 py-3 sm:px-5', className)} data-settled={leaving ? settled : undefined}>
+    <div ref={root} className={cx('flex flex-col gap-3', compact ? 'w-full' : 'px-4 py-3 sm:px-5', className)} data-settled={leaving ? settled : undefined}>
       <div className={cx('flex gap-x-6 gap-y-3', compact ? 'flex-col' : 'flex-wrap items-start justify-between')}>
       <div className={cx('min-w-0', !compact && 'max-w-full flex-1 basis-80')}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

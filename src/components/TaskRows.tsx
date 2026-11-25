@@ -159,7 +159,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           Add a file
         </label>}
       </form>
-      <p className="-mt-1 text-xs text-muted">v0 records the file’s name only. The file itself is not stored.</p>
+      <p className="-mt-1 text-xs text-muted">Only the file’s name is recorded here. The file itself is not stored.</p>
 
       <form
         className="flex flex-wrap gap-2"

@@ -114,7 +114,7 @@ export default function ReportsTab({ student }: { student: Student }) {
               </label>
             ))}
           </div>
-          <p className="text-xs text-muted">v0 has no scheduler: the schedule records your intention, and updates after a meeting are drafted when you log it. Language and channel are set on each parent in the Overview tab.</p>
+          <p className="text-xs text-muted">The schedule is a note to yourself: nothing is drafted on a timer. An update after a meeting is drafted when you log it. Language and channel are set on each parent in the Overview tab.</p>
         </Card>
 
         <Card className="flex flex-col gap-3 p-5">

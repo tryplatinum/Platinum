@@ -22,6 +22,7 @@ import {
   type ButtonHTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from 'react'
 import { Link, useSearchParams, type LinkProps } from 'react-router-dom'
 import { formatTimestamp, parseISODate, type ISODate } from '../lib/dates'
@@ -105,7 +106,7 @@ export function PageHeader({ title, above, sub, pill, actions }: { title: ReactN
         </div>
         {sub && <p className="mt-1 text-sm text-muted">{sub}</p>}
       </div>
-      {actions && <div className="flex min-w-0 flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex w-full min-w-0 flex-wrap gap-2 sm:w-auto">{actions}</div>}
     </header>
   )
 }
@@ -163,7 +164,7 @@ const BUTTON_VARIANT: Record<Variant, string> = {
  * `busy` is for a button waiting on the server: it turns a small ring beside
  * the label and cannot be pressed again. The button keeps its place and focus.
  */
-export function Button({ variant = 'secondary', className, busy, disabled, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean }) {
+export function Button({ variant = 'secondary', className, busy, disabled, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean; ref?: Ref<HTMLButtonElement> }) {
   return (
     <button type="button" {...rest} disabled={disabled || busy} aria-busy={busy || undefined} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)}>
       {busy && <LoaderCircle size={16} strokeWidth={1.75} className="motion-spin shrink-0" aria-hidden />}

@@ -424,6 +424,107 @@ export function proposalApproval(p: AgentProposal): ApprovalItem {
   }
 }
 
+/** A meeting's drafts that still wait for the counselor, as approvals. The meeting review and the Inbox build their cards from this. */
+export function meetingApprovals(data: AppData, m: Meeting): ApprovalItem[] {
+  const items: ApprovalItem[] = []
+  const sourceKey = `meeting:${m.id}`
+  const sourceLabel = `From meeting on ${formatDate(m.date)}`
+  const sourceLine = `Drafted from meeting notes, ${formatDate(m.date)}`
+  const sortAt = `${m.date}T${m.time || '00:00'}`
+  const ai = m.ai
+  if (ai?.notesReview === 'pending') {
+    const preview = [...ai.decided, ...ai.progress, ...ai.watch].slice(0, 2).join(' · ') || ai.notes[0] || m.title
+    items.push({ key: `${m.id}:notes`, kind: 'notes', studentId: m.studentId, sourceKey, sourceLabel, sourceLine, preview, isSend: false, sortAt, meetingId: m.id })
+  }
+  for (const t of ai?.draftTasks ?? []) {
+    if (t.review !== 'pending') continue
+    items.push({
+      key: `${m.id}:task:${t.id}`,
+      kind: 'task',
+      studentId: m.studentId,
+      sourceKey,
+      sourceLabel,
+      sourceLine,
+      preview: t.detail ? `${t.title} — ${t.detail}` : t.title,
+      isSend: false,
+      sortDue: t.dueDate,
+      sortAt,
+      meetingId: m.id,
+      draftId: t.id,
+    })
+  }
+  for (const u of ai?.parentUpdates ?? []) {
+    if (u.review !== 'pending') continue
+    const parent = findStudent(data, m.studentId)?.parents.find((p) => p.id === u.parentId)
+    items.push({
+      key: `${m.id}:parent:${u.id}`,
+      kind: 'parent_update',
+      studentId: m.studentId,
+      sourceKey,
+      sourceLabel,
+      sourceLine,
+      preview: u.bodyLocal ?? u.bodyEn,
+      isSend: true,
+      toName: parent?.name,
+      channel: parent?.channel,
+      language: parent?.language,
+      sortAt,
+      meetingId: m.id,
+      draftId: u.id,
+    })
+  }
+  if (m.recap?.review === 'pending') {
+    items.push({
+      key: `${m.id}:recap`,
+      kind: 'recap',
+      studentId: m.studentId,
+      sourceKey,
+      sourceLabel,
+      sourceLine,
+      preview: m.recap.summary,
+      isSend: true,
+      toName: findStudent(data, m.studentId)?.firstName,
+      channel: 'text',
+      language: 'en',
+      sortAt,
+      meetingId: m.id,
+    })
+  }
+  for (const c of ai?.profileChanges ?? []) {
+    if (c.review !== 'pending') continue
+    items.push({
+      key: `${m.id}:profile:${c.id}`,
+      kind: 'profile',
+      studentId: m.studentId,
+      sourceKey,
+      sourceLabel,
+      sourceLine,
+      preview: `${c.label}: ${c.from} → ${c.to}`,
+      isSend: false,
+      sortAt,
+      meetingId: m.id,
+      draftId: c.id,
+    })
+  }
+  for (const n of ai?.personalNotes ?? []) {
+    if (n.review !== 'pending') continue
+    items.push({
+      key: `${m.id}:remember:${n.id}`,
+      kind: 'remember',
+      studentId: m.studentId,
+      sourceKey,
+      sourceLabel,
+      sourceLine,
+      preview: n.text,
+      isSend: false,
+      sortAt,
+      meetingId: m.id,
+      draftId: n.id,
+    })
+  }
+  return items
+}
+
 /** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by allPendingApprovals (see reminderApprovals). */
 export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] {
   const active = new Set(activeStudents(data).map((s) => s.id))
@@ -431,102 +532,7 @@ export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] 
   const items: ApprovalItem[] = []
 
   for (const m of data.meetings) {
-    if (!mine(m.studentId) || pendingInMeeting(m) === 0) continue
-    const sourceKey = `meeting:${m.id}`
-    const sourceLabel = `From meeting on ${formatDate(m.date)}`
-    const sourceLine = `Drafted from meeting notes, ${formatDate(m.date)}`
-    const sortAt = `${m.date}T${m.time || '00:00'}`
-    const ai = m.ai
-    if (ai?.notesReview === 'pending') {
-      const preview = [...ai.decided, ...ai.progress, ...ai.watch].slice(0, 2).join(' · ') || ai.notes[0] || m.title
-      items.push({ key: `${m.id}:notes`, kind: 'notes', studentId: m.studentId, sourceKey, sourceLabel, sourceLine, preview, isSend: false, sortAt, meetingId: m.id })
-    }
-    for (const t of ai?.draftTasks ?? []) {
-      if (t.review !== 'pending') continue
-      items.push({
-        key: `${m.id}:task:${t.id}`,
-        kind: 'task',
-        studentId: m.studentId,
-        sourceKey,
-        sourceLabel,
-        sourceLine,
-        preview: t.detail ? `${t.title} — ${t.detail}` : t.title,
-        isSend: false,
-        sortDue: t.dueDate,
-        sortAt,
-        meetingId: m.id,
-        draftId: t.id,
-      })
-    }
-    for (const u of ai?.parentUpdates ?? []) {
-      if (u.review !== 'pending') continue
-      const parent = findStudent(data, m.studentId)?.parents.find((p) => p.id === u.parentId)
-      items.push({
-        key: `${m.id}:parent:${u.id}`,
-        kind: 'parent_update',
-        studentId: m.studentId,
-        sourceKey,
-        sourceLabel,
-        sourceLine,
-        preview: u.bodyLocal ?? u.bodyEn,
-        isSend: true,
-        toName: parent?.name,
-        channel: parent?.channel,
-        language: parent?.language,
-        sortAt,
-        meetingId: m.id,
-        draftId: u.id,
-      })
-    }
-    if (m.recap?.review === 'pending') {
-      items.push({
-        key: `${m.id}:recap`,
-        kind: 'recap',
-        studentId: m.studentId,
-        sourceKey,
-        sourceLabel,
-        sourceLine,
-        preview: m.recap.summary,
-        isSend: true,
-        toName: findStudent(data, m.studentId)?.firstName,
-        channel: 'text',
-        language: 'en',
-        sortAt,
-        meetingId: m.id,
-      })
-    }
-    for (const c of ai?.profileChanges ?? []) {
-      if (c.review !== 'pending') continue
-      items.push({
-        key: `${m.id}:profile:${c.id}`,
-        kind: 'profile',
-        studentId: m.studentId,
-        sourceKey,
-        sourceLabel,
-        sourceLine,
-        preview: `${c.label}: ${c.from} → ${c.to}`,
-        isSend: false,
-        sortAt,
-        meetingId: m.id,
-        draftId: c.id,
-      })
-    }
-    for (const n of ai?.personalNotes ?? []) {
-      if (n.review !== 'pending') continue
-      items.push({
-        key: `${m.id}:remember:${n.id}`,
-        kind: 'remember',
-        studentId: m.studentId,
-        sourceKey,
-        sourceLabel,
-        sourceLine,
-        preview: n.text,
-        isSend: false,
-        sortAt,
-        meetingId: m.id,
-        draftId: n.id,
-      })
-    }
+    if (mine(m.studentId) && pendingInMeeting(m) > 0) items.push(...meetingApprovals(data, m))
   }
 
   for (const r of data.reports) {

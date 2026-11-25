@@ -4,12 +4,12 @@
 // drafted reminder underneath. Today uses the same cards for students who are
 // slipping.
 
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { daysFromToday, formatDate } from '../lib/dates'
 import { dueText, fullName, lastReminder, statusText, type StudentSummary } from '../lib/derive'
 import { useData } from '../store/store'
-import { useIsWide } from './motion'
+import { useRoomFor } from './motion'
 import { ReminderComposer } from './ReminderComposer'
 import { Button, DateChip, LinkButton, ProgressWithCount, StatusPill, cx } from './ui'
 
@@ -17,8 +17,9 @@ import { Button, DateChip, LinkButton, ProgressWithCount, StatusPill, cx } from 
 const NEAR_DAYS = 10
 
 export function StudentTable({ rows }: { rows: StudentSummary[] }) {
-  const wide = useIsWide()
-  return wide ? <Table rows={rows} /> : <StudentCards rows={rows} />
+  const box = useRef<HTMLDivElement>(null)
+  const wide = useRoomFor(box, 680)
+  return <div ref={box}>{wide ? <Table rows={rows} /> : <StudentCards rows={rows} />}</div>
 }
 
 // ── The pieces both shapes share ────────────────────────────────────────────
@@ -133,8 +134,8 @@ export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; 
 function Table({ rows }: { rows: StudentSummary[] }) {
   const [reminding, setReminding] = useState<string>()
   return (
-    <div className="overflow-x-auto rounded-b-card">
-      <table className="w-full min-w-[700px] border-collapse text-sm">
+    <div className="overflow-hidden rounded-card">
+      <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-surface-2 text-left text-xs text-muted">
             <th scope="col" className="px-5 py-3 font-semibold">

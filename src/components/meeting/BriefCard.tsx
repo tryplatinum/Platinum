@@ -41,7 +41,7 @@ export function BriefCard({ meeting, student, heading = 'Before your next meetin
         {brief && <AiTag source={brief.source}>AI brief</AiTag>}
       </div>
       <div>
-        <p className="text-lg font-bold leading-snug">
+        <p className="text-lg font-semibold leading-snug">
           {formatDateLong(meeting.date)}, {formatTime(meeting.time)}
         </p>
         <p className="text-[13px] text-ink-soft">
@@ -73,6 +73,7 @@ export function BriefCard({ meeting, student, heading = 'Before your next meetin
             rows={Math.max(3, agenda.length + 1)}
             aria-label="Agenda, one item per line"
             defaultValue={agenda.join('\n')}
+            placeholder="One item per line"
             onBlur={(e) => updateMeeting(meeting.id, { agenda: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })}
           />
         ) : agenda.length ? (
@@ -101,10 +102,10 @@ export function BriefCard({ meeting, student, heading = 'Before your next meetin
       {busy && <Thinking label="AI is preparing the brief…" />}
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" onClick={() => setEditingAgenda(!editingAgenda)}>
+        <Button onClick={() => setEditingAgenda(!editingAgenda)} aria-expanded={editingAgenda}>
           {editingAgenda ? 'Save agenda' : 'Edit agenda'}
         </Button>
-        <Button onClick={() => run(() => prepareBrief(meeting.id))} disabled={busy}>
+        <Button onClick={() => run(() => prepareBrief(meeting.id))} busy={busy}>
           {brief ? 'Refresh AI brief' : 'Prepare AI brief'}
         </Button>
         <Button onClick={() => setModal('reschedule')}>Reschedule</Button>

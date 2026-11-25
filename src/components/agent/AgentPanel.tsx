@@ -539,7 +539,10 @@ function BubbleView({ message, studentId, pending, onRetry }: { message: Bubble;
         </div>
       )}
       {message.proposals.map((proposal) => (
-        <ProposalCard key={proposal.id} proposal={proposal} showStudent={proposal.studentId !== studentId} />
+        // Focus comes to this box when the card's buttons are gone.
+        <div key={proposal.id} tabIndex={-1} data-focus-home className="w-full focus:outline-none">
+          <ProposalCard proposal={proposal} showStudent={proposal.studentId !== studentId} />
+        </div>
       ))}
       <ApproveAllInReply proposals={message.proposals} />
     </div>
