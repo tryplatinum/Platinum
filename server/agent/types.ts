@@ -9,7 +9,6 @@ export interface AgentContext {
   counselorId: string
   counselorName: string
   counselorFirstName: string
-  firmName: string
   /** Null = general / roster thread. */
   studentId: string | null
   studentName?: string
