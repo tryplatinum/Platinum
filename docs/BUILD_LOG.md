@@ -27,6 +27,46 @@ What `drive.file` cannot do: list the rest of a linked folder. Folder sync now s
 Checks: `typecheck`, `lint`, `test:notes` (now with the upload window) and `test:outbox` (phone: setup code single use and expiry, 90-day key, wrong device, an expired claim becomes unconfirmed and no device can claim it, a late report still resolves it, "It was sent" and "Send again", bodies cleared on final status, no `#k=` in the setup screens) all pass. W1b edited only comments in `20261203000001_phone_pairing.sql`; no schema change.
 
 Manual checks after the push: Google consent shows only "See, edit, create and delete only the specific Google Drive files you use with this app"; pairing uses a code and an 11-minute-old code is refused; "Revoke this phone" makes the Shortcut's next request fail; a sent phone text's `phone_send_jobs.body` is null; finishing a student upload after 5 minutes is refused.
+## Links, assistant grants, activity authors (branch `sec-fix-a1`)
+
+**Migration not pushed.** `supabase/migrations/20261204000001_links_agent_activity_grants.sql` waits for Aaron to run `npm run db:push`, then `npm run db:types`. The remote was at `20261202000001`. `20261203000001` is left for the phone-pairing migration on the other branch. `src/lib/database.types.ts` was edited by hand to match; regenerate it after the push.
+
+What now holds:
+
+- **Student links** need `expires_at`. Old rows without one got 30 days from the push; new rows default to 30 days; the browser sets 30 days on create and on rotate (`studentLinkExpiry` in `shared/dispatch.ts`). A missing, blank or unreadable expiry does not open. Signed-in people read every column of `student_links` except `token_hash`; the browser selects the columns by name (`LINK_COLUMNS` in `src/data/repo.ts`).
+- **Logs.** The log transport prints the outbox id, channel, a masked recipient (`maskRecipient`: last 4 digits, or first letter and domain) and the body length. Never the body or subject. A send error has any `/s/` address replaced before it is logged or stored (`withoutStudentLinks`). `test:outbox` captures every console method during a linked send and a failed one and fails if `/s/` or the body appears.
+- **Assistant tables.** Signed-in people may only read `agent_threads`, `agent_messages`, `agent_proposals`; `reminder_skips` also takes insert and delete. Approve, discard and edit go through `decide_agent_proposal` and `edit_agent_proposal` (security definer: pending rows of the caller's firm only; the decider is always the caller). `/api/translate` saves English the same way. `agent_proposals` and `agent_threads` reference `students (firm_id, id)`. `insertProposal` finds the student with the counselor's own client in their firm before the service-role insert.
+- **Daily budget.** `agent_usage` (service role only) counts model calls per firm per UTC day. `reserve_agent_call` checks and takes one in a single statement. `runAgent` takes one before the first call (429 when none is left) and one before each later round; when it runs out the turn ends with a note. `AGENT_DAILY_LIMIT` now counts model calls, default 200.
+- **Errors.** `/api/agent` (and its history), `/api/translate`, `/api/dispatch` return `{ code, message: 'Something went wrong. Try again.' }` for server failures; the real error is logged on the server. Tool read failures give the model a plain sentence. `file_document`'s 42501 is no longer passed through as text.
+- **Outbox** has no insert, update or delete policies left; `queue_message` and `cancel_message` are the only writers.
+- **Activity** has `actor_user` (defaults to `auth.uid()`). A signed-in person may insert or update only `actor = 'counselor'` lines with `actor_user` = themselves. `logActivity` stamps counselor lines; `diffData` sends only counselor lines. The meeting "drafts are ready" AI line is written by `log_meeting_drafts_ready` after the save. Loading the sample saves only its counselor lines (README known gaps).
+- **Message length.** `propose_message` and `propose_parent_update` refuse a body over 120 words for text, LINE and WeChat, or 200 for email, before the signature (`draftWords` in `server/agent/text.ts`; two Chinese characters count as one word). The tool descriptions say so.
+- `AGENTS.md` has the public-repository rule.
+
+Checked: `typecheck`, `lint`, `test:notes`, `test:outbox` pass. The full migration chain plus the new file was run in PGlite (Postgres in WASM) with stub `auth` and `storage` schemas: backfill, column grant, proposal functions, cross-firm proposal refused even for the service role, budget stops at the limit, activity author rules, `apply_changes` and `queue_message` still work. Not run here, because they need the pushed migration: `test:agent` (new cases 11 and 12: another firm's student refused from the general thread; two requests at the limit, one 200 and one 429) and `test:isolation` (new section on link hashes, assistant tables, outbox and activity authors). Draft timing against the 12s target is measured by that `test:agent` run.
+
+After the push: `npm run db:types`, then `npm run test:agent` and `npm run test:isolation`. On the dev server, open a student link dialog (list, create, rotate), approve and discard an assistant draft, draft a meeting and check the Activity screen shows the AI line after a reload.
+
+### Follow-up on `sec-fix-a1`: thinking in replayed history, thinking budget
+
+- **Replay.** The system prompt carries a live student summary, so it changes whenever the record does. A thinking block is signed against the prompt it was made under, and replaying one after a change made Claude refuse the request (a 502). `withoutThinking` in `server/agent/run.ts` drops `thinking` and `redacted_thinking` blocks from every assistant row loaded from `agent_messages`, and they are no longer saved: nothing but replay ever read them (history and sources use text and tool blocks only). Within one request the tool loop still sends the full response back, as the API requires. No beta header.
+- **Agent loop thinking: off.** `thinking: { type: 'between_tools' }` on the agent's `messages.create`. On `claude-sonnet-5-5` that is the off switch (`disabled` is rejected with a 400 that says so): no thinking before a reply, only short notes between tool calls. Brief and brainstorm (`runFeature`) unchanged: adaptive thinking with each feature's effort; they already met their targets.
+- **Draft confirmation from the server.** When the only tool in a round is a successful `propose_message` or `propose_parent_update`, the reply is written by `formatDraftConfirmation` (`server/agent/format.ts`): "I drafted an email to Liu Min in Simplified Chinese. Review it in Approvals." That drops the second model call.
+- **Tests.** `test:agent` case 13: no saved assistant row has a thinking block; a first turn; an older turn planted with a thinking block whose signature the API would reject; a task marked done; a follow-up in the same thread returns 200 and names only the remaining overdue task. Case 12 now passes (one 200, one 429).
+- **Joined words** like "twooverdue" and "hasno" were the terminal capture dropping the space at a soft line wrap. The same reply showed the join in different places in two lines, and the run's log file has no joined words.
+
+Timing, `test:agent` wall time (model time in brackets):
+
+| Case | M4b-4 | Now |
+|---|---|---|
+| Overdue | 3.1s (1.3s) | 5.6s (2.0s); 2.7s (1.3s) in case 13 |
+| Draft reminder | 13.4s (9.2s + 0.9s, 1,183 out) | 9.6s (6.6s, 634 out, one call) |
+| Meeting brief | 7.7s | 9.3s (brief tool 5.1s) |
+| Essay brainstorm | 10.6s | 10.4s (brainstorm tool 6.1s) |
+
+The draft is under 12s but not at 5s. What is left is the model writing the email itself (a Chinese email, 634 output tokens) and about 2.5s of database work per request before the first model call (counselor, firm, student summary, history, the budget reservation). The brief and brainstorm vary by a second or two between runs with no change to them.
+
+Checks: `typecheck`, `lint`, `test:notes`, `test:outbox`, `test:agent` (all cases) pass.
 
 ## M4b-4 (branch `m4b4-agent-speed`)
 

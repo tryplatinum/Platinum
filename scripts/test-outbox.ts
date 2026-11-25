@@ -20,11 +20,14 @@ import {
   allowlistAllows,
   fillStudentLink,
   linkIsExpired,
+  maskRecipient,
   normalizeEmail,
   normalizePhone,
   parseAllowlist,
   previewStudentLink,
   resolveAddress,
+  studentLinkExpiry,
+  withoutStudentLinks,
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
@@ -134,10 +137,19 @@ check(
 
 // ── Link expiry ─────────────────────────────────────────────────────────────
 
-check('a null expiry never expires', !linkIsExpired(null))
-check('an undefined expiry never expires', !linkIsExpired(undefined))
+check('a null expiry is rejected', linkIsExpired(null))
+check('an undefined expiry is rejected', linkIsExpired(undefined))
+check('a blank expiry is rejected', linkIsExpired('') && linkIsExpired('   '))
+check('an unreadable expiry is rejected', linkIsExpired('not a date'))
 check('a future expiry is still valid', !linkIsExpired(new Date(Date.now() + 60_000).toISOString()))
 check('a past expiry is rejected', linkIsExpired(new Date(Date.now() - 1000).toISOString()))
+check('a new link expires in 30 days', Math.abs(Date.parse(studentLinkExpiry()) - Date.now() - 30 * 86_400_000) < 5_000)
+
+// ── What may reach a log ────────────────────────────────────────────────────
+
+check('a phone is masked to its last 4 digits', maskRecipient('+1 (555) 123-4567') === '…4567')
+check('an email is masked to its first letter and domain', maskRecipient('Ada.Example@example.com') === 'A…@example.com')
+check('a student link is removed from text', withoutStudentLinks('failed at https://app.example/s/abc123 today') === 'failed at [student link] today')
 
 // ── Email subject ───────────────────────────────────────────────────────────
 
@@ -363,6 +375,53 @@ await dispatch({ email: 'gmail', allowlist: ALLOW })
 check('…and it keeps failing that way until they reconnect', rowOf(after).error === 'Reconnect Gmail for 林老師' && gmailSends.length === 2)
 check('no failure reason holds a token or Google’s raw answer', db.table('outbox').every((r) => !/token|invalid_grant|Bearer|\{/.test(String(r.error ?? ''))))
 check('every message handed to Gmail carried a bearer token in the header only', gmailSends.every((s) => s.authorization === 'Bearer fake-access-token' && !JSON.stringify(s.message).includes('fake-access-token')))
+
+// ── Nothing a logger sees holds a body or a student link ────────────────────
+// Every console method is captured while texts with {{student_link}} go out
+// through the log transport, and while one fails after its link was made.
+
+{
+  const BODY = 'Hi Mia, your checklist is here: '
+  const lines: string[] = []
+  const methods = ['log', 'info', 'warn', 'error', 'debug'] as const
+  const saved = methods.map((m) => console[m])
+  for (const m of methods) {
+    console[m] = (...args: unknown[]) => {
+      lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '))
+    }
+  }
+  process.env.PUBLIC_APP_URL = 'https://app.example'
+  process.env.SEND_ALLOWLIST = '+1 555 000 0001'
+  delete process.env.TRANSPORT_TEXT
+  const linked = queue({ to_kind: 'student', to_name: 'Mia', parent_id: null, channel: 'text', language: 'en', kind: 'weekly_text', body: `${BODY}${STUDENT_LINK_PLACEHOLDER}` })
+  const realLog = new LogTransport()
+  const failing = queue({ to_kind: 'student', to_name: 'Mia', parent_id: null, channel: 'email', language: 'en', kind: 'weekly_text', body: `${BODY}${STUDENT_LINK_PLACEHOLDER}` })
+  process.env.SEND_ALLOWLIST = '+1 555 000 0001, student@example.com'
+  // The email transport throws an error that quotes the filled-in link.
+  const original = LogTransport.prototype.send
+  LogTransport.prototype.send = async function (input) {
+    if (input.channel === 'email') throw new Error(`provider refused ${input.body.slice(BODY.length)}`)
+    return original.call(this, input)
+  }
+  try {
+    await dispatchFirm(FIRM)
+    LogTransport.prototype.send = original
+    await realLog.send({ channel: 'email', to: 'student@example.com', body: `${BODY}https://app.example/s/direct`, language: 'en', outboxId: 'x' })
+  } finally {
+    LogTransport.prototype.send = original
+    methods.forEach((m, i) => (console[m] = saved[i]))
+    delete process.env.PUBLIC_APP_URL
+    delete process.env.SEND_ALLOWLIST
+  }
+  check('the linked text was sent through the log transport', rowOf(linked).status === 'sent' && String(rowOf(linked).provider_message_id).startsWith('log_'))
+  check('…and a link row was made for it', db.table('student_links').some((l) => l.student_id === STUDENT && typeof l.expires_at === 'string'))
+  check('the failing email failed', rowOf(failing).status === 'failed')
+  check('something was logged', lines.length > 0, `${lines.length} lines`)
+  check('no logged line contains /s/', lines.every((l) => !l.includes('/s/')), lines.find((l) => l.includes('/s/')))
+  check('no logged line contains the body', lines.every((l) => !l.includes(BODY.trim())))
+  check('the log transport names the channel, a masked recipient and the body length', lines.some((l) => l.includes('[transport:log]') && l.includes('…0001') && l.includes('bodyLength') && !l.includes('555 000 0001')))
+  check('the stored failure reason holds no link either', !String(rowOf(failing).error).includes('/s/'))
+}
 
 // ── Reminder skips ──────────────────────────────────────────────────────────
 

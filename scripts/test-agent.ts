@@ -11,8 +11,9 @@ import './loadEnv.js'
 import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { POST } from '../api/agent.js'
-import { hasGluedSentence, joinAssistantText, signMessage } from '../server/agent/text.js'
-import { createAccount, removeAccount, requireSettings, adminClient } from './testAccounts.js'
+import { runTool } from '../server/agent/tools.js'
+import { DRAFT_WORD_LIMIT, draftTooLong, draftWords, hasGluedSentence, joinAssistantText, signMessage } from '../server/agent/text.js'
+import { createAccount, removeAccount, requireSettings, adminClient, type TestAccount } from './testAccounts.js'
 
 requireSettings()
 // The sample caseload has addresses but no Gmail and no phone. The log transport
@@ -195,6 +196,7 @@ async function ask(message: string, studentId: string | null = kevinId, env?: Re
 
 let mainBrief: string
 let mainBrainstorm: string
+let other: TestAccount | undefined
 
 try {
   check('joined text blocks are not glued', !hasGluedSentence(joinAssistantText(['Approvals.', 'Nothing is waiting.'])))
@@ -229,6 +231,8 @@ try {
     check('2 channel can send', channel === 'email' || channel === 'text', `got ${String(channel)}`)
     check('2 signed with the counselor name', drafted.includes('Counselor Agent'), drafted.slice(-80))
     check('2 does not introduce the counselor by role', !/college counselor|升学顾问|升學顧問/i.test(drafted))
+    const limit = channel === 'email' ? DRAFT_WORD_LIMIT.email : DRAFT_WORD_LIMIT.text
+    check('2 draft fits its channel’s length', draftWords(drafted) <= limit + 25, `${draftWords(drafted)} words, limit ${limit} before the signature`)
     const reply = body.reply ?? ''
     const snippet = drafted.replace(/\s+/g, ' ').trim().slice(0, 24)
     check('2 reply is a short confirmation', /review it in approvals/i.test(reply) && reply.length < 500, reply.slice(0, 180))
@@ -354,6 +358,89 @@ try {
     )
   }
 
+  // A proposal for another firm's student, from the general thread, is refused
+  // before anything is written. The same call for this firm's student is the control.
+  {
+    other = await createAccount('Agent other firm')
+    const otherStudentId = randomUUID()
+    const made = await other.client.from('students').insert({ id: otherStudentId, firm_id: other.firmId, first_name: 'Nora', last_name: 'Vale', grad_year: 2027 })
+    if (made.error) throw new Error(`could not insert the other firm's student: ${made.error.message}`)
+    const thread = await admin.from('agent_threads').insert({ firm_id: firmId, counselor_id: account.userId, student_id: null }).select('id').single()
+    if (thread.error) throw new Error(`could not open a general thread: ${thread.error.message}`)
+    const ctx = {
+      firmId,
+      counselorId: account.userId,
+      counselorName: 'Counselor Agent',
+      counselorFirstName: 'Counselor',
+      firmName: 'Test firm Agent',
+      studentId: null,
+      threadId: thread.data.id,
+      user: account.client,
+      service: admin,
+      createdProposals: [],
+    }
+    const task = { title: 'Send the transcript request', owner: 'student', dueDate: isoDaysFromToday(7), rationale: 'test' }
+    const refused = await runTool(ctx, 'propose_task', { ...task, studentId: otherStudentId })
+    const leaked = await admin.from('agent_proposals').select('id').eq('student_id', otherStudentId)
+    check('11 general thread refuses another firm’s student', !refused.ok, JSON.stringify(refused).slice(0, 160))
+    check('11 …and writes no proposal for them', (leaked.data ?? []).length === 0, `rows=${leaked.data?.length ?? 'error'}`)
+    const own = await runTool(ctx, 'propose_task', { ...task, studentId: kevinId })
+    check('11 the same call for this firm’s student is saved', own.ok, JSON.stringify(own).slice(0, 160))
+  }
+
+  check('a 121-word text is refused', draftTooLong(Array(121).fill('word').join(' '), 'text') !== null)
+  check('a 200-word email is accepted', draftTooLong(Array(200).fill('word').join(' '), 'email') === null)
+  check('240 Chinese characters fit a text', draftTooLong('字'.repeat(240), 'text') === null && draftTooLong('字'.repeat(242), 'text') !== null)
+
+  // Two requests arrive with one model call left today. Only one gets through.
+  {
+    const today = new Date().toISOString().slice(0, 10)
+    const set = await admin.from('agent_usage').upsert({ firm_id: firmId, day: today, calls: 9 }, { onConflict: 'firm_id,day' })
+    if (set.error) throw new Error(`could not set today's usage: ${set.error.message}`)
+    process.env.AGENT_DAILY_LIMIT = '10'
+    let results: Awaited<ReturnType<typeof ask>>[]
+    try {
+      results = await Promise.all([ask('Reply with one word: ready.'), ask('Reply with one word: ready.')])
+    } finally {
+      delete process.env.AGENT_DAILY_LIMIT
+    }
+    const statuses = results.map((r) => r.status).sort()
+    check('12 at the limit, one of two requests gets through', statuses[0] === 200 && statuses[1] === 429, `statuses=${statuses.join(',')}`)
+    const refused = results.find((r) => r.status === 429)
+    check('12 …the other is told the limit is reached', refused?.body.code === 'rate_limited')
+    const used = await admin.from('agent_usage').select('calls').eq('firm_id', firmId).eq('day', today).single()
+    check('12 the budget never goes past the limit', used.data?.calls === 10, `calls=${used.data?.calls}`)
+  }
+
+  // The student record changes between two turns of one thread, so the system
+  // prompt's live summary changes too. An older turn saved with a thinking block
+  // (planted here with a signature the API would reject) must not be replayed.
+  {
+    const stored = await admin.from('agent_messages').select('content').eq('firm_id', firmId).eq('role', 'assistant')
+    const thinking = (stored.data ?? []).filter((row) => JSON.stringify(row.content).includes('"type":"thinking"'))
+    check('13 no assistant row is saved with a thinking block', !stored.error && thinking.length === 0, `rows with thinking=${thinking.length}`)
+    const first = await ask("What's overdue for this student?")
+    check('13 first turn returns ok', first.status === 200 && Boolean(first.body.threadId))
+    const planted = await admin.from('agent_messages').insert([
+      { thread_id: first.body.threadId!, firm_id: firmId, role: 'user', content: [{ type: 'text', text: 'Thanks.' }] },
+      {
+        thread_id: first.body.threadId!,
+        firm_id: firmId,
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'An earlier turn made under another system prompt.', signature: 'c2lnbmVkLWZvci1hbm90aGVyLXByb21wdA==' },
+          { type: 'text', text: 'You are welcome.' },
+        ],
+      },
+    ])
+    if (planted.error) throw new Error(`could not plant the older turn: ${planted.error.message}`)
+    const done = await admin.from('tasks').update({ status: 'done', completed_by: 'student' }).eq('firm_id', firmId).ilike('title', 'Common App personal statement%').select('id')
+    check('13 the record changed between the turns', (done.data ?? []).length === 1)
+    const followUp = await ask('I just marked one done. What is still overdue?')
+    check('13 follow-up after the change returns ok, not 502', followUp.status === 200 && followUp.body.ok === true, `HTTP ${followUp.status}`)
+    check('13 follow-up reflects the change', /piq/i.test(followUp.body.reply ?? ''), (followUp.body.reply ?? '').slice(0, 160))
+  }
+
   await admin.from('agent_messages').delete().eq('firm_id', firmId)
   const fastModel = 'claude-haiku-5-5'
   process.env.AGENT_FAST_MODEL = fastModel
@@ -398,6 +485,7 @@ try {
   }
 } finally {
   await removeAccount(account)
+  if (other) await removeAccount(other)
 }
 
 if (failed > 0) {

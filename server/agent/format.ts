@@ -57,9 +57,22 @@ export function formatBrainstorm(data: unknown): string {
     .join('\n\n')
 }
 
+const LANGUAGE: Record<string, string> = { en: 'English', 'zh-Hans': 'Simplified Chinese', 'zh-Hant': 'Traditional Chinese' }
+const CHANNEL: Record<string, string> = { text: 'text', email: 'email', line: 'LINE message', wechat: 'WeChat message' }
+
+/** The confirmation after a drafted message: what, to whom, on which channel, in which language. */
+export function formatDraftConfirmation(data: unknown): string {
+  const row = data && typeof data === 'object' ? (data as { toName?: unknown; channel?: unknown; language?: unknown }) : {}
+  if (typeof row.toName !== 'string' || typeof row.channel !== 'string' || typeof row.language !== 'string') return ''
+  const channel = CHANNEL[row.channel] ?? row.channel
+  const language = LANGUAGE[row.language] ?? row.language
+  return `I drafted ${/^[aeiou]/i.test(channel) ? 'an' : 'a'} ${channel} to ${row.toName} in ${language}. Review it in Approvals.`
+}
+
 /** The reply for a tool whose output is the whole answer. Empty when this tool is not one of those. */
 export function formatAnswer(name: string, data: unknown): string {
   if (name === 'prepare_meeting_brief') return formatBrief(data)
   if (name === 'essay_brainstorm') return formatBrainstorm(data)
+  if (name === 'propose_message' || name === 'propose_parent_update') return formatDraftConfirmation(data)
   return ''
 }

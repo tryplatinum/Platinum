@@ -95,18 +95,41 @@ export function fillStudentLink(body: string, url: string): string {
   return body.split(STUDENT_LINK_PLACEHOLDER).join(url)
 }
 
+/** Replaces any student link (an address with /s/ in it) so the text can be logged or stored. */
+export function withoutStudentLinks(text: string): string {
+  return text.replace(/\S*\/s\/\S*/g, '[student link]')
+}
+
 /** Counselor-facing preview of a body that still has the placeholder. */
 export function previewStudentLink(body: string): string {
   return body.split(STUDENT_LINK_PLACEHOLDER).join(STUDENT_LINK_PREVIEW)
 }
 
+/** How long a student link opens the page after it is made or replaced. */
+export const STUDENT_LINK_DAYS = 30
+
+/** The expiry for a link made or replaced now. */
+export const studentLinkExpiry = (now = Date.now()) => new Date(now + STUDENT_LINK_DAYS * 86_400_000).toISOString()
+
 /**
- * True when the link has an expiry that has passed. A null/undefined expiry
- * means the link never expires (older rows).
+ * True when the link must not open: its expiry has passed, or it has no
+ * readable expiry at all. Every link has one.
  */
 export function linkIsExpired(expiresAt: string | null | undefined, now = Date.now()): boolean {
-  if (expiresAt == null || expiresAt === '') return false
+  if (expiresAt == null || expiresAt.trim() === '') return true
   const at = Date.parse(expiresAt)
-  if (Number.isNaN(at)) return false
+  if (Number.isNaN(at)) return true
   return at <= now
+}
+
+/**
+ * A recipient as it may appear in a log line: the last 4 digits of a phone, or
+ * the first letter and the domain of an email address.
+ */
+export function maskRecipient(to: string): string {
+  const value = to.trim()
+  const at = value.lastIndexOf('@')
+  if (at > 0) return `${value[0]}…${value.slice(at)}`
+  const digits = value.replace(/\D/g, '')
+  return digits.length >= 4 ? `…${digits.slice(-4)}` : '…'
 }

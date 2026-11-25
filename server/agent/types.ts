@@ -33,3 +33,9 @@ export interface CreatedProposal {
 }
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; error: string }
+
+/** A database read in a tool failed. The model gets a plain sentence; the real error is logged here only. */
+export function readFailed(tool: string, error: { message?: string }): ToolResult {
+  console.error(`[agent] ${tool} read failed:`, error.message ?? 'unknown')
+  return { ok: false, error: 'Could not read that from the record.' }
+}

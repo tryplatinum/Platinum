@@ -3,7 +3,7 @@
 
 import type { StudentFacts } from '../../shared/contract.js'
 import { fastModelName, runFeature } from '../claude.js'
-import type { AgentContext, ToolResult } from './types.js'
+import { readFailed, type AgentContext, type ToolResult } from './types.js'
 
 function daysBetween(a: string, b: string): number {
   const ms = Date.parse(b) - Date.parse(a)
@@ -23,7 +23,7 @@ function addDays(iso: string, days: number): string {
 /** Builds and returns a pre-meeting brief for the conversation (not a proposal). */
 export async function prepareMeetingBrief(ctx: AgentContext, meetingId: string): Promise<ToolResult> {
   const { data: meeting, error } = await ctx.user.from('meetings').select('*').eq('id', meetingId).maybeSingle()
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('prepare_meeting_brief', error)
   if (!meeting) return { ok: false, error: 'Meeting not found.' }
   if (ctx.studentId && meeting.student_id !== ctx.studentId) {
     return { ok: false, error: 'That meeting belongs to another student. Stay in this student’s thread.' }

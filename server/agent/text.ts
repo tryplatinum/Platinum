@@ -13,6 +13,29 @@ export function joinAssistantText(parts: readonly string[]): string {
   return joined.replace(/([a-z])\.([A-Z])/g, '$1.\n$2').trim()
 }
 
+/** The longest drafted message, in words, before the signature. Email may run longer than a text. */
+export const DRAFT_WORD_LIMIT = { text: 120, email: 200 } as const
+
+const CJK = /[\u3400-\u9fff\uf900-\ufaff]/g
+
+/**
+ * Length in English-word terms. Chinese has no spaces, so two characters count
+ * as one word: 120 words is about 240 characters.
+ */
+export function draftWords(body: string): number {
+  const characters = body.match(CJK)?.length ?? 0
+  const words = body.replace(CJK, ' ').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length
+  return words + Math.ceil(characters / 2)
+}
+
+/** Null when the draft fits its channel. Otherwise the sentence the model gets back. */
+export function draftTooLong(body: string, channel: string): string | null {
+  const limit = channel === 'email' ? DRAFT_WORD_LIMIT.email : DRAFT_WORD_LIMIT.text
+  const words = draftWords(body)
+  if (words <= limit) return null
+  return `The ${channel === 'email' ? 'email' : 'message'} is about ${words} words. Keep it to ${limit} words or fewer (for Chinese, about ${limit * 2} characters) and call the tool again.`
+}
+
 const COUNSELOR_INTRO = /(?:(?:i['’]m|i am)\b[^.!?。！？]*\bcounselor\b|升学顾问|升學顧問)/i
 
 /** Drop an opening that introduces the writer as the student's counselor. */

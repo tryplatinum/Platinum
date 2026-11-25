@@ -28,6 +28,7 @@ React, Vite, TypeScript, Tailwind, Zustand, and Zod in the browser. Supabase (Po
 
 ## Hard rules
 
+- This repository is public. Never commit secrets, keys, tokens, real people's names, interview notes, student data, or security findings.
 - No secrets in client code. Only `VITE_` variables reach the browser.
 - LLM calls happen only on the server.
 - Every outbound message goes through approval and the outbox, and is never sent directly.

@@ -17,6 +17,7 @@ export type Database = {
       activity: {
         Row: {
           actor: string
+          actor_user: string | null
           at: string
           created_at: string
           firm_id: string
@@ -28,6 +29,7 @@ export type Database = {
         }
         Insert: {
           actor: string
+          actor_user?: string | null
           at?: string
           created_at?: string
           firm_id: string
@@ -39,6 +41,7 @@ export type Database = {
         }
         Update: {
           actor?: string
+          actor_user?: string | null
           at?: string
           created_at?: string
           firm_id?: string
@@ -165,11 +168,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "agent_proposals_student_id_fkey"
-            columns: ["student_id"]
+            foreignKeyName: "agent_proposals_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
             isOneToOne: false
             referencedRelation: "students"
-            referencedColumns: ["id"]
+            referencedColumns: ["firm_id", "id"]
           },
           {
             foreignKeyName: "agent_proposals_thread_id_fkey"
@@ -217,10 +220,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "agent_threads_student_id_fkey"
-            columns: ["student_id"]
+            foreignKeyName: "agent_threads_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
             isOneToOne: false
             referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+        ]
+      }
+      agent_usage: {
+        Row: {
+          calls: number
+          day: string
+          firm_id: string
+        }
+        Insert: {
+          calls?: number
+          day: string
+          firm_id: string
+        }
+        Update: {
+          calls?: number
+          day?: string
+          firm_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_usage_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
             referencedColumns: ["id"]
           },
         ]
@@ -1739,7 +1768,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
-          expires_at: string | null
+          expires_at: string
           firm_id: string
           id: string
           revoked_at: string | null
@@ -1750,7 +1779,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
-          expires_at?: string | null
+          expires_at?: string
           firm_id: string
           id?: string
           revoked_at?: string | null
@@ -1761,7 +1790,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
-          expires_at?: string | null
+          expires_at?: string
           firm_id?: string
           id?: string
           revoked_at?: string | null
@@ -2096,6 +2125,10 @@ export type Database = {
         Args: { display_name: string; name: string }
         Returns: string
       }
+      decide_agent_proposal: {
+        Args: { decision: string; proposal: string }
+        Returns: boolean
+      }
       document_is_owner_only: {
         Args: {
           file_status: string
@@ -2107,6 +2140,10 @@ export type Database = {
       }
       document_is_readable: { Args: { document: string }; Returns: boolean }
       document_type_is_open: { Args: { type: string }; Returns: boolean }
+      edit_agent_proposal: {
+        Args: { payload: Json; proposal: string }
+        Returns: boolean
+      }
       file_document: {
         Args: {
           action?: string
@@ -2120,12 +2157,17 @@ export type Database = {
       }
       is_firm_member: { Args: { firm: string }; Returns: boolean }
       is_firm_owner: { Args: { firm: string }; Returns: boolean }
+      log_meeting_drafts_ready: { Args: { meeting: string }; Returns: Json }
       owner_only_file_count: {
         Args: { firm: string; students?: string[] }
         Returns: number
       }
       path_uuid: { Args: { path: string; segment: number }; Returns: string }
       queue_message: { Args: { payload: Json }; Returns: Json }
+      reserve_agent_call: {
+        Args: { day_limit: number; firm: string }
+        Returns: boolean
+      }
       seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {
         Args: {

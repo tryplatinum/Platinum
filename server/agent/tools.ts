@@ -4,8 +4,8 @@ import { channelsFor, pickSendable, transportCaps } from './channels.js'
 import { prepareMeetingBrief } from './brief.js'
 import { essayBrainstorm } from './essay.js'
 import { insertProposal } from './proposals.js'
-import { signMessage } from './text.js'
-import type { AgentContext, ToolResult } from './types.js'
+import { DRAFT_WORD_LIMIT, draftTooLong, signMessage } from './text.js'
+import { readFailed, type AgentContext, type ToolResult } from './types.js'
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
@@ -98,7 +98,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_message',
-    description: 'Draft a message for Approvals. Never sends. Put the full message only in body. Do not write the message, a translation, or a summary in your reply. Channel is optional; omit it and the server picks a channel that can send. Call this once. If the record says no sendable channel, do not call this.',
+    description: `Draft a message for Approvals. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write the message, a translation, or a summary in your reply. Channel is optional; omit it and the server picks a channel that can send. Call this once. If the record says no sendable channel, do not call this.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -130,7 +130,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_parent_update',
-    description: 'Draft a parent update for Approvals. Never sends. Put the full message only in body. Do not write a translation. Channel is optional; omit it and the server picks a channel that can send.',
+    description: `Draft a parent update for Approvals. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write a translation. Channel is optional; omit it and the server picks a channel that can send.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -316,7 +316,7 @@ async function getStudent(ctx: AgentContext, studentId: string | undefined): Pro
     ctx.user.from('students').select('*').eq('id', studentId!).maybeSingle(),
     ctx.user.from('parents').select('*').eq('student_id', studentId!),
   ])
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('get_student', error)
   if (!student) return { ok: false, error: 'Student not found.' }
   return {
     ok: true,
@@ -358,7 +358,7 @@ async function listTasks(ctx: AgentContext, studentId: string | undefined, input
   let q = ctx.user.from('tasks').select('*').eq('student_id', studentId!)
   if (input.owner) q = q.eq('owner', String(input.owner))
   const { data, error } = await q.order('due_date')
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('list_tasks', error)
   let rows = data ?? []
   if (input.openOnly) rows = rows.filter((t) => t.status === 'todo' || t.status === 'in_progress')
   if (input.overdueOnly) rows = rows.filter((t) => (t.status === 'todo' || t.status === 'in_progress') && t.due_date < today)
@@ -410,7 +410,7 @@ async function searchMeetings(ctx: AgentContext, studentId: string | undefined, 
   if (typeof input.onOrAfter === 'string') q = q.gte('date', input.onOrAfter)
   if (typeof input.onOrBefore === 'string') q = q.lte('date', input.onOrBefore)
   const { data, error } = await q.order('date', { ascending: false }).limit(40)
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('search_meetings', error)
   const keyword = typeof input.keyword === 'string' ? input.keyword.trim().toLowerCase() : ''
   const rows = (data ?? [])
     .map((m) => {
@@ -456,7 +456,7 @@ async function listRecentMessages(ctx: AgentContext, studentId: string | undefin
     .eq('student_id', studentId!)
     .order('sent_at', { ascending: false })
     .limit(Math.min(50, Math.max(1, limit)))
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('list_recent_messages', error)
   return {
     ok: true,
     data: (data ?? []).map((r) => ({
@@ -482,7 +482,7 @@ async function getNotes(ctx: AgentContext, studentId: string | undefined): Promi
     .select('id, text, event_date, event_date_approx, uses, source, created_at')
     .eq('student_id', studentId!)
     .order('created_at', { ascending: true })
-  if (error) return { ok: false, error: error.message }
+  if (error) return readFailed('get_notes_to_remember', error)
   return {
     ok: true,
     data: (data ?? []).map((n) => ({
@@ -589,6 +589,8 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
   const picked = await resolveChannel(ctx, person, input.channel ? String(input.channel) : undefined, preferred)
   if ('error' in picked) return { ok: false, error: picked.error }
   const channel = picked.channel
+  const tooLong = draftTooLong(String(input.body ?? ''), channel)
+  if (tooLong) return { ok: false, error: tooLong }
 
   const { confirmation } = await insertProposal(ctx, {
     kind: 'message',
@@ -631,6 +633,8 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
   )
   if ('error' in picked) return { ok: false, error: picked.error }
   const channel = picked.channel
+  const tooLong = draftTooLong(String(input.body ?? ''), channel)
+  if (tooLong) return { ok: false, error: tooLong }
   const { confirmation } = await insertProposal(ctx, {
     kind: 'parent_update',
     studentId,

@@ -561,7 +561,8 @@ export async function fileDocument(caller: SignedIn, input: { documentId?: unkno
   // The function's own messages are written for people ("Choose a student first.").
   // The student this file is being given to already holds a copy of the same Drive file.
   if (error?.code === '23505') throw new FileError('That student already has this file from Google Drive.', 409)
-  if (error) throw ['22023', '42501'].includes(error.code) ? new FileError(error.message, error.code === '42501' ? 404 : 400) : failed('filing failed', error)
+  // 42501 is also Postgres's own "permission denied", so its text is not passed on.
+  if (error) throw error.code === '42501' ? new FileError('That document was not found.', 404) : error.code === '22023' ? new FileError(error.message, 400) : failed('filing failed', error)
 
   const after = await caller.client.from('documents').select('*').eq('id', row.id).maybeSingle()
   if (after.error) throw failed('reading the filed document failed', after.error)

@@ -25,31 +25,31 @@ export class AgentHttpError extends Error {
   }
 }
 
+/** What the browser is told when the server fails. The real error is logged here only. */
+export const AGENT_SERVER_MESSAGE = 'Something went wrong. Try again.'
+
+/** Logs what failed and returns the fixed error for the browser. Database text never reaches the caller. */
+export function agentServerError(doing: string, error?: { message?: string } | null): AgentHttpError {
+  console.error(`[agent] ${doing}:`, error?.message ?? 'unknown')
+  return new AgentHttpError('server', AGENT_SERVER_MESSAGE, 500)
+}
+
 const maxRounds = () => {
   const n = Number(process.env.AGENT_MAX_ROUNDS)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 8
 }
 
+/** Model calls per firm per UTC day. */
 const dailyLimit = () => {
   const n = Number(process.env.AGENT_DAILY_LIMIT)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 200
 }
 
-function startOfUtcDay(): string {
-  const d = new Date()
-  d.setUTCHours(0, 0, 0, 0)
-  return d.toISOString()
-}
-
-async function countAssistantTurns(service: Db, firmId: string): Promise<number> {
-  const { count, error } = await service
-    .from('agent_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('firm_id', firmId)
-    .eq('role', 'assistant')
-    .gte('created_at', startOfUtcDay())
-  if (error) throw new AgentHttpError('server', 'Could not check the daily assistant limit.', 500)
-  return count ?? 0
+/** Takes one model call from the firm's daily budget. False when the budget is spent. */
+async function reserveCall(service: Db, firmId: string): Promise<boolean> {
+  const { data, error } = await service.rpc('reserve_agent_call', { firm: firmId, day_limit: dailyLimit() })
+  if (error) throw agentServerError('reserving a model call', error)
+  return data === true
 }
 
 async function loadCounselorName(user: Db, userId: string): Promise<{ name: string; firstName: string }> {
@@ -66,7 +66,7 @@ async function loadFirmName(user: Db, firmId: string): Promise<string> {
 
 async function loadStudent(user: Db, firmId: string, studentId: string) {
   const { data, error } = await user.from('students').select('id, first_name, last_name, grad_year, onboarded_on').eq('id', studentId).eq('firm_id', firmId).maybeSingle()
-  if (error) throw new AgentHttpError('server', error.message, 500)
+  if (error) throw agentServerError('loading the student', error)
   if (!data) throw new AgentHttpError('not_found', 'Student not found.', 404)
   return data
 }
@@ -75,6 +75,7 @@ async function ensureThread(service: Db, firmId: string, counselorId: string, st
   let q = service.from('agent_threads').select('id').eq('firm_id', firmId).eq('counselor_id', counselorId)
   q = studentId ? q.eq('student_id', studentId) : q.is('student_id', null)
   const existing = await q.maybeSingle()
+  if (existing.error) throw agentServerError('finding the thread', existing.error)
   if (existing.data?.id) return existing.data.id
   const title = studentId ? null : 'General'
   const { data, error } = await service
@@ -82,7 +83,7 @@ async function ensureThread(service: Db, firmId: string, counselorId: string, st
     .insert({ firm_id: firmId, counselor_id: counselorId, student_id: studentId, title })
     .select('id')
     .single()
-  if (error || !data) throw new AgentHttpError('server', error?.message ?? 'Could not open the thread.', 500)
+  if (error || !data) throw agentServerError('opening the thread', error)
   return data.id
 }
 
@@ -93,15 +94,31 @@ async function loadHistory(service: Db, threadId: string): Promise<Anthropic.Mes
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true })
     .limit(80)
-  if (error) throw new AgentHttpError('server', error.message, 500)
+  if (error) throw agentServerError('loading the history', error)
   const messages: Anthropic.MessageParam[] = []
   for (const row of data ?? []) {
     const content = row.content as Anthropic.MessageParam['content']
     // Tool rows are stored separately. The API expects them as the next user message.
     if (row.role === 'tool') messages.push({ role: 'user', content })
-    else if (row.role === 'user' || row.role === 'assistant') messages.push({ role: row.role, content })
+    else if (row.role === 'user') messages.push({ role: 'user', content })
+    else if (row.role === 'assistant') {
+      const kept = withoutThinking(content)
+      if (typeof kept === 'string' ? kept : kept.length > 0) messages.push({ role: 'assistant', content: kept })
+    }
   }
   return messages
+}
+
+/**
+ * An assistant turn without its thinking blocks. A thinking block is signed
+ * against the system prompt it was made under, and that prompt carries a live
+ * summary of the student, so a finished turn's thinking cannot be replayed
+ * once the record changes. Only the request that made it may send it back,
+ * while its own tool loop continues.
+ */
+function withoutThinking<C extends Anthropic.MessageParam['content'] | Anthropic.ContentBlock[]>(content: C): C {
+  if (!Array.isArray(content)) return content
+  return content.filter((block) => block.type !== 'thinking' && block.type !== 'redacted_thinking') as C
 }
 
 async function saveMessage(
@@ -123,7 +140,7 @@ async function saveMessage(
     input_tokens: args.inputTokens ?? null,
     output_tokens: args.outputTokens ?? null,
   })
-  if (error) throw new AgentHttpError('server', error.message, 500)
+  if (error) throw agentServerError('saving a message', error)
 }
 
 function textFrom(content: Anthropic.ContentBlock[]): string {
@@ -152,8 +169,8 @@ export async function runAgent(args: {
     throw new AgentHttpError('no_key', 'ANTHROPIC_API_KEY is not set on the server.', 503)
   }
 
-  const used = await countAssistantTurns(args.service, args.firmId)
-  if (used >= dailyLimit()) {
+  // The first model call is taken before anything is written. Every later round takes its own.
+  if (!(await reserveCall(args.service, args.firmId))) {
     throw new AgentHttpError('rate_limited', 'Daily assistant limit reached.', 429)
   }
 
@@ -215,11 +232,16 @@ export async function runAgent(args: {
   const rounds = maxRounds()
   let reply = ''
   let hitRoundCap = false
+  let outOfBudget = false
   const turnSources: AgentTurnSource[] = []
   const timing: AgentTiming = { rounds: 0, models: [], tools: [] }
 
   try {
   for (let round = 0; round < rounds; round++) {
+    if (round > 0 && !(await reserveCall(args.service, args.firmId))) {
+      outOfBudget = true
+      break
+    }
     note('Writing a reply…')
     let response: Anthropic.Message
     const modelStarted = Date.now()
@@ -229,6 +251,11 @@ export async function runAgent(args: {
         // After a proposal, the reply is one or two sentences. A long cap is what
         // made the model restate the message and translate it.
         max_tokens: ctx.createdProposals.length > 0 ? 200 : 4_000,
+        // The loop picks tools and writes short drafts. Thinking made a 50-word
+        // draft cost over 1,000 output tokens and most of the wait. On this model
+        // "between_tools" is thinking off: no thinking before a reply, only short
+        // notes between tool calls, which come back as thinking blocks.
+        thinking: { type: 'between_tools' },
         system,
         tools: AGENT_TOOLS,
         messages,
@@ -246,11 +273,12 @@ export async function runAgent(args: {
     })
     console.debug(`[agent] model round=${round + 1} ms=${modelMs} in=${response.usage.input_tokens} out=${response.usage.output_tokens}`)
 
+    // Thinking is never saved: a later turn could not send it back (see withoutThinking).
     await saveMessage(args.service, {
       threadId,
       firmId: args.firmId,
       role: 'assistant',
-      content: response.content,
+      content: withoutThinking(response.content),
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
     })
@@ -297,7 +325,7 @@ export async function runAgent(args: {
     })
     messages.push({ role: 'user', content: toolResults })
 
-    // A brief or a brainstorm is the reply. Skip the model call that would restate it.
+    // A brief, a brainstorm or a drafted message's confirmation is the reply. Skip the model call that would restate it.
     if (settled.length === 1 && settled[0].result.ok) {
       const formatted = formatAnswer(settled[0].use.name, settled[0].result.data)
       if (formatted) {
@@ -314,9 +342,10 @@ export async function runAgent(args: {
     }
   }
 
-  if (hitRoundCap) {
-    const note =
-      'I hit the tool-round limit for this turn before I could finish. Ask me to continue, or narrow the question.'
+  if (hitRoundCap || outOfBudget) {
+    const note = outOfBudget
+      ? 'The firm reached its daily assistant limit before I could finish. Check Approvals for anything I drafted.'
+      : 'I hit the tool-round limit for this turn before I could finish. Ask me to continue, or narrow the question.'
     reply = reply ? `${reply}\n\n${note}` : note
     // A tool call that was not run still has to be closed, or the next turn is rejected.
     const last = messages[messages.length - 1]
