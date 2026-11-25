@@ -1,8 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyAttention, needsAttention } from '../../shared/attention.js'
+import { channelsFor, sendableNames, transportCaps } from './channels.js'
 import { prepareMeetingBrief } from './brief.js'
 import { essayBrainstorm } from './essay.js'
 import { insertProposal } from './proposals.js'
+import { signMessage } from './text.js'
 import type { AgentContext, ToolResult } from './types.js'
 
 function todayISO(): string {
@@ -96,7 +98,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_message',
-    description: 'Draft a message for Approvals. Never sends. Language must match the parent record when writing to a parent.',
+    description: 'Draft a message for Approvals. Never sends. The loaded record already has the parents, which channels can send, and the overdue tasks. Put the full draft in this call. Do not look anything up first unless a fact is missing; if it is, gather every missing fact in one round, then call this. Language must match the parent record when writing to a parent. WeChat cannot send.',
     input_schema: {
       type: 'object',
       properties: {
@@ -128,7 +130,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_parent_update',
-    description: 'Draft a parent update for Approvals. Never sends.',
+    description: 'Draft a parent update for Approvals. Never sends. The loaded record already has the parent, language, and which channels can send. Put the full draft in this call. Do not look anything up first unless a fact is missing.',
     input_schema: {
       type: 'object',
       properties: {
@@ -244,7 +246,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'essay_brainstorm',
-    description: 'Brainstorm essay angles for the counselor. Never writes essay text. Declines writing requests.',
+    description: 'Brainstorm essay angles for the counselor. Never writes essay text. The tool adds the student record activities, interests and majors; do not say those are missing when they come back.',
     input_schema: {
       type: 'object',
       properties: { prompt: { type: 'string' }, notes: { type: 'string' } },
@@ -286,12 +288,20 @@ export async function runTool(ctx: AgentContext, name: string, raw: unknown): Pr
         return await proposeTimes(ctx, input)
       case 'prepare_meeting_brief':
         return await prepareMeetingBrief(ctx, String(input.meetingId ?? ''))
-      case 'essay_brainstorm':
-        return await essayBrainstorm({
+      case 'essay_brainstorm': {
+        const record = ctx.studentId ? await essayRecord(ctx, ctx.studentId) : undefined
+        const result = await essayBrainstorm({
           prompt: String(input.prompt ?? ''),
           notes: input.notes ? String(input.notes) : undefined,
           studentFirstName: ctx.studentName?.split(' ')[0],
+          activities: record?.activities,
+          interests: record?.interests,
+          majors: record?.majors,
         })
+        if (!result.ok || !record?.activities.length) return result
+        const data = result.data && typeof result.data === 'object' ? { ...result.data, activitiesOnRecord: record.activities } : result.data
+        return { ok: true, data }
+      }
       default:
         return { ok: false, error: `Unknown tool: ${name}` }
     }
@@ -323,9 +333,9 @@ async function getStudent(ctx: AgentContext, studentId: string | undefined): Pro
       phone: student.phone,
       gpa: student.gpa,
       tests: student.tests,
-      majors: student.majors,
-      interests: student.interests,
-      activities: student.activities,
+      majors: stringList(student.majors),
+      interests: stringList(student.interests),
+      activities: activityRows(student.activities),
       counselorNotes: student.counselor_notes,
       onboardedOn: student.onboarded_on,
       parents: (parents ?? []).map((p) => ({
@@ -560,15 +570,23 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
   if (recipient.kind === 'parent' && !recipient.parentId) return { ok: false, error: 'parentId is required for a parent recipient.' }
 
   let language = String(input.language)
-  let channel = String(input.channel)
-  let toName = ctx.studentName ?? 'Student'
+  let toName: string
+  let person: { email: string | null; phone: string | null; lineId: string | null }
   if (recipient.kind === 'parent' && recipient.parentId) {
     const { data: parent } = await ctx.user.from('parents').select('*').eq('id', recipient.parentId).maybeSingle()
     if (!parent || parent.student_id !== studentId) return { ok: false, error: 'Parent not found for this student.' }
     language = parent.language
-    channel = parent.channel
     toName = parent.name
+    person = { email: parent.email, phone: parent.phone, lineId: parent.line_id }
+  } else {
+    const { data: student } = await ctx.user.from('students').select('email, phone').eq('id', studentId).maybeSingle()
+    person = { email: student?.email ?? null, phone: student?.phone ?? null, lineId: null }
+    toName = ctx.studentName ?? 'Student'
   }
+
+  const channel = String(input.channel ?? '')
+  const refused = await refuseUnsendable(ctx, person, channel)
+  if (refused) return refused
 
   const { confirmation } = await insertProposal(ctx, {
     kind: 'message',
@@ -581,7 +599,7 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
       toName,
       channel,
       language,
-      body: String(input.body ?? ''),
+      body: signMessage(String(input.body ?? ''), ctx.counselorName, ctx.firmName),
       outboxKind: 'reminder_upcoming',
     },
   })
@@ -594,6 +612,9 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
   const parentId = String(input.parentId ?? '')
   const { data: parent } = await ctx.user.from('parents').select('*').eq('id', parentId).maybeSingle()
   if (!parent || parent.student_id !== studentId) return { ok: false, error: 'Parent not found for this student.' }
+  const channel = String(input.channel ?? parent.channel)
+  const refused = await refuseUnsendable(ctx, { email: parent.email, phone: parent.phone, lineId: parent.line_id }, channel)
+  if (refused) return refused
   const { confirmation } = await insertProposal(ctx, {
     kind: 'parent_update',
     studentId,
@@ -602,9 +623,9 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
     payload: {
       parentId,
       toName: parent.name,
-      channel: parent.channel,
+      channel,
       language: parent.language,
-      body: String(input.body ?? ''),
+      body: signMessage(String(input.body ?? ''), ctx.counselorName, ctx.firmName),
       bodyEn: input.bodyEn ? String(input.bodyEn) : undefined,
     },
   })
@@ -662,4 +683,44 @@ async function proposeTimes(ctx: AgentContext, input: Record<string, unknown>): 
     payload: { slots },
   })
   return { ok: true, data: { confirmation } }
+}
+
+async function refuseUnsendable(
+  ctx: AgentContext,
+  person: { email: string | null; phone: string | null; lineId: string | null },
+  channel: string,
+): Promise<ToolResult | undefined> {
+  const states = channelsFor(person, await transportCaps(ctx.firmId, ctx.counselorId))
+  const state = states.find((item) => item.channel === channel)
+  if (state?.sendable) return undefined
+  const can = sendableNames(states)
+  return {
+    ok: false,
+    error: `${channel || 'That channel'} cannot send (${state?.why ?? 'unknown channel'}). Sendable channels: ${can.join(', ') || 'none'}. If none are sendable, tell the counselor and do not propose. Do not use WeChat.`,
+  }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []
+}
+
+function activityRows(value: unknown): { name: string; role?: string; detail?: string }[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as { name?: unknown; role?: unknown; detail?: unknown }
+    const name = typeof row.name === 'string' ? row.name.trim() : ''
+    if (!name) return []
+    return [{ name, role: typeof row.role === 'string' ? row.role : undefined, detail: typeof row.detail === 'string' ? row.detail : undefined }]
+  })
+}
+
+async function essayRecord(ctx: AgentContext, studentId: string): Promise<{ activities: string[]; interests: string[]; majors: string[] } | undefined> {
+  const { data } = await ctx.user.from('students').select('activities, interests, majors').eq('id', studentId).maybeSingle()
+  if (!data) return undefined
+  return {
+    activities: activityRows(data.activities).map((row) => (row.role ? `${row.name} (${row.role})` : row.name)),
+    interests: stringList(data.interests),
+    majors: stringList(data.majors),
+  }
 }

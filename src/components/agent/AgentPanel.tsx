@@ -173,6 +173,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const pendingGuard = useRef<Record<string, boolean>>({})
   const startedAt = useRef(0)
   const [tick, setTick] = useState(0)
+  const [progress, setProgress] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const wasOpen = useRef(false)
@@ -258,6 +259,15 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
     if (pendingGuard.current[key]) return
     pendingGuard.current[key] = true
     startedAt.current = Date.now()
+    const requestId = crypto.randomUUID()
+    setProgress('')
+    const poll = window.setInterval(() => {
+      void agentClient.progress(requestId).then((step) => {
+        if (step) setProgress(step)
+      }).catch(() => {
+        // A missed poll just leaves the previous step on screen.
+      })
+    }, 800)
     patch(key, (current) => ({
       ...current,
       pending: true,
@@ -267,7 +277,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
       messages: retry ? withoutRetry(current.messages, body) : [...current.messages, { id: nextId(), role: 'user', text: body }],
     }))
     void agentClient
-      .send(scope, body)
+      .send(scope, body, requestId)
       .then((response) => {
         const seconds = (Date.now() - startedAt.current) / 1000
         console.debug(`[agent] reply in ${seconds.toFixed(1)}s`)
@@ -300,6 +310,8 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
         }))
       })
       .finally(() => {
+        window.clearInterval(poll)
+        setProgress('')
         pendingGuard.current[key] = false
       })
   }
@@ -307,7 +319,8 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const showSuggestions = thread.hydrated && thread.messages.length === 0 && !thread.pending
   const elapsed = thread.pending && startedAt.current ? Math.floor((Date.now() - startedAt.current) / 1000) : 0
   void tick
-  const thinking = elapsed >= 3 ? `Thinking… ${elapsed}s` : 'Thinking…'
+  const base = progress || 'Thinking…'
+  const thinking = elapsed >= 3 ? `${base.replace(/…$/, '')}… ${elapsed}s` : base
 
   return (
     <aside

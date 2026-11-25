@@ -126,18 +126,22 @@ export async function prepareMeetingBrief(ctx: AgentContext, meetingId: string):
     : undefined
 
   try {
-    const { draft, model } = await runFeature('preMeetingBrief', {
-      facts,
-      meeting: { title: meeting.title, date: meeting.date },
-      computed: {
-        changesSinceLastMeeting: changes,
-        overdue,
-        deadlinesNext14Days: deadlines,
-        waitingOnCounselor: [],
+    const { draft, model } = await runFeature(
+      'preMeetingBrief',
+      {
+        facts,
+        meeting: { title: meeting.title, date: meeting.date },
+        computed: {
+          changesSinceLastMeeting: changes,
+          overdue,
+          deadlinesNext14Days: deadlines,
+          waitingOnCounselor: [],
+        },
+        counselorNotes: student.counselor_notes || undefined,
+        lastRecap: lastRecapText,
       },
-      counselorNotes: student.counselor_notes || undefined,
-      lastRecap: lastRecapText,
-    })
+      { maxTokens: 4_000 },
+    )
     return {
       ok: true,
       data: {

@@ -5,6 +5,7 @@
 
 import { AgentRequestSchema, type AgentErrorCode } from '../shared/agent.js'
 import { loadAgentThread } from '../server/agent/history.js'
+import { readProgress } from '../server/agent/progress.js'
 import { AgentHttpError, runAgent } from '../server/agent/run.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, serviceClient, serviceConfigured } from '../server/supabase.js'
@@ -39,6 +40,8 @@ export async function GET(request: Request): Promise<Response> {
       ? fail('no_firm', 'Your account does not belong to a firm yet.', 403)
       : fail('unauthorized', 'Sign in again to use the assistant.', 401)
   }
+  const progressId = new URL(request.url).searchParams.get('progress')
+  if (progressId) return json({ ok: true, step: readProgress(progressId, caller.userId) })
   const studentId = studentQuery(request)
   if (studentId instanceof Response) return studentId
   try {
@@ -93,8 +96,9 @@ export async function POST(request: Request): Promise<Response> {
       counselorId: caller.userId,
       studentId: body.data.studentId,
       message: body.data.message.trim(),
+      requestId: body.data.requestId,
     })
-    return json({ ok: true, threadId: result.threadId, reply: result.reply, proposals: result.proposals, sources: result.sources })
+    return json({ ok: true, threadId: result.threadId, reply: result.reply, proposals: result.proposals, sources: result.sources, timing: result.timing })
   } catch (error) {
     if (error instanceof AgentHttpError) {
       return fail(error.code as AgentErrorCode, error.message, error.status)
