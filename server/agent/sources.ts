@@ -2,6 +2,7 @@
 // The model's own `sources` arrays on propose_* calls are not read here.
 
 import type { AgentTurnSource } from '../../shared/agent.js'
+import { joinAssistantText } from './text.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const LIMIT = 12
@@ -129,14 +130,12 @@ export function sourcesFromStoredTools(content: unknown, names: Map<string, stri
 
 /** Visible text of a stored user or assistant message. Tool-use blocks contribute nothing. */
 export function textFromContent(content: unknown): string {
-  if (typeof content === 'string') return content.trim()
+  if (typeof content === 'string') return joinAssistantText([content])
   if (!Array.isArray(content)) return ''
-  return content
-    .map((block) => {
+  return joinAssistantText(
+    content.map((block) => {
       const row = asRecord(block)
       return row?.type === 'text' && typeof row.text === 'string' ? row.text : ''
-    })
-    .filter(Boolean)
-    .join('\n')
-    .trim()
+    }),
+  )
 }

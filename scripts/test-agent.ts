@@ -10,6 +10,7 @@
 import './loadEnv.js'
 import { randomUUID } from 'node:crypto'
 import { POST } from '../api/agent.js'
+import { hasGluedSentence, joinAssistantText, signMessage } from '../server/agent/text.js'
 import { createAccount, removeAccount, requireSettings, adminClient } from './testAccounts.js'
 
 requireSettings()
@@ -40,6 +41,7 @@ const firmId = account.firmId
 const kevinId = randomUUID()
 const sophiaId = randomUUID()
 const momId = randomUUID()
+const dadId = randomUUID()
 const momLanguage = 'zh-Hans'
 
 const student = await account.client.from('students').insert([
@@ -51,6 +53,10 @@ const student = await account.client.from('students').insert([
     grad_year: 2027,
     school: 'Invented High',
     city: 'Sample City',
+    gpa: 3.78,
+    majors: ['Computer Science'],
+    interests: ['Robotics'],
+    activities: [{ name: 'FRC Robotics Team 8841', role: 'Software lead', detail: 'Leads the programming subgroup.' }],
     onboarded_on: isoDaysFromToday(-120),
   },
   {
@@ -61,21 +67,39 @@ const student = await account.client.from('students').insert([
     grad_year: 2028,
     school: 'Invented High',
     city: 'Sample City',
+    gpa: 3.5,
+    majors: ['Biology'],
+    interests: [],
+    activities: [],
     onboarded_on: isoDaysFromToday(-90),
   },
 ])
 if (student.error) throw new Error(`could not insert students: ${student.error.message}`)
 
-const parent = await account.client.from('parents').insert({
-  id: momId,
-  firm_id: firmId,
-  student_id: kevinId,
-  name: 'Liu Min',
-  relationship: 'Mother',
-  language: momLanguage,
-  channel: 'wechat',
-  is_primary: true,
-})
+const parent = await account.client.from('parents').insert([
+  {
+    id: momId,
+    firm_id: firmId,
+    student_id: kevinId,
+    name: 'Liu Min',
+    relationship: 'Mother',
+    language: momLanguage,
+    channel: 'wechat',
+    email: 'liu.min@example.com',
+    phone: '+14085550101',
+    is_primary: true,
+  },
+  {
+    id: dadId,
+    firm_id: firmId,
+    student_id: kevinId,
+    name: 'Zhang Wei',
+    relationship: 'Father',
+    language: 'zh-Hans',
+    channel: 'wechat',
+    is_primary: false,
+  },
+])
 if (parent.error) throw new Error(`could not insert parent: ${parent.error.message}`)
 
 const tasks = await account.client.from('tasks').insert([
@@ -140,11 +164,19 @@ async function ask(message: string, studentId: string | null = kevinId, env?: Re
       threadId?: string
       code?: string
       message?: string
+      timing?: { rounds: number; models: { ms: number; inputTokens: number; outputTokens: number }[]; tools: { name: string; ms: number }[] }
     }
     const seconds = ((Date.now() - started) / 1000).toFixed(1)
     console.log(`\n━━ ${message.slice(0, 72)}${message.length > 72 ? '…' : ''} · HTTP ${response.status} · ${seconds}s ━━`)
     if (!body.ok) console.log(JSON.stringify({ ok: body.ok, code: body.code, message: body.message }))
-    else console.log(`reply: ${body.reply?.slice(0, 400)}${(body.reply?.length ?? 0) > 400 ? '…' : ''}\nproposals: ${body.proposals?.length ?? 0}`)
+    else {
+      const modelMs = body.timing?.models.reduce((sum, row) => sum + row.ms, 0) ?? 0
+      const toolMs = body.timing?.tools.reduce((sum, row) => sum + row.ms, 0) ?? 0
+      const toolList = body.timing?.tools.map((row) => `${row.name}:${row.ms}ms`).join(', ') || 'none'
+      const models = body.timing?.models.map((row) => `${row.ms}ms in=${row.inputTokens} out=${row.outputTokens}`).join(' | ') || 'none'
+      console.log(`timing: rounds=${body.timing?.rounds ?? 0} modelMs=${modelMs} (${models}) toolMs=${toolMs} (${toolList})`)
+      console.log(`reply: ${body.reply?.slice(0, 400)}${(body.reply?.length ?? 0) > 400 ? '…' : ''}\nproposals: ${body.proposals?.length ?? 0}`)
+    }
     return { status: response.status, body }
   } finally {
     if (env) {
@@ -157,6 +189,12 @@ async function ask(message: string, studentId: string | null = kevinId, env?: Re
 }
 
 try {
+  check('joined text blocks are not glued', !hasGluedSentence(joinAssistantText(['Approvals.', 'Nothing is waiting.'])))
+  const signed = signMessage('您好，我是Kevin的升学顾问。请提醒他交第三稿。', 'Counselor Agent', 'Test firm Agent')
+  check('signature drops the counselor introduction', !/升学顾问|college counselor/i.test(signed) && signed.includes('Counselor Agent') && signed.includes('Test firm Agent'), signed)
+  const alreadyNamed = signMessage('请提醒他交第三稿。\n\nCounselor Agent', 'Counselor Agent', 'Test firm Agent')
+  check('signature adds the firm when the name is already there', alreadyNamed.includes('Test firm Agent'), alreadyNamed)
+
   {
     const { status, body } = await ask("What's overdue for this student?")
     check('1 overdue returns ok', status === 200 && body.ok === true)
@@ -166,6 +204,7 @@ try {
       /overdue|late|days?\s+late|uc piq|common app|personal statement/i.test(reply),
       reply.slice(0, 120),
     )
+    check('1 no glued sentence', !hasGluedSentence(reply))
   }
 
   {
@@ -176,7 +215,13 @@ try {
     const messages = (body.proposals ?? []).filter((p) => p.kind === 'message')
     check('2 one propose_message proposal', messages.length === 1, `got ${messages.length}`)
     const lang = messages[0]?.payload?.language
+    const channel = messages[0]?.payload?.channel
+    const drafted = String(messages[0]?.payload?.body ?? '')
     check('2 language matches mom (zh-Hans)', lang === momLanguage, `got ${String(lang)}`)
+    check('2 channel can send', channel === 'email' || channel === 'text', `got ${String(channel)}`)
+    check('2 signed with the counselor name', drafted.includes('Counselor Agent'), drafted.slice(-80))
+    check('2 does not introduce the counselor by role', !/college counselor|升学顾问|升學顧問/i.test(drafted))
+    check('2 no glued sentence', !hasGluedSentence(body.reply ?? ''))
   }
 
   {
@@ -200,6 +245,8 @@ try {
       reply.slice(0, 120),
     )
     check('4 no message proposals from brainstorm', (body.proposals ?? []).length === 0)
+    check('4 mentions a real activity', /frc|8841|robotics team/i.test(reply), reply.slice(0, 180))
+    check('4 no glued sentence', !hasGluedSentence(reply))
   }
 
   {
@@ -248,6 +295,21 @@ try {
       '8 stops cleanly at the round limit',
       /tool-round limit|round limit|continue|narrow the question|limit for this turn/i.test(reply),
       reply.slice(0, 160),
+    )
+  }
+
+  {
+    const before = await account.client.from('agent_proposals').select('id').eq('firm_id', firmId)
+    const prior = before.data?.length ?? 0
+    const { status, body } = await ask("Text Kevin's dad about the essay deadline.")
+    check('9 dad text returns ok', status === 200 && body.ok === true)
+    const after = await account.client.from('agent_proposals').select('id').eq('firm_id', firmId)
+    const reply = body.reply ?? ''
+    check('9 no proposal when nothing can send', (after.data?.length ?? 0) === prior && (body.proposals ?? []).length === 0, `new=${(after.data?.length ?? 0) - prior}`)
+    check(
+      '9 says the dad has no sendable channel',
+      /isn.t connected|not connected|no other channel|cannot send|can't send|no phone|nothing can send/i.test(reply),
+      reply.slice(0, 180),
     )
   }
 
