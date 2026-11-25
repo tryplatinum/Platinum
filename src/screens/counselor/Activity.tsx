@@ -175,7 +175,7 @@ function ActivityRow({ event, counselorName }: { event: ActivityEvent; counselor
           {student && (
             <>
               {' · '}
-              <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+              <Link to={`/app/students/${student.id}`} className="tap-link font-medium text-accent hover:underline">
                 {fullName(student)}
               </Link>
             </>

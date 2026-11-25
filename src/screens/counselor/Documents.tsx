@@ -66,7 +66,7 @@ export default function Documents() {
       />
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="tap-link font-semibold underline">Settings</Link> to add from Drive. Files already imported are not affected.
         </p>
       )}
       {drive && <DrivePicker mode="files" onClose={() => setDrive(false)} />}

@@ -95,7 +95,7 @@ export function FromDrive({ doc }: { doc: StudentDocument }) {
     <>
       {' · '}
       {doc.driveUrl ? (
-        <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="font-medium text-ink-soft underline">
+        <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="tap-link font-medium text-ink-soft underline">
           From Google Drive
         </a>
       ) : (
@@ -214,7 +214,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDr
                 {title}
               </button>
             ) : doc.url ? (
-              <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex min-h-6 items-center text-sm font-semibold text-accent underline">
+              <a href={doc.url} target="_blank" rel="noreferrer" className="tap-link text-sm font-semibold text-accent underline">
                 {title}
               </a>
             ) : (
@@ -228,7 +228,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDr
         <div className="text-[13px] text-muted">
           {showStudent && student && (
             <>
-              <Link to={`/app/students/${student.id}?tab=documents`} className="font-medium text-ink-soft underline">
+              <Link to={`/app/students/${student.id}?tab=documents`} className="tap-link font-medium text-ink-soft underline">
                 {fullName(student)}
               </Link>
               {' · '}

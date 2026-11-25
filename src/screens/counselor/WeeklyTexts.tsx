@@ -114,7 +114,7 @@ export default function WeeklyTexts() {
         <div className="flex flex-wrap items-center justify-between gap-x-4 border-t border-line px-5 py-1 text-[13px] text-muted">
           <p>
             Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]} (
-            <Link to="/app/settings#reminder-rules" className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+            <Link to="/app/settings#reminder-rules" className="tap-link font-medium text-accent hover:underline">
               change the day
             </Link>
             ). Nothing is texted automatically.
@@ -181,7 +181,7 @@ function Row({
 
   const name = (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center text-sm font-semibold text-accent hover:underline">
+      <Link to={`/app/students/${student.id}`} className="tap-link text-sm font-semibold text-accent hover:underline">
         {fullName(student)}
       </Link>
       <span className="text-[13px] text-muted">{phone || 'no phone number'}</span>

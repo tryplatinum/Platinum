@@ -134,7 +134,7 @@ function MeetingsCard({ meetings, onOpen }: { meetings: ReturnType<typeof meetin
           {next ? (
             <>
               Next is{' '}
-              <Link to={`/app/meetings?student=${next.student.id}`} className="font-semibold text-accent hover:underline">
+              <Link to={`/app/meetings?student=${next.student.id}`} className="tap-link font-semibold text-accent hover:underline">
                 {fullName(next.student)}
               </Link>
               , {formatDateLong(next.meeting.date)} at {formatTime(next.meeting.time)} ({formatRelative(next.meeting.date)}).
@@ -190,7 +190,7 @@ function MeetingRow({ item, heading, onOpen }: { item: TodayMeeting; heading?: s
           {when === 'earlier' && <span className="block text-xs font-normal text-muted">{formatRelative(m.date)}</span>}
         </div>
         <div className="min-w-[12rem] flex-1">
-          <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center text-sm font-semibold text-heading hover:text-accent hover:underline">
+          <Link to={`/app/students/${student.id}`} className="tap-link text-sm font-semibold text-heading hover:text-accent hover:underline">
             {fullName(student)}
           </Link>
           <p className="text-[13px] text-muted">
@@ -269,7 +269,7 @@ function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<ty
       {rest.length > 0 && (
         <p className="border-t border-line px-5 py-3 text-sm text-muted">
           Also waiting: {rest.join(' and ')}.{' '}
-          <Link to="/app" className="font-semibold text-accent hover:underline">
+          <Link to="/app" className="tap-link font-semibold text-accent hover:underline">
             See them in the Inbox
           </Link>
         </p>

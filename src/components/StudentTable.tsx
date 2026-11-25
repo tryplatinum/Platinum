@@ -27,7 +27,7 @@ export function StudentTable({ rows }: { rows: StudentSummary[] }) {
 function Who({ s }: { s: StudentSummary }) {
   return (
     <>
-      <Link to={`/app/students/${s.student.id}`} className="inline-flex min-h-6 items-center font-semibold text-heading hover:text-accent hover:underline">
+      <Link to={`/app/students/${s.student.id}`} className="tap-link font-semibold text-heading hover:text-accent hover:underline">
         {fullName(s.student)}
       </Link>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">

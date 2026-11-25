@@ -139,7 +139,7 @@ export function ApprovalCard({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {!hideKind && <Pill>{APPROVAL_TYPE_LABEL[item.kind]}</Pill>}
           {showStudent && student && (
-            <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center text-[13px] font-semibold text-accent hover:underline">
+            <Link to={`/app/students/${student.id}`} className="tap-link text-[13px] font-semibold text-accent hover:underline">
               {fullName(student)}
             </Link>
           )}

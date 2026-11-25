@@ -123,7 +123,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           {task.attachments.map((a) => (
             <li key={a.id} className="text-sm">
               {a.url ? (
-                <a href={a.url} target="_blank" rel="noreferrer" className="font-medium text-accent underline">
+                <a href={a.url} target="_blank" rel="noreferrer" className="tap-link font-medium text-accent underline">
                   {a.name}
                 </a>
               ) : (

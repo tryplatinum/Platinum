@@ -34,6 +34,7 @@ import {
   inputClass,
   textareaClass,
   useAi,
+  usePageTitle,
   useTab,
   useToast,
   type TabItem,
@@ -116,6 +117,7 @@ function Swatch({ name, className, use }: { name: string; className: string; use
 
 export default function Styleguide() {
   const toast = useToast()
+  usePageTitle('Styleguide')
   const ai = useAi()
   const tab = useTab(TABS, 'sg')
   const [segment, setSegment] = useState<'local' | 'en' | 'both'>('both')

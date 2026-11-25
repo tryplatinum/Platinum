@@ -200,7 +200,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold">
-              <Link to={`/app/students/${student.id}`} className="hover:text-accent hover:underline">
+              <Link to={`/app/students/${student.id}`} className="tap-link hover:text-accent hover:underline">
                 {fullName(student)}
               </Link>
             </h2>
@@ -363,7 +363,7 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
             {unscheduled.map((s) => (
               <li key={s.student.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-2 first:border-t-0">
                 <span className="text-sm">
-                  <Link to={`/app/meetings?student=${s.student.id}`} className="inline-flex min-h-6 items-center font-semibold hover:text-accent hover:underline">
+                  <Link to={`/app/meetings?student=${s.student.id}`} className="tap-link font-semibold hover:text-accent hover:underline">
                     {fullName(s.student)}
                   </Link>{' '}
                   <span className="text-muted">{s.lastMeeting ? `last met ${formatDate(s.lastMeeting.date)}` : 'has not met yet'}</span>

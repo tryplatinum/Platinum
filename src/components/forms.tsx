@@ -434,7 +434,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
           {logged && error && (
             <p className="text-[13px] text-muted">
               The meeting itself is saved. You can try drafting again, or{' '}
-              <button type="button" className="font-semibold text-accent underline" onClick={() => open(student)}>
+              <button type="button" className="tap-link font-semibold text-accent underline" onClick={() => open(student)}>
                 open it without drafts
               </button>
               .

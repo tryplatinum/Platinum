@@ -115,7 +115,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
         {doc.sizeBytes !== undefined && <span className="text-[13px] text-muted">{formatBytes(doc.sizeBytes)}</span>}
         {doc.source === 'google_drive' &&
           (doc.driveUrl ? (
-            <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="text-[13px] font-medium text-ink-soft underline">
+            <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="tap-link text-[13px] font-medium text-ink-soft underline">
               From Google Drive
             </a>
           ) : (

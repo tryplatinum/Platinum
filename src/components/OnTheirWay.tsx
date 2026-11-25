@@ -24,7 +24,7 @@ export function OnTheirWay({ className }: { className?: string }) {
   return (
     <p className={cx('motion-fade text-sm text-ink-soft', className)}>
       {count} {count === 1 ? 'message is' : 'messages are'} on the way out.{' '}
-      <Link to="/app/messages" className="font-semibold text-accent hover:underline">
+      <Link to="/app/messages" className="tap-link font-semibold text-accent hover:underline">
         Open Messages
       </Link>
     </p>

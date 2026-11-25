@@ -239,6 +239,19 @@ table {
   }
 }
 
+/* A link in a line of text or a list: at least 24px tall, and on a phone 44px
+   to press without the line growing. */
+@utility tap-link {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  @media (width < 64rem) {
+    min-height: 44px;
+    min-width: 44px;
+    margin-block: -10px;
+  }
+}
+
 /* A row that holds a checkbox: the whole row is the target, the box is 20px. */
 @utility check-row {
   display: flex;

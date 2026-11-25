@@ -156,7 +156,7 @@ function Recipient({ m }: { m: Pick<OutboxMessage, 'toName' | 'toKind' | 'channe
       <span className="text-[13px] text-muted">
         {m.toKind === 'parent' ? 'parent of ' : 'student'}
         {m.toKind === 'parent' && student && (
-          <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+          <Link to={`/app/students/${student.id}`} className="tap-link font-medium text-accent hover:underline">
             {student.firstName}
           </Link>
         )}
@@ -359,7 +359,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
     return (
       <Card>
         <Empty title="No reminders are due. They appear here when a task is close to its due date or late, according to your rules.">
-          <Link to="/app/settings#reminder-rules" className="font-semibold text-accent underline">
+          <Link to="/app/settings#reminder-rules" className="tap-link font-semibold text-accent underline">
             See the rules
           </Link>
         </Empty>

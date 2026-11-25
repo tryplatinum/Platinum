@@ -43,11 +43,11 @@ export default function ListDraft() {
       <PageHeader
         above={
           <>
-            <Link to="/app/students" className="font-medium text-accent hover:underline">
+            <Link to="/app/students" className="tap-link font-medium text-accent hover:underline">
               Students
             </Link>{' '}
             /{' '}
-            <Link to={back} className="font-medium text-accent hover:underline">
+            <Link to={back} className="tap-link font-medium text-accent hover:underline">
               {fullName(student)}
             </Link>{' '}
             / Draft a college list
@@ -202,7 +202,7 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
             <p className="text-[13px] text-ink-soft">
               Not covered by a program above: {unmatched.map((m) => `“${m.major}”`).join(', ')}.{' '}
               {unmatched.some((m) => m.programs.length > 0) ? (
-                <button type="button" className="font-semibold text-accent underline" onClick={matchPrograms}>
+                <button type="button" className="tap-link font-semibold text-accent underline" onClick={matchPrograms}>
                   Match programs to the majors again
                 </button>
               ) : (

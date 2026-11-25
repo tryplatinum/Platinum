@@ -54,7 +54,7 @@ export default function StudentPage() {
       <PageHeader
         above={
           <>
-            <Link to="/app/students" className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+            <Link to="/app/students" className="tap-link font-medium text-accent hover:underline">
               Students
             </Link>{' '}
             / {fullName(student)}
@@ -74,7 +74,7 @@ export default function StudentPage() {
             {waiting > 0 && (
               <>
                 {' · '}
-                <Link to={`/app?student=${student.id}`} className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+                <Link to={`/app?student=${student.id}`} className="tap-link font-medium text-accent hover:underline">
                   Waiting for review ({waiting})
                 </Link>
               </>

@@ -116,7 +116,7 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
       {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
       <p className="text-[13px] text-muted">
         Reminders follow the firm’s rules.{' '}
-        <Link to="/app/settings#reminder-rules" className="font-semibold text-accent hover:underline">
+        <Link to="/app/settings#reminder-rules" className="tap-link font-semibold text-accent hover:underline">
           Settings
         </Link>
       </p>

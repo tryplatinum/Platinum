@@ -76,7 +76,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
       </div>
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive and to sync linked folders. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="tap-link font-semibold underline">Settings</Link> to add from Drive and to sync linked folders. Files already imported are not affected.
         </p>
       )}
 
@@ -157,7 +157,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
           <p className="text-sm">
             {waiting} uploaded {waiting === 1 ? 'file is' : 'files are'} waiting to be filed for {student.firstName}. {waiting === 1 ? 'It shows' : 'They show'} here once filed.
           </p>
-          <Link to={`/app/documents?student=${student.id}`} className="text-sm font-semibold text-accent underline">
+          <Link to={`/app/documents?student=${student.id}`} className="tap-link text-sm font-semibold text-accent underline">
             Open “Waiting for you”
           </Link>
         </Card>
@@ -213,7 +213,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
 
       <p className="text-[13px] text-muted">
         Essay drafts live in the{' '}
-        <Link to="?tab=essays" className="font-semibold text-accent underline">
+        <Link to="?tab=essays" className="tap-link font-semibold text-accent underline">
           Essays tab
         </Link>
         . A link a student attaches to a task is listed here too.
