@@ -10,8 +10,9 @@ import { useStore } from '../store/store'
 import type { Student, WeeklyText } from '../types'
 import { OpenInMessages } from './OpenInMessages'
 import { Button, LinkButton, useToast } from './ui'
+import { UNDO_SECONDS } from '../../shared/outbox'
 
-const SENT_FROM_PHONE = 'You can undo the queued message for 60 seconds.'
+const SENT_FROM_PHONE = `You can undo the queued message for ${UNDO_SECONDS} seconds.`
 
 /** The text is measured as the counselor sees it, with the link placeholder spelled out. */
 export const weeklyTextLength = (text: string) => previewStudentLink(text).length

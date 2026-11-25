@@ -1,5 +1,13 @@
 # Build log
 
+## 10-second Undo (branch `undo-10-seconds`)
+
+An approved message waits 10 seconds instead of 60. `UNDO_SECONDS` in `shared/outbox.ts` is now the one number the store and the copy read, and `test:outbox` checks it against the newest `queue_message` migration.
+
+**Migration, written and not pushed:** `supabase/migrations/20261205000001_undo_ten_seconds.sql`. It is `queue_message` from `20261129000001` with only the interval changed. Checked on 2026-11-25: the remote is at `20261204000001` and a dry run lists only this file. `npm run db:push` asks for confirmation, so a person runs it. Push it and deploy the app close together. Until it is pushed, the copy says 10 but the database still holds 60 (the countdown shows the database's time).
+
+**Known limit:** `save()` queues messages before the other edits and cancels them if those edits fail. That cancel now has to land within 10 seconds of queueing, or the message goes out although the approval was undone on screen. The countdown compares the database's time with the browser clock, so a laptop clock 10 seconds fast hides Undo.
+
 ## UX cleanup (branch `ux-cleanup`)
 
 Front end only. No migration, no server, API, outbox or dispatch change. Every send still goes through `sendMessage`, `queue_message` and the 60-second hold. `src/store/store.ts` is unchanged.
