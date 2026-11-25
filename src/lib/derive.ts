@@ -273,7 +273,7 @@ export function reviewSections(m: Meeting): ReviewSection[] {
 /** How many AI-drafted items in a meeting still wait for the counselor. */
 export const pendingInMeeting = (m: Meeting): number => reviewSections(m).reduce((n, s) => n + s.pending, 0)
 
-/** One draft or pending send waiting for the counselor on the Approvals screen. */
+/** One draft or pending send waiting for the counselor in the Inbox. */
 export type ApprovalKind =
   | 'notes'
   | 'task'
@@ -391,7 +391,7 @@ const PROPOSAL_KIND = {
   meeting_times: 'agent_meeting_times',
 } as const
 
-/** An assistant proposal as an approval. The assistant panel and the approvals screen both build their card from this. */
+/** An assistant proposal as an approval. The assistant panel and the Inbox both build their card from this. */
 export function proposalApproval(p: AgentProposal): ApprovalItem {
   const payload = p.payload
   const preview =
@@ -424,7 +424,7 @@ export function proposalApproval(p: AgentProposal): ApprovalItem {
   }
 }
 
-/** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by the Approvals screen (see reminderApprovals). */
+/** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by allPendingApprovals (see reminderApprovals). */
 export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] {
   const active = new Set(activeStudents(data).map((s) => s.id))
   const mine = (id: ID) => active.has(id) && (!studentId || id === studentId)
@@ -612,7 +612,7 @@ export function allPendingApprovals(data: AppData, reminderDrafts: Parameters<ty
 
 export const pendingApprovalCount = (data: AppData, studentId?: ID) => pendingApprovals(data, studentId).length
 
-/** Groups for the Approvals screen: by student, then by source. Urgent / soon due first, then newest. */
+/** Groups for the Inbox: by student, then by source. Urgent / soon due first, then newest. */
 export function approvalGroups(items: ApprovalItem[]): { studentId: ID; sourceKey: string; sourceLabel: string; items: ApprovalItem[] }[] {
   const map = new Map<string, ApprovalItem[]>()
   for (const item of items) {

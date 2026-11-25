@@ -139,7 +139,7 @@ export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, class
       {editing && !sending && student && <EditPanel item={item} onClose={() => setEditing(false)} />}
       {discarding && (
         <Modal title={weekly ? 'Skip this week’s text?' : 'Discard this draft?'} onClose={() => setDiscarding(false)}>
-          <p className="text-sm text-ink-soft">{weekly ? 'It will not be sent this week. You can take it back under “Done this week” in Weekly texts.' : 'It will leave the queue and will not be sent or saved.'}</p>
+          <p className="text-sm text-ink-soft">{weekly ? 'It will not be sent this week. You can take it back under “Done this week” in Weekly texts.' : 'It leaves the Inbox and will not be sent or saved.'}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="primary" onClick={onDiscard}>
               {weekly ? 'Skip this week' : 'Discard'}
@@ -150,7 +150,7 @@ export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, class
       )}
       {skipping && (
         <Modal title="Skip this reminder?" onClose={() => setSkipping(false)}>
-          <p className="text-sm text-ink-soft">It leaves the Approvals queue. You can undo from the toast.</p>
+          <p className="text-sm text-ink-soft">It leaves the Inbox. You can undo from the toast.</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <Button variant="primary" onClick={() => void onSkip('once')}>
               Skip this time

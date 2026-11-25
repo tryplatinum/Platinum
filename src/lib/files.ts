@@ -72,9 +72,6 @@ export function newFiles(data: AppData): StudentDocument[] {
   return data.documents.filter((d) => (isNewFile(d) || isSorting(d)) && !needsCheck(d) && students.has(d.studentId))
 }
 
-/** How many files want a counselor's attention. Used for the badge in the sidebar. */
-export const filesWaitingCount = (data: AppData) => waitingFiles(data).length + filesToCheck(data).length
-
 /** Who added a file, in a word or two. */
 export function uploadedBy(doc: StudentDocument, student: Student | undefined, me: ID | undefined): string {
   if (doc.uploadedByKind === 'student_link' || doc.addedBy === 'student') return student?.firstName ?? 'The student'

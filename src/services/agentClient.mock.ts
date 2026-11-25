@@ -87,7 +87,7 @@ function proposalsReply(threadId: string, studentId: string | null): AgentRespon
   return {
     ok: true,
     threadId,
-    reply: 'Two drafts are ready in Approvals. They wait there until you approve them.',
+    reply: 'Two drafts are ready. They wait until you approve them.',
     proposals: [
       proposal('parent_update', studentId, parent, { body: parent }),
       proposal('task', studentId, task, { title: task }),
@@ -105,7 +105,7 @@ function longReply(threadId: string, studentId: string | null): AgentResponse {
       `Here is a longer look at ${who}, still only notes for you to check.`,
       'Two things are late: the activities list, and the request for a counselor recommendation. Both were named in the last meeting. The activities list has stayed open since then, and the recommendation request has not been sent.',
       'The next meeting is already on the calendar. A useful brief would cover what moved, what is still late, and the one question for the family: who is writing the recommendation.',
-      'Nothing here is sent. Ask for a parent update or a task and the drafts will wait in Approvals for you to edit and approve.',
+      'Nothing here is sent. Ask for a parent update or a task and the drafts will wait here and in the Inbox for you to edit and approve.',
     ].join('\n\n'),
     proposals: [],
     sources: [source('meeting', 'Meeting · Nov 18')],

@@ -9,7 +9,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
 import { RequireFirm } from './components/RequireFirm'
 import Activity from './screens/counselor/Activity'
-import Approvals from './screens/counselor/Approvals'
+import Inbox from './screens/counselor/Approvals'
 import CommandCenter from './screens/counselor/CommandCenter'
 import Documents from './screens/counselor/Documents'
 import Meetings from './screens/counselor/Meetings'
@@ -57,7 +57,7 @@ export default function App() {
 
       <Route element={<RequireFirm />}>
         <Route path="/app" element={<CounselorLayout />}>
-          <Route index element={<Approvals />} />
+          <Route index element={<Inbox />} />
           <Route path="overview" element={<CommandCenter />} />
           <Route path="activity" element={<Activity />} />
           <Route path="students" element={<Students />} />

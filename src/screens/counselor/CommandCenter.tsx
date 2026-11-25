@@ -1,5 +1,5 @@
 // Overview (formerly the command center): caseload summary and shortcuts.
-// Approvals live at /app.
+// The Inbox is at /app.
 
 import { useState } from 'react'
 import { LogMeetingModal, StudentFormModal } from '../../components/forms'
@@ -55,10 +55,10 @@ export default function CommandCenter() {
               <p className="text-[15px] font-semibold">
                 Waiting for your approval <span className="font-medium text-ink-soft">({approvalCount})</span>
               </p>
-              <p className="text-[13px] text-ink-soft">Drafts and pending sends are reviewed on Approvals. Nothing is sent until you approve.</p>
+              <p className="text-[13px] text-ink-soft">Drafts and pending sends are reviewed in the Inbox. Nothing is sent until you approve.</p>
             </div>
             <LinkButton variant="primary" to="/app">
-              Open Approvals
+              Open the Inbox
             </LinkButton>
           </Card>
 
@@ -71,7 +71,7 @@ export default function CommandCenter() {
                 </p>
               </div>
               <LinkButton variant="primary" to="/app">
-                Review on Approvals
+                Review in the Inbox
               </LinkButton>
             </Card>
           )}

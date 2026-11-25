@@ -1,5 +1,5 @@
 // The counselor's assistant. It proposes and never acts. A pending proposal is
-// the same approval card the approvals screen shows, built from the same row in
+// the same approval card the Inbox shows, built from the same row in
 // data.agentProposals, so a person can decide it in either place.
 // Open or closed is remembered in this browser. Each student's thread, and the
 // general thread, stay in memory for the session.
@@ -97,7 +97,7 @@ function studentIdFromLocation(pathname: string, search: string): string | null 
   }
 }
 
-function approvalsHref(studentId: string | null): string {
+function inboxHref(studentId: string | null): string {
   return studentId ? `/app?student=${encodeURIComponent(studentId)}` : '/app'
 }
 
@@ -551,8 +551,8 @@ function ProposalCard({ proposal, showStudent }: { proposal: CardProposal; showS
       </div>
       <p className="mt-1 break-words text-sm">{proposal.summary}</p>
       {status === 'pending' && (
-        <Link to={approvalsHref(proposal.studentId)} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
-          Review in Approvals
+        <Link to={inboxHref(proposal.studentId)} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
+          Review in the Inbox
         </Link>
       )}
       {status === 'approved' && messageId && (

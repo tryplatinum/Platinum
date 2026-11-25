@@ -1,127 +1,207 @@
-// Approvals: the counselor's home. Every AI draft and pending send is reviewed
-// here — edited, approved or discarded — before anything leaves the firm.
+// Inbox: the counselor's home. Every AI draft and pending send is reviewed here
+// (edited, approved or discarded) before anything leaves the firm. Files to
+// file or check and draft college lists are here too.
 
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { outboxStatusLabel } from '../../../shared/outbox'
 import { ApprovalCard, ApproveAll } from '../../components/ApprovalCard'
-import { Card, CardHeader, Empty, PageHeader } from '../../components/ui'
+import { FileRow } from '../../components/files/FileRow'
+import { FilingRow } from '../../components/files/FilingRow'
+import { Button, Card, CardHeader, Empty, LinkButton, PageHeader, inputBase } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
-import { allPendingApprovals, approvalGroups, findStudent, fullName, type ApprovalItem } from '../../lib/derive'
-import { reminderQueue } from '../../lib/reminders'
-import { filesWaitingCount } from '../../lib/files'
-import { useData } from '../../store/store'
-import type { OutboxMessage } from '../../types'
+import { APPROVAL_TYPE_LABEL, activeStudents, approvalGroups, findStudent, fullName, type ApprovalItem } from '../../lib/derive'
+import { isStoredFile } from '../../lib/files'
+import { inboxContents, inboxSize, messageOnItsWay } from '../../lib/inbox'
+import { useData, useStore } from '../../store/store'
+import type { CollegeListDraft, StudentDocument } from '../../types'
 
-export default function Approvals() {
+const FILES = 'files'
+const LISTS = 'college-list-drafts'
+
+/** "Parent update" is "parent-update" in the address. Kinds that read the same are one choice. */
+const slug = (label: string) => label.toLowerCase().replace(/ /g, '-')
+const KINDS: { value: string; label: string }[] = [
+  ...[...new Set(Object.values(APPROVAL_TYPE_LABEL))].map((label) => ({ value: slug(label), label })),
+  { value: FILES, label: 'Files' },
+  { value: LISTS, label: 'College list drafts' },
+]
+
+export default function Inbox() {
   const data = useData()
-  const [params] = useSearchParams()
-  const studentFilter = params.get('student') || undefined
-  const reminders = reminderQueue(data)
-  const items = useMemo(() => allPendingApprovals(data, reminders, studentFilter), [data, reminders, studentFilter])
-  const groups = useMemo(() => approvalGroups(items), [items])
-  const student = studentFilter ? findStudent(data, studentFilter) : undefined
-  const recent = data.outbox.slice(0, 10)
+  const [params, setParams] = useSearchParams()
+  const studentId = params.get('student') || undefined
+  const asked = params.get('kind')
+  const kind = KINDS.some((k) => k.value === asked) ? asked : ''
+  const student = studentId ? findStudent(data, studentId) : undefined
+  const setFilter = (key: 'student' | 'kind', value: string) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true })
+  }
+
+  const all = useMemo(() => inboxContents(data, studentId), [data, studentId])
+  const shown = {
+    approvals: all.approvals.filter((i) => !kind || slug(APPROVAL_TYPE_LABEL[i.kind]) === kind),
+    toFile: !kind || kind === FILES ? all.toFile : [],
+    toCheck: !kind || kind === FILES ? all.toCheck : [],
+    listDrafts: !kind || kind === LISTS ? all.listDrafts : [],
+  }
+  const count = inboxSize(shown)
+  const filtered = Boolean(studentId || kind)
+  const students = activeStudents(data)
+
+  // While a file is being sorted, ask the server how it is going, so it appears here by itself.
+  const refreshFiles = useStore((s) => s.refreshFiles)
+  const sorting = data.documents.filter((d) => isStoredFile(d) && d.fileStatus === 'sorting').length
+  useEffect(() => {
+    if (sorting === 0) return
+    const timer = setInterval(() => void refreshFiles(), 4000)
+    return () => clearInterval(timer)
+  }, [sorting, refreshFiles])
 
   return (
     <>
       <PageHeader
-        title="Approvals"
+        title="Inbox"
         above={student ? `Filtered to ${fullName(student)}` : undefined}
-        sub={items.length === 0 ? 'Nothing waiting for review.' : `${items.length} waiting for review`}
+        sub={count === 0 ? 'Nothing waiting for review.' : `${count} waiting for review`}
         actions={
-          studentFilter ? (
-            <Link to="/app" className="text-sm font-semibold text-accent hover:underline">
-              Show all students
-            </Link>
-          ) : undefined
+          <>
+            <select aria-label="Filter by student" className={inputBase} value={student?.id ?? ''} onChange={(e) => setFilter('student', e.target.value)}>
+              <option value="">All students</option>
+              {/* An archived student can still be named in the address. */}
+              {student?.archived && <option value={student.id}>{fullName(student)}</option>}
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {fullName(s)}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Filter by kind" className={inputBase} value={kind ?? ''} onChange={(e) => setFilter('kind', e.target.value)}>
+              <option value="">All kinds</option>
+              {KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+          </>
         }
       />
 
-      {recent.length > 0 && <RecentlyQueued rows={recent} />}
+      <OnTheirWay />
 
-      {groups.length === 0 ? (
+      {count === 0 ? (
         <Card>
-          <Empty title="Nothing waiting for review." />
+          <Empty title={filtered ? 'Nothing waiting matches these filters.' : 'Nothing waiting for review.'}>
+            {filtered && <Button onClick={() => setParams({}, { replace: true })}>Clear filters</Button>}
+          </Empty>
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {groups.map((g) => (
+          {approvalGroups(shown.approvals).map((g) => (
             <ApprovalGroupCard key={`${g.studentId}:${g.sourceKey}`} studentId={g.studentId} sourceLabel={g.sourceLabel} items={g.items} />
           ))}
+          <Files toFile={shown.toFile} toCheck={shown.toCheck} />
+          <ListDrafts drafts={shown.listDrafts} />
         </div>
       )}
-
-      <WaitingElsewhere />
     </>
   )
 }
 
-function WaitingElsewhere() {
-  const data = useData()
-  const drafts = data.collegeListDrafts.filter((d) => d.status === 'draft')
-  const files = filesWaitingCount(data)
-  if (drafts.length === 0 && files === 0) return null
-  const draftLink =
-    drafts.length === 1 ? `/app/students/${drafts[0]!.studentId}/list-draft` : '/app/students'
-  return (
-    <Card>
-      <CardHeader size="section" className="border-b border-line px-5 py-4" title="Waiting on other screens" />
-      <ul>
-        {drafts.length > 0 && (
-          <li className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
-            <span className="text-sm">
-              {drafts.length} college list {drafts.length === 1 ? 'draft' : 'drafts'}
-            </span>
-            <Link to={draftLink} className="text-sm font-semibold text-accent hover:underline">
-              Open {drafts.length === 1 ? 'draft' : 'students'}
-            </Link>
-          </li>
-        )}
-        {files > 0 && (
-          <li className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
-            <span className="text-sm">
-              {files} waiting {files === 1 ? 'file' : 'files'}
-            </span>
-            <Link to="/app/documents" className="text-sm font-semibold text-accent hover:underline">
-              Open Documents
-            </Link>
-          </li>
-        )}
-      </ul>
-    </Card>
-  )
-}
-
-function RecentlyQueued({ rows }: { rows: OutboxMessage[] }) {
-  return (
-    <Card>
-      <CardHeader size="section" className="border-b border-line px-5 py-3" title="Recently queued" sub="The last 10 messages through the outbox." />
-      <ul>
-        {rows.map((m) => (
-          <RecentRow key={m.id} message={m} />
-        ))}
-      </ul>
-    </Card>
-  )
-}
-
-function RecentRow({ message: m }: { message: OutboxMessage }) {
+/** One line, only while a message can still be undone or is waiting for the phone. */
+function OnTheirWay() {
+  const outbox = useData().outbox
   const [now, setNow] = useState(() => Date.now())
-  const counting = m.status === 'queued' && Date.parse(m.sendAfter) > now
+  const count = outbox.filter((m) => messageOnItsWay(m, now)).length
   useEffect(() => {
-    if (!counting) return
+    // A message queued since the last tick is measured from now, not from then.
+    setNow(Date.now())
+  }, [outbox])
+  useEffect(() => {
+    if (count === 0) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [counting])
+  }, [count])
+  if (count === 0) return null
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-2.5">
-      <Link to={`/app/messages?message=${m.id}`} className="min-w-0 flex-1 text-sm font-medium text-accent hover:underline">
-        {m.toName} · {m.kind.replace(/_/g, ' ')}
+    <p className="text-sm text-ink-soft">
+      {count} {count === 1 ? 'message is' : 'messages are'} on the way out.{' '}
+      <Link to="/app/messages" className="font-semibold text-accent hover:underline">
+        Open Messages
       </Link>
-      <span className="text-[13px] font-semibold text-ink">{outboxStatusLabel(m, now)}</span>
-      <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
-    </li>
+    </p>
+  )
+}
+
+function Files({ toFile, toCheck }: { toFile: StudentDocument[]; toCheck: StudentDocument[] }) {
+  if (toFile.length + toCheck.length === 0) return null
+  return (
+    <Card>
+      <CardHeader
+        size="section"
+        className="px-5 py-4"
+        title="Files"
+        count={toFile.length + toCheck.length}
+        action={
+          <Link to="/app/documents" className="text-sm font-semibold text-accent hover:underline">
+            Open Documents
+          </Link>
+        }
+      />
+      {toFile.length > 0 && (
+        <>
+          <p className="border-t border-line bg-canvas px-5 py-2 text-xs font-semibold text-muted">Waiting to be filed</p>
+          <ul>
+            {toFile.map((d) => (
+              <li key={d.id} className="border-t border-line px-5 py-4">
+                <FilingRow doc={d} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {toCheck.length > 0 && (
+        <>
+          <p className="border-t border-line bg-canvas px-5 py-2 text-xs font-semibold text-muted">Waiting to be checked</p>
+          <ul>
+            {toCheck.map((d) => (
+              <FileRow key={d.id} doc={d} showStudent />
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  )
+}
+
+function ListDrafts({ drafts }: { drafts: CollegeListDraft[] }) {
+  const data = useData()
+  if (drafts.length === 0) return null
+  return (
+    <Card>
+      <CardHeader size="section" className="px-5 py-4" title="College list drafts" count={drafts.length} />
+      <ul>
+        {drafts.map((d) => {
+          const student = findStudent(data, d.studentId)
+          return (
+            student && (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
+                <span className="text-sm">
+                  <span className="font-semibold">{fullName(student)}</span>
+                  <span className="text-muted"> · drafted {formatTimestamp(d.createdAt)}</span>
+                </span>
+                <LinkButton to={`/app/students/${student.id}/list-draft`} aria-label={`Open ${fullName(student)}’s college list draft`}>
+                  Open draft
+                </LinkButton>
+              </li>
+            )
+          )
+        })}
+      </ul>
+    </Card>
   )
 }
 

@@ -5,11 +5,10 @@
 // footer so they do not compete with the page.
 
 import { ArrowLeft, CalendarDays, ChevronDown, ClipboardList, FolderOpen, Inbox, LayoutDashboard, Menu, Send, Users, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { MEETING_APPROVAL_KINDS, activeStudents, allPendingApprovals, findStudent, fullName } from '../lib/derive'
-import { filesWaitingCount } from '../lib/files'
-import { reminderQueue } from '../lib/reminders'
+import { activeStudents, findStudent, fullName } from '../lib/derive'
+import { inboxCount } from '../lib/inbox'
 import { signOut } from '../store/session'
 import { setAppearance, useAppearance } from '../theme'
 import { useData, useStore } from '../store/store'
@@ -32,15 +31,15 @@ export function CounselorLayout() {
   const panel = useAgentPanel()
   useEffect(() => setMenuOpen(false), [location.pathname, location.search])
 
-  const reminders = reminderQueue(data)
-  const waiting = allPendingApprovals(data, reminders)
+  // The only count in the sidebar, so nothing is counted twice.
+  const waiting = useMemo(() => inboxCount(data), [data])
   const nav = [
-    { to: '/app', label: 'Approvals', icon: Inbox, end: true, badge: waiting.length, badgeLabel: 'waiting for approval' },
+    { to: '/app', label: 'Inbox', icon: Inbox, end: true, badge: waiting, badgeLabel: 'waiting for review' },
     { to: '/app/overview', label: 'Overview', icon: LayoutDashboard, end: false, badge: 0, badgeLabel: '' },
     { to: '/app/students', label: 'Students', icon: Users, end: false, badge: 0, badgeLabel: '' },
-    { to: '/app/meetings', label: 'Meetings', icon: CalendarDays, end: false, badge: waiting.filter((a) => MEETING_APPROVAL_KINDS.includes(a.kind)).length, badgeLabel: 'to review' },
-    { to: '/app/messages', label: 'Messages sent', icon: Send, end: false, badge: reminders.filter((r) => r.mode === 'needs_approval').length, badgeLabel: 'reminders waiting' },
-    { to: '/app/documents', label: 'Documents', icon: FolderOpen, end: false, badge: filesWaitingCount(data), badgeLabel: 'files waiting or to check' },
+    { to: '/app/meetings', label: 'Meetings', icon: CalendarDays, end: false, badge: 0, badgeLabel: '' },
+    { to: '/app/messages', label: 'Messages sent', icon: Send, end: false, badge: 0, badgeLabel: '' },
+    { to: '/app/documents', label: 'Documents', icon: FolderOpen, end: false, badge: 0, badgeLabel: '' },
     { to: '/app/activity', label: 'Activity', icon: ClipboardList, end: false, badge: 0, badgeLabel: '' },
   ]
 
