@@ -2,10 +2,13 @@
 // with the tokens they are built from. Open /app/styleguide; it is not in the
 // navigation. Nothing here reads or writes the firm's data.
 
-import { FolderOpen } from 'lucide-react'
+import { BellRing, FolderOpen } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { InboxLine } from '../../components/InboxLine'
 import { Logo, Spark } from '../../components/Logo'
 import { Count, MotionList, Reveal, TimeLeft, useLeaving, useReveal } from '../../components/motion'
+import { BY_HAND_CHANNELS } from '../../lib/delivery'
+import { CHANNEL_LABEL } from '../../lib/language'
 import {
   AiErrorNote,
   AiTag,
@@ -24,6 +27,7 @@ import {
   Modal,
   Note,
   OwnerChip,
+  PhoneFold,
   PageHeader,
   Pill,
   PlaceholderNote,
@@ -34,6 +38,7 @@ import {
   SegmentedControl,
   SendLabel,
   Skeleton,
+  StatTile,
   StatusPill,
   Tabs,
   Thinking,
@@ -315,12 +320,40 @@ export default function Styleguide() {
           <Button variant="primary" busy={working} onClick={() => (setWorking(true), setTimeout(() => setWorking(false), 1800))}>
             {working ? 'Working…' : 'Busy while it works'}
           </Button>
-          <Button variant="primary">
+          <Button>
             <SendLabel>Approve and send</SendLabel>
           </Button>
-          <Button variant="primary">Approve</Button>
+          <Button>Approve</Button>
+          <Button>Copy for WeChat</Button>
+          <Button className="w-11 px-0!" title="Remind" aria-label="Remind about a sample task">
+            <BellRing size={20} strokeWidth={1.75} className="shrink-0" aria-hidden />
+          </Button>
           <span className="text-[13px] text-muted">The send icon is only on a button that sends. Every button moves a little when pressed.</span>
         </Row>
+        <p className="text-[13px] text-muted">
+          One filled button in a view, for what the counselor most likely came to do. Rows in a list use the outlined button, and a draft’s approve button is filled only where it is the one open draft. A channel that is not connected ({BY_HAND_CHANNELS.map((c) => CHANNEL_LABEL[c]).join(', ')}) gets “Copy for…”, never “Approve and send”. A task that is not late is reminded from the icon button.
+        </p>
+      </Block>
+
+      <Block title="Numbers and short rows">
+        <div className="grid max-w-xl grid-cols-3 gap-2 sm:gap-4">
+          <StatTile to="/app/styleguide" value={2} label="Meetings today" />
+          <StatTile to="/app/styleguide" value={4} label="Slipping" tone="warn" />
+          <StatTile to="/app/styleguide" value={3} label="Behind" tone="bad" />
+        </div>
+        <p className="text-[13px] text-muted">A stat tile is a link to what it counts. It is tinted only when the number calls for it, and it does not count up.</p>
+        <Card className="max-w-md">
+          <div className="border-l-2 border-accent bg-accent-soft py-2.5 pl-3.5 pr-4">
+            <InboxLine row={{ key: 'a', pill: 'Reminder', who: 'To a parent · Text', line: 'Hello, a reminder that the sample task was due last week and is now late.', label: 'Reminder' }} />
+          </div>
+          <div className="border-l-2 border-t border-transparent border-t-line py-2.5 pl-3.5 pr-4">
+            <InboxLine row={{ key: 'b', pill: 'Parent update', who: 'To a parent · WeChat', line: 'A second row, not chosen. Its message is one line here and whole when it is opened.', label: 'Parent update' }} />
+          </div>
+        </Card>
+        <p className="text-[13px] text-muted">The Inbox’s row, also used on Today: what it is and who it goes to, then one line of the message. It only opens the draft. Nothing is approved from the short form.</p>
+        <PhoneFold label="A long card" count={10}>
+          <Card className="p-4 text-sm">On a phone this starts closed under its name. Where there is room it is simply shown.</Card>
+        </PhoneFold>
       </Block>
 
       <Block title="Inputs">
