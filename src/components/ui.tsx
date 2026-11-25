@@ -442,11 +442,16 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
     return () => clearInterval(timer)
   }, [])
   const open = Date.parse(sendAfter) > now
+  // Undone somewhere else, on the approval card.
+  const cancelled = useStore((s) => s.data.outbox.some((m) => m.id === messageId && m.status === 'cancelled'))
   useEffect(() => {
-    if (open || dispatched) return
+    if (cancelled) onClose()
+  }, [cancelled]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (open || dispatched || cancelled) return
     setDispatched(true)
     void runDispatch()
-  }, [open, dispatched])
+  }, [open, dispatched, cancelled])
   const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   return (
     <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">

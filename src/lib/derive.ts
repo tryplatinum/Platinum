@@ -3,6 +3,7 @@
 // The AI is given these facts; it never produces them.
 
 import type {
+  AgentProposal,
   AppData,
   Channel,
   CollegeApp,
@@ -13,6 +14,7 @@ import type {
   Meeting,
   OwnerType,
   Parent,
+  ParentReport,
   PersonalNote,
   Student,
   StudentDocument,
@@ -342,6 +344,86 @@ export type ApprovalItem = {
   sourcesLine?: string
 }
 
+/** A drafted parent report as an approval. Also used by the student's Parent reports tab. */
+export function reportApproval(data: AppData, r: ParentReport): ApprovalItem {
+  const parent = findStudent(data, r.studentId)?.parents.find((p) => p.id === r.parentId)
+  return {
+    key: `report:${r.id}`,
+    kind: 'report',
+    studentId: r.studentId,
+    sourceKey: `report:${r.id}`,
+    sourceLabel: 'Report',
+    sourceLine: r.source ? 'Drafted as a parent report' : 'Parent report draft',
+    preview: r.bodyLocal ?? r.bodyEn,
+    isSend: true,
+    toName: parent?.name,
+    channel: r.channel,
+    language: r.language,
+    sortAt: r.createdOn,
+    reportId: r.id,
+  }
+}
+
+/** Essay feedback as an approval. Also used by the student's Essays tab. */
+export function essayApproval(data: AppData, d: StudentDocument): ApprovalItem {
+  return {
+    key: `essay:${d.id}`,
+    kind: 'essay',
+    studentId: d.studentId,
+    sourceKey: `essay:${d.id}`,
+    sourceLabel: 'Essay feedback',
+    sourceLine: `Feedback on “${d.name}”`,
+    preview: d.feedback?.overall ?? '',
+    isSend: true,
+    toName: findStudent(data, d.studentId)?.firstName,
+    channel: 'text',
+    language: 'en',
+    sortAt: d.feedback?.generatedOn ?? d.addedOn,
+    docId: d.id,
+  }
+}
+
+const PROPOSAL_KIND = {
+  message: 'agent_message',
+  parent_update: 'agent_parent_update',
+  task: 'agent_task',
+  profile_change: 'agent_profile_change',
+  meeting_times: 'agent_meeting_times',
+} as const
+
+/** An assistant proposal as an approval. The assistant panel and the approvals screen both build their card from this. */
+export function proposalApproval(p: AgentProposal): ApprovalItem {
+  const payload = p.payload
+  const preview =
+    typeof payload.body === 'string'
+      ? payload.body
+      : typeof payload.title === 'string'
+        ? payload.title
+        : Array.isArray(payload.slots)
+          ? (payload.slots as { when?: string }[]).map((s) => s.when).filter(Boolean).join(' · ')
+          : typeof payload.to === 'string'
+            ? `${payload.field ?? 'Field'}: ${payload.from ?? ''} → ${payload.to}`
+            : p.rationale || p.kind
+  return {
+    key: `agent:${p.id}`,
+    kind: PROPOSAL_KIND[p.kind],
+    studentId: p.studentId,
+    sourceKey: `agent:${p.threadId}`,
+    sourceLabel: 'From the assistant',
+    sourceLine: p.rationale || 'Drafted by the assistant',
+    preview: String(preview),
+    isSend: p.kind === 'message' || p.kind === 'parent_update',
+    toName: typeof payload.toName === 'string' ? payload.toName : undefined,
+    channel: typeof payload.channel === 'string' ? (payload.channel as Channel) : undefined,
+    language: typeof payload.language === 'string' ? (payload.language as Language) : undefined,
+    sortDue: typeof payload.dueDate === 'string' ? payload.dueDate : undefined,
+    sortAt: p.createdAt,
+    proposalId: p.id,
+    rationale: p.rationale,
+    sourcesLine: p.sources.map((s) => s.label).filter(Boolean).join(' · ') || undefined,
+  }
+}
+
 /** Everything waiting for a counselor, as one row per draft or pending send. Reminders are merged in by the Approvals screen (see reminderApprovals). */
 export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] {
   const active = new Set(activeStudents(data).map((s) => s.id))
@@ -448,42 +530,11 @@ export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] 
   }
 
   for (const r of data.reports) {
-    if (!mine(r.studentId) || r.status !== 'draft') continue
-    const parent = findStudent(data, r.studentId)?.parents.find((p) => p.id === r.parentId)
-    items.push({
-      key: `report:${r.id}`,
-      kind: 'report',
-      studentId: r.studentId,
-      sourceKey: `report:${r.id}`,
-      sourceLabel: 'Report',
-      sourceLine: r.source ? 'Drafted as a parent report' : 'Parent report draft',
-      preview: r.bodyLocal ?? r.bodyEn,
-      isSend: true,
-      toName: parent?.name,
-      channel: r.channel,
-      language: r.language,
-      sortAt: r.createdOn,
-      reportId: r.id,
-    })
+    if (mine(r.studentId) && r.status === 'draft') items.push(reportApproval(data, r))
   }
 
   for (const d of data.documents) {
-    if (!mine(d.studentId) || d.feedback?.review !== 'pending') continue
-    items.push({
-      key: `essay:${d.id}`,
-      kind: 'essay',
-      studentId: d.studentId,
-      sourceKey: `essay:${d.id}`,
-      sourceLabel: 'Essay feedback',
-      sourceLine: `Feedback on “${d.name}”`,
-      preview: d.feedback.overall,
-      isSend: true,
-      toName: findStudent(data, d.studentId)?.firstName,
-      channel: 'text',
-      language: 'en',
-      sortAt: d.feedback.generatedOn ?? d.addedOn,
-      docId: d.id,
-    })
+    if (mine(d.studentId) && d.feedback?.review === 'pending') items.push(essayApproval(data, d))
   }
 
   for (const w of data.weeklyTexts) {
@@ -525,44 +576,8 @@ export function pendingApprovals(data: AppData, studentId?: ID): ApprovalItem[] 
     }
   }
 
-  const kindMap = {
-    message: 'agent_message',
-    parent_update: 'agent_parent_update',
-    task: 'agent_task',
-    profile_change: 'agent_profile_change',
-    meeting_times: 'agent_meeting_times',
-  } as const
   for (const p of data.agentProposals ?? []) {
-    if (p.status !== 'pending' || !mine(p.studentId)) continue
-    const payload = p.payload
-    const preview =
-      typeof payload.body === 'string'
-        ? payload.body
-        : typeof payload.title === 'string'
-          ? payload.title
-          : Array.isArray(payload.slots)
-            ? (payload.slots as { when?: string }[]).map((s) => s.when).filter(Boolean).join(' · ')
-            : typeof payload.to === 'string'
-              ? `${payload.field ?? 'Field'}: ${payload.from ?? ''} → ${payload.to}`
-              : p.rationale || p.kind
-    items.push({
-      key: `agent:${p.id}`,
-      kind: kindMap[p.kind],
-      studentId: p.studentId,
-      sourceKey: `agent:${p.threadId}`,
-      sourceLabel: 'From the assistant',
-      sourceLine: p.rationale || 'Drafted by the assistant',
-      preview: String(preview),
-      isSend: p.kind === 'message' || p.kind === 'parent_update',
-      toName: typeof payload.toName === 'string' ? payload.toName : undefined,
-      channel: typeof payload.channel === 'string' ? (payload.channel as Channel) : undefined,
-      language: typeof payload.language === 'string' ? (payload.language as Language) : undefined,
-      sortDue: typeof payload.dueDate === 'string' ? payload.dueDate : undefined,
-      sortAt: p.createdAt,
-      proposalId: p.id,
-      rationale: p.rationale,
-      sourcesLine: p.sources.map((s) => s.label).filter(Boolean).join(' · ') || undefined,
-    })
+    if (p.status === 'pending' && mine(p.studentId)) items.push(proposalApproval(p))
   }
 
   return items

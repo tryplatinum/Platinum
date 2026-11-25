@@ -1,15 +1,18 @@
-// The counselor's assistant. It proposes and never acts: a proposal is a card
-// with a link into Approvals, and approval happens only there.
+// The counselor's assistant. It proposes and never acts. A pending proposal is
+// the same approval card the approvals screen shows, built from the same row in
+// data.agentProposals, so a person can decide it in either place.
 // Open or closed is remembered in this browser. Each student's thread, and the
 // general thread, stay in memory for the session.
 
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { proposalSummary, type AgentHistoryMessage, type AgentProposalKind, type AgentProposalOut, type AgentProposalStatus, type AgentTurnSource } from '../../../shared/agent'
-import { findStudent, fullName } from '../../lib/derive'
+import { useApprovalSends } from '../../lib/approvalSends'
+import { findStudent, fullName, proposalApproval } from '../../lib/derive'
 import agentClient, { AgentNetworkError, AgentRequestError } from '../../services/agentClient'
 import { useData, useStore } from '../../store/store'
+import { ApprovalCard, ApproveAll, SendState } from '../ApprovalCard'
 import { Spark } from '../Logo'
 import { Button, Card, Empty, Pill, Thinking, cx, textareaClass } from '../ui'
 
@@ -78,9 +81,14 @@ function writeOpen(open: boolean) {
 let bubbleId = 0
 const nextId = () => `agent-${Date.now().toString(36)}-${bubbleId++}`
 
-/** `/app/students/:id` is a student thread. Every other counselor page is the general one. */
-function studentIdFromPath(pathname: string): string | null {
+/**
+ * A student's pages (`/app/students/:id` and anything under it) and a student
+ * selected in Meetings (`/app/meetings?student=`) use that student's thread.
+ * Every other counselor page is the general one.
+ */
+function studentIdFromLocation(pathname: string, search: string): string | null {
   const [, app, students, id] = pathname.split('/')
+  if (app === 'app' && students === 'meetings') return new URLSearchParams(search).get('student')
   if (app !== 'app' || students !== 'students' || !id) return null
   try {
     return decodeURIComponent(id)
@@ -116,6 +124,21 @@ function cardsFromReply(proposals: AgentProposalOut[]): CardProposal[] {
 function fromTranscript(message: AgentHistoryMessage): Bubble {
   if (message.role === 'user') return { id: message.id, role: 'user', text: message.text }
   return { id: message.id, role: 'assistant', text: message.text, sources: message.sources, proposals: cardsFromHistory(message) }
+}
+
+/** The threads with any newer proposal status written onto their cards. The same object when nothing changed. */
+function withStatuses(threads: Record<string, ThreadUi>, status: Map<string, AgentProposalStatus>): Record<string, ThreadUi> {
+  const stale = (p: CardProposal) => status.has(p.id) && status.get(p.id) !== p.status
+  let changed = false
+  const next = Object.fromEntries(
+    Object.entries(threads).map(([key, thread]) => {
+      if (!thread.messages.some((m) => m.role === 'assistant' && m.proposals.some(stale))) return [key, thread]
+      changed = true
+      const messages = thread.messages.map((m) => (m.role === 'assistant' ? { ...m, proposals: m.proposals.map((p) => (stale(p) ? { ...p, status: status.get(p.id) ?? p.status } : p)) } : m))
+      return [key, { ...thread, messages }]
+    }),
+  )
+  return changed ? next : threads
 }
 
 function withoutRetry(messages: Bubble[], text: string): Bubble[] {
@@ -158,9 +181,9 @@ export function useAgentPanel() {
 }
 
 export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const data = useData()
-  const routeStudentId = studentIdFromPath(pathname)
+  const routeStudentId = studentIdFromLocation(pathname, search)
   const student = routeStudentId ? findStudent(data, routeStudentId) : undefined
   // A student page whose id is not in the firm falls back to the general thread.
   const studentId = student ? student.id : null
@@ -227,6 +250,47 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
     }
   }, [open, studentId])
 
+  // The browser keeps only pending proposals, so a decided one leaves `data` at the
+  // next reload. Its status is copied onto the card while the row is still there.
+  const rows = data.agentProposals
+  useEffect(() => {
+    const status = new Map<string, AgentProposalStatus>(rows.map((row) => [row.id, row.status]))
+    setThreads((prev) => withStatuses(prev, status))
+  }, [rows])
+
+  // A pending card with no row: it was drafted a moment ago and has not been loaded
+  // yet, or it was decided in another tab. Load again, then ask the server.
+  const missing = useMemo(() => {
+    const known = new Set(rows.map((row) => row.id))
+    return thread.messages
+      .flatMap((m) => (m.role === 'assistant' ? m.proposals : []))
+      .filter((p) => p.status === 'pending' && !known.has(p.id))
+      .map((p) => p.id)
+      .join()
+  }, [rows, thread.messages])
+  useEffect(() => {
+    if (!open || !missing) return
+    let cancel = false
+    let tries = 0
+    const timer = window.setInterval(() => {
+      if (++tries >= 3) window.clearInterval(timer)
+      void useStore
+        .getState()
+        .reload(true)
+        .then(() => agentClient.loadThread(studentId))
+        .then((loaded) => {
+          if (cancel) return
+          const status = new Map<string, AgentProposalStatus>(loaded.messages.flatMap((m) => m.proposals.map((p) => [p.id, p.status] as const)))
+          setThreads((prev) => withStatuses(prev, status))
+        })
+        .catch(() => undefined)
+    }, 1500)
+    return () => {
+      cancel = true
+      window.clearInterval(timer)
+    }
+  }, [open, missing, studentId])
+
   useEffect(() => {
     if (!thread.pending) return
     const id = window.setInterval(() => setTick((n) => n + 1), 1000)
@@ -237,7 +301,8 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
     if (!open) return
     const log = logRef.current
     if (log) log.scrollTop = log.scrollHeight
-  }, [open, threadKey, thread.messages, thread.pending])
+    // By length: approving a card rewrites its message and must not move the page.
+  }, [open, threadKey, thread.messages.length, thread.pending])
 
   useEffect(() => {
     if (open && !wasOpen.current) inputRef.current?.focus()
@@ -369,7 +434,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
           </Empty>
         )}
         {thread.messages.map((message) => (
-          <BubbleView key={message.id} message={message} pending={thread.pending} onRetry={(text) => submit(text, true)} />
+          <BubbleView key={message.id} message={message} studentId={studentId} pending={thread.pending} onRetry={(text) => submit(text, true)} />
         ))}
         {thread.pending && <Thinking inline label={thinking} />}
       </div>
@@ -409,7 +474,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   )
 }
 
-function BubbleView({ message, pending, onRetry }: { message: Bubble; pending: boolean; onRetry: (text: string) => void }) {
+function BubbleView({ message, studentId, pending, onRetry }: { message: Bubble; /** The thread's student. Null on the general thread, where each card names its student. */ studentId: string | null; pending: boolean; onRetry: (text: string) => void }) {
   if (message.role === 'user') {
     return (
       <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm leading-relaxed text-on-primary">
@@ -431,8 +496,9 @@ function BubbleView({ message, pending, onRetry }: { message: Bubble; pending: b
         </div>
       )}
       {message.proposals.map((proposal) => (
-        <ProposalCard key={proposal.id} proposal={proposal} />
+        <ProposalCard key={proposal.id} proposal={proposal} showStudent={proposal.studentId !== studentId} />
       ))}
+      <ApproveAllInReply proposals={message.proposals} />
     </div>
   )
 }
@@ -451,18 +517,48 @@ function Notice({ message, pending, onRetry }: { message: NoticeBubble; pending:
   )
 }
 
-function ProposalCard({ proposal }: { proposal: CardProposal }) {
+/** "Approve all" under a reply that still holds two or more pending proposals. */
+function ApproveAllInReply({ proposals }: { proposals: CardProposal[] }) {
+  const rows = useData().agentProposals
+  const messageOf = useApprovalSends((s) => s.messageOf)
+  // One already queued is on its way, even if its row has not caught up.
+  const pending = rows.filter((row) => row.status === 'pending' && !messageOf[row.id] && proposals.some((p) => p.id === row.id))
+  if (pending.length < 2) return null
+  return (
+    <div>
+      <ApproveAll items={pending.map(proposalApproval)} title="Approve all in this reply?" />
+    </div>
+  )
+}
+
+function ProposalCard({ proposal, showStudent }: { proposal: CardProposal; showStudent: boolean }) {
+  const row = useData().agentProposals.find((p) => p.id === proposal.id)
+  const messageId = useApprovalSends((s) => s.messageOf[proposal.id])
+  const status = row?.status ?? proposal.status
+
+  if (row && status === 'pending') {
+    return (
+      <Card className="w-full p-3">
+        <ApprovalCard item={proposalApproval(row)} as="div" compact showStudent={showStudent} />
+      </Card>
+    )
+  }
   return (
     <Card className="w-full p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-semibold text-muted">{KIND_LABEL[proposal.kind]}</p>
-        <Pill tone={STATUS_TONE[proposal.status]}>{STATUS_LABEL[proposal.status]}</Pill>
+        <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>
       </div>
-      <p className="mt-1 text-sm">{proposal.summary}</p>
-      {proposal.status === 'pending' && (
+      <p className="mt-1 break-words text-sm">{proposal.summary}</p>
+      {status === 'pending' && (
         <Link to={approvalsHref(proposal.studentId)} className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
           Review in Approvals
         </Link>
+      )}
+      {status === 'approved' && messageId && (
+        <div className="mt-2">
+          <SendState messageId={messageId} />
+        </div>
       )}
     </Card>
   )
