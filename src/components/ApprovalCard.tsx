@@ -56,7 +56,7 @@ export function ApprovalCard({
   const [editing, setEditing] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const [skipping, setSkipping] = useState(false)
-  const [settled, setSettled] = useState<'approved' | 'discarded'>()
+  const [settled, setSettled] = useState<'approved' | 'discarded' | 'skipped'>()
   const [error, setError] = useState<string>()
   const root = useRef<HTMLDivElement>(null)
   const student = findStudent(data, item.studentId)
@@ -124,8 +124,10 @@ export function ApprovalCard({
     setSkipping(false)
     setError(undefined)
     try {
+      setSettled('skipped')
       await useStore.getState().skipReminder(item.reminderKey, mode, item.studentId, draft?.taskTitle ?? 'task')
     } catch (e) {
+      setSettled(undefined)
       setError(reasonOf(e, 'Could not skip the reminder.'))
     }
   }
@@ -185,7 +187,11 @@ export function ApprovalCard({
       <div className="flex min-h-11 flex-wrap items-center gap-2">
         {leaving ? (
           <span className="motion-fade inline-flex min-h-11 items-center">
-            <Pill tone={settled === 'discarded' ? 'neutral' : 'good'}>{settled === 'discarded' ? 'Discarded' : weekly || settled === 'approved' ? 'Approved' : 'Done'}</Pill>
+            {settled === 'approved' || (weekly && !settled) ? (
+              <Pill tone="good">Approved</Pill>
+            ) : (
+              settled && <Pill>{settled === 'skipped' || weekly ? 'Skipped' : 'Discarded'}</Pill>
+            )}
           </span>
         ) : sending ? (
           <SendState messageId={sending} />

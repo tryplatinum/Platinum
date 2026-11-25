@@ -14,7 +14,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../services/ai'
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
-import { AiErrorNote, AiTag, Button, PlaceholderNote, SectionLabel, Thinking, textareaClass, useToast } from './ui'
+import { AiErrorNote, AiTag, Button, CheckRow, PlaceholderNote, SectionLabel, SendLabel, Thinking, textareaClass, useToast } from './ui'
 
 const CHANNEL_NOUN = { text: 'text message', email: 'email', wechat: 'WeChat message', line: 'LINE message' } as const
 
@@ -98,11 +98,11 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
   const patch = (i: number, fields: Partial<ReminderMessage>) => setDrafts((d) => d.map((x, j) => (j === i ? { ...x, ...fields } : x)))
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-canvas p-4">
+    <div className="flex flex-col gap-3 rounded-control bg-canvas p-3 sm:p-4">
       {drafts.map((d, i) => {
         const isCopy = d.toKind === 'parent' && to.kind === 'student'
         return (
-          <div key={d.toKind + (d.parentId ?? '')} className="flex flex-col gap-2">
+          <div key={d.toKind + (d.parentId ?? '')} className="motion-fade flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <SectionLabel>
                 {isCopy ? 'Parent copy' : 'Reminder'} · {CHANNEL_NOUN[d.channel]} to {d.toName}
@@ -143,10 +143,10 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             )}
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
-                <span className="text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in 60 seconds.</span>
+                <span className="motion-fade text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in 60 seconds.</span>
               ) : (
                 <Button variant="primary" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
-                  Approve and send
+                  <SendLabel>Approve and send</SendLabel>
                 </Button>
               )}
             </div>
@@ -159,13 +159,9 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {choice.offered && choice.parent && (
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4" checked={tellParent} disabled={loading > 0 || Boolean(parentDraft?.sent)} onChange={(e) => toggleParent(e.target.checked)} />
+          <CheckRow checked={tellParent} disabled={loading > 0 || Boolean(parentDraft?.sent)} onChange={toggleParent} hint={`${choice.parent.name}, by ${CHANNEL_LABEL[choice.parent.channel]}`}>
             Also tell parent
-            <span className="text-[13px] text-muted">
-              ({choice.parent.name}, by {CHANNEL_LABEL[choice.parent.channel]})
-            </span>
-          </label>
+          </CheckRow>
         )}
         <Button onClick={() => setEditing(!editing)} disabled={drafts.every((d) => d.sent)}>
           {editing ? 'Done editing' : 'Edit'}
@@ -174,7 +170,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
         <Button variant="quiet" onClick={onDone}>
           {drafts.some((d) => d.sent) ? 'Close' : 'Cancel'}
         </Button>
-        <span className="text-xs text-muted">
+        <span className="basis-full text-xs text-muted">
           Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.
         </span>
       </div>

@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import { PHONE_ENDPOINT } from '../../shared/phoneGateway'
-import { Button, Card, SectionLabel, inputClass } from '../components/ui'
+import { Button, Card, SectionLabel, inputClass, usePageTitle } from '../components/ui'
 import setup from '../../docs/phone-gateway/ios-setup.md?raw'
 
 /** The numbered lines of docs/phone-gateway/ios-setup.md. */
@@ -38,6 +38,7 @@ export default function PhoneSetup() {
   const [key, setKey] = useState<string>()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  usePageTitle('Set up this iPhone')
   const shortcut = (import.meta.env.VITE_PHONE_SHORTCUT_URL as string | undefined)?.trim()
 
   const pair = async () => {
@@ -57,7 +58,7 @@ export default function PhoneSetup() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 py-6">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
       <h1 className="text-xl font-semibold text-heading">Set up this iPhone</h1>
       <p className="text-sm text-ink-soft">This page is for the phone that will send your texts. Keep it open while you build the shortcut.</p>
 
@@ -79,7 +80,7 @@ export default function PhoneSetup() {
               <SectionLabel>Setup code from Settings</SectionLabel>
               <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} autoCapitalize="characters" autoComplete="one-time-code" maxLength={16} required />
             </label>
-            <Button type="submit" variant="primary" disabled={busy || code.trim().length < 4}>
+            <Button type="submit" variant="primary" busy={busy} disabled={code.trim().length < 4}>
               Get the device key
             </Button>
             {error && (
@@ -91,7 +92,7 @@ export default function PhoneSetup() {
         )}
         <CopyRow label="Site address for the shortcut" value={`${window.location.origin}${PHONE_ENDPOINT}`} />
         {shortcut ? (
-          <a href={shortcut} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-surface-2">
+          <a href={shortcut} data-press className="inline-flex min-h-11 items-center justify-center rounded-control border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-surface-2">
             Get the shortcut
           </a>
         ) : (

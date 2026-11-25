@@ -186,7 +186,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                       Open in Drive
                     </a>
                   )}
-                  <Button disabled={working || folder.status === 'reconnect'} onClick={() => void linked.sync(folder.id, true)}>
+                  <Button busy={working} disabled={folder.status === 'reconnect'} onClick={() => void linked.sync(folder.id, true)}>
                     {working ? 'Syncing…' : 'Sync now'}
                   </Button>
                   <Button
@@ -233,7 +233,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                 </div>
               )}
               {open === folder.id && folder.skipped.length > 0 && (
-                <ul className="flex flex-col gap-1 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+                <ul className="motion-rise flex flex-col gap-1 rounded-control bg-surface-2 px-3 py-2 text-[13px]">
                   {notes.map((s, i) => (
                     <li key={`note-${i}`} className="text-ink-soft">
                       {s.reason}

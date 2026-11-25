@@ -32,7 +32,7 @@ export function StudentPicker({ value, onChange, disabled, label = 'Student' }: 
   // The value can change from outside (the name on the file matched a student).
   useEffect(() => setText(labelOf(value)), [value]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <label className="min-w-[13rem] flex-1">
+    <label className="min-w-0 flex-1 basis-52">
       <span className="mb-1 block text-xs font-semibold text-muted">{label}</span>
       <input
         className={cx(inputBase, 'w-full')}
@@ -67,7 +67,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
   const [typeId, setTypeId] = useState<ID | undefined>(suggestion?.typeId ?? doc.typeId)
   const [title, setTitle] = useState(suggestion?.title ?? fileTitle(doc))
   const [touched, setTouched] = useState({ student: false, folder: false, title: false })
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'suggestion' | 'save' | 'delete'>()
   const [error, setError] = useState<string>()
 
   // When the AI answers, its suggestion fills whatever the counselor has not set themselves.
@@ -82,8 +82,8 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
   const again = duplicateOf(data, studentId, doc.contentHash, doc.id)
   const line = suggestionLine(data, doc)
 
-  const file = async (where: { typeId: ID; title: string; studentId?: ID }) => {
-    setBusy(true)
+  const file = async (where: { typeId: ID; title: string; studentId?: ID }, which: 'suggestion' | 'save') => {
+    setBusy(which)
     setError(undefined)
     try {
       const filed = await fileDocument(doc.id, where)
@@ -93,17 +93,17 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
       onFiled?.(note)
     } catch (e) {
       setError(reasonOf(e))
-      setBusy(false)
+      setBusy(undefined)
     }
   }
   const remove = async () => {
     if (!(await confirm({ title: 'Delete file', body: `Delete “${fileTitle(doc)}”? The file is removed for good.`, action: 'Delete file' }))) return
-    setBusy(true)
+    setBusy('delete')
     try {
       await deleteFile(doc.id)
     } catch (e) {
       setError(reasonOf(e))
-      setBusy(false)
+      setBusy(undefined)
     }
   }
 
@@ -124,14 +124,14 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
       </div>
 
       {line && suggestion ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent-line bg-accent-soft px-3 py-2">
-          <p className="min-w-0 flex-1 text-sm">
+        <div className="motion-fade flex flex-wrap items-center justify-between gap-3 rounded-control border border-accent-line bg-accent-soft px-3 py-2">
+          <p className="min-w-0 flex-1 basis-64 text-sm">
             <span className="font-semibold">{line}</span>
             {suggestion.reason && <span className="block text-[13px] text-ink-soft">{suggestion.reason}</span>}
             {!suggestion.sure && <span className="block text-[13px] text-warn">The AI was not sure about this one.</span>}
             {!doc.studentId && !studentId && <span className="block text-[13px] text-muted">Choose a student below first: the AI never picks one.</span>}
           </p>
-          <Button variant="primary" disabled={busy || !(doc.studentId || studentId)} onClick={() => void file({ typeId: suggestion.typeId, title: suggestion.title, studentId: doc.studentId || studentId })}>
+          <Button variant="primary" busy={busy === 'suggestion'} disabled={Boolean(busy) || !(doc.studentId || studentId)} onClick={() => void file({ typeId: suggestion.typeId, title: suggestion.title, studentId: doc.studentId || studentId }, 'suggestion')}>
             Yes, put it there
           </Button>
         </div>
@@ -144,7 +144,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
       <div className="flex flex-wrap items-end gap-3">
         <StudentPicker
           value={studentId}
-          disabled={lockStudent || busy}
+          disabled={lockStudent || Boolean(busy)}
           onChange={(id) => {
             setStudentId(id)
             setTouched((t) => ({ ...t, student: true }))
@@ -153,9 +153,9 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
         <label>
           <span className="mb-1 block text-xs font-semibold text-muted">Folder</span>
           <select
-            className={inputBase}
+            className={cx(inputBase, 'max-w-full')}
             value={folder?.id ?? ''}
-            disabled={busy}
+            disabled={Boolean(busy)}
             onChange={(e) => {
               setTypeId(e.target.value)
               setTouched((t) => ({ ...t, folder: true }))
@@ -169,23 +169,23 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
             ))}
           </select>
         </label>
-        <label className="min-w-[13rem] flex-[2]">
+        <label className="min-w-0 flex-[2] basis-52">
           <span className="mb-1 block text-xs font-semibold text-muted">Title</span>
           <input
             className={cx(inputBase, 'w-full')}
             value={title}
             maxLength={200}
-            disabled={busy}
+            disabled={Boolean(busy)}
             onChange={(e) => {
               setTitle(e.target.value)
               setTouched((t) => ({ ...t, title: true }))
             }}
           />
         </label>
-        <Button variant={line ? 'secondary' : 'primary'} disabled={busy || !studentId || !folder || !title.trim()} onClick={() => folder && void file({ typeId: folder.id, title: title.trim(), studentId })}>
+        <Button variant={line ? 'secondary' : 'primary'} busy={busy === 'save'} disabled={Boolean(busy) || !studentId || !folder || !title.trim()} onClick={() => folder && void file({ typeId: folder.id, title: title.trim(), studentId }, 'save')}>
           Save
         </Button>
-        <Button variant="quiet" disabled={busy} onClick={() => void remove()} aria-label={`Delete ${fileTitle(doc)}`}>
+        <Button variant="quiet" busy={busy === 'delete'} disabled={Boolean(busy)} onClick={() => void remove()} aria-label={`Delete ${fileTitle(doc)}`}>
           Delete
         </Button>
       </div>

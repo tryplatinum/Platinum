@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase } from '../../components/ui'
+import { Button, Card, CardHeader, Empty, PageHeader, inputBase, usePageTitle } from '../../components/ui'
 import { loadOlderActivity } from '../../data/repo'
 import { formatTimestamp } from '../../lib/dates'
 import { activeStudents, findStudent, fullName } from '../../lib/derive'
@@ -50,6 +50,8 @@ export default function Activity() {
   const [extra, setExtra] = useState<ActivityEvent[]>([])
   const [busy, setBusy] = useState(false)
   const [exhausted, setExhausted] = useState(false)
+  const [failed, setFailed] = useState(false)
+  usePageTitle('Activity')
   const [shown, setShown] = useState(PAGE)
 
   const merged = useMemo(() => {
@@ -81,6 +83,7 @@ export default function Activity() {
       return
     }
     setBusy(true)
+    setFailed(false)
     try {
       const rows = await loadOlderActivity(firmId, oldest.at, PAGE, studentId || undefined)
       if (rows.length === 0) setExhausted(true)
@@ -89,7 +92,7 @@ export default function Activity() {
         setShown((n) => n + PAGE)
       }
     } catch {
-      setExhausted(true)
+      setFailed(true)
     } finally {
       setBusy(false)
     }
@@ -125,7 +128,19 @@ export default function Activity() {
           }
         />
         {visible.length === 0 ? (
-          <Empty title="No activity matches these filters." />
+          <Empty title={studentId || action !== 'all' ? 'No activity matches these filters.' : 'Nothing has happened yet. Approvals, sends and edits appear here.'}>
+            {(studentId || action !== 'all') && (
+              <Button
+                onClick={() => {
+                  setStudentId('')
+                  setAction('all')
+                  setShown(PAGE)
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </Empty>
         ) : (
           <ul>
             {visible.map((e) => (
@@ -135,9 +150,14 @@ export default function Activity() {
         )}
         {(canShowMoreInMemory || (!exhausted && firmId)) && visible.length > 0 && (
           <div className="border-t border-line px-5 py-3">
-            <Button onClick={() => void loadMore()} disabled={busy}>
+            <Button onClick={() => void loadMore()} busy={busy}>
               {busy ? 'Loading…' : 'Load more'}
             </Button>
+            {failed && (
+              <p role="alert" className="mt-2 text-[13px] text-bad">
+                Older activity could not be loaded. Please try again.
+              </p>
+            )}
           </div>
         )}
       </Card>
@@ -155,12 +175,12 @@ function ActivityRow({ event, counselorName }: { event: ActivityEvent; counselor
           {student && (
             <>
               {' · '}
-              <Link to={`/app/students/${student.id}`} className={cx('font-medium text-accent hover:underline')}>
+              <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
                 {fullName(student)}
               </Link>
             </>
           )}
-          <span className="text-ink-soft"> — {event.text}</span>
+          <span className="text-ink-soft"> · {event.text}</span>
         </p>
       </div>
       <span className="shrink-0 text-[13px] text-muted">{formatTimestamp(event.at)}</span>

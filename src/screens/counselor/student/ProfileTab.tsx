@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, CardHeader, Field, Pill, inputBase, inputClass, textareaClass, useToast } from '../../../components/ui'
+import { Button, Card, CardHeader, CheckRow, Field, Pill, inputClass, textareaClass, useToast } from '../../../components/ui'
 import { CHANNEL_LABEL } from '../../../lib/language'
 import { useStore } from '../../../store/store'
 import type { Channel, Student } from '../../../types'
@@ -121,11 +121,9 @@ export default function ProfileTab({ student }: { student: Student }) {
                 ))}
               </select>
             </Field>
-            <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" className="h-4 w-4" checked={f.weeklyText} onChange={(e) => set({ weeklyText: e.target.checked })} />
+            <CheckRow className="sm:col-span-2" checked={f.weeklyText} onChange={(weeklyText) => set({ weeklyText })} hint="Needs a phone number.">
               Include in the weekly texts
-              <span className="text-[13px] text-muted">(needs a phone number)</span>
-            </label>
+            </CheckRow>
           </div>
         </Card>
 
@@ -183,9 +181,15 @@ export default function ProfileTab({ student }: { student: Student }) {
             ))}
           </ul>
           <div className="flex flex-wrap items-end gap-2 rounded-lg bg-canvas p-3">
-            <input className={`${inputBase} min-w-[10rem] flex-1`} placeholder="Activity" aria-label="Activity" value={activity.name} onChange={(e) => setActivity({ ...activity, name: e.target.value })} />
-            <input className={`${inputBase} min-w-[8rem] flex-1`} placeholder="Role" aria-label="Role" value={activity.role} onChange={(e) => setActivity({ ...activity, role: e.target.value })} />
-            <input className={`${inputBase} min-w-[10rem] flex-[2]`} placeholder="Detail (optional)" aria-label="Detail" value={activity.detail} onChange={(e) => setActivity({ ...activity, detail: e.target.value })} />
+            <Field label="Activity" className="min-w-[10rem] flex-1">
+              <input className={inputClass} value={activity.name} onChange={(e) => setActivity({ ...activity, name: e.target.value })} />
+            </Field>
+            <Field label="Role" className="min-w-[8rem] flex-1">
+              <input className={inputClass} value={activity.role} onChange={(e) => setActivity({ ...activity, role: e.target.value })} />
+            </Field>
+            <Field label="Detail (optional)" className="min-w-[10rem] flex-[2]">
+              <input className={inputClass} value={activity.detail} onChange={(e) => setActivity({ ...activity, detail: e.target.value })} />
+            </Field>
             <Button
               disabled={!activity.name.trim()}
               onClick={() => {

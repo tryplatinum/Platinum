@@ -5,7 +5,8 @@
 // work on. It never contains replacement text (the schema in
 // shared/contract.ts has no field for it), and the panel says so.
 
-import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApprovalCard } from '../../../components/ApprovalCard'
 import {
@@ -14,6 +15,7 @@ import {
   ApprovalStamp,
   Button,
   Card,
+  Disclosure,
   Empty,
   Field,
   FilterChips,
@@ -54,7 +56,11 @@ export default function EssaysTab({ student }: { student: Student }) {
   const { college, summer, counts } = essayGroups(data, student.id)
   const selectedId = params.get('essay')
   const selected = data.documents.find((d) => d.id === selectedId && d.studentId === student.id && d.kind === 'essay')
+  const [pressed, setPressed] = useState<string>()
   const select = (id?: string) => {
+    setPressed(id)
+    // Back to the row it was opened from.
+    if (!id && selectedId) requestAnimationFrame(() => document.getElementById(`essay-${selectedId}`)?.focus())
     const next = new URLSearchParams(params)
     if (id) next.set('essay', id)
     else next.delete('essay')
@@ -84,6 +90,7 @@ export default function EssaysTab({ student }: { student: Student }) {
             <li key={e.id} className="border-t border-line">
               <button
                 type="button"
+                id={`essay-${e.id}`}
                 aria-current={selected?.id === e.id}
                 onClick={() => select(e.id)}
                 className={cx('flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-left', selected?.id === e.id ? 'bg-accent-soft' : 'hover:bg-surface-2')}
@@ -151,7 +158,7 @@ export default function EssaysTab({ student }: { student: Student }) {
             </>
           )}
         </div>
-        {selected && <EssayPanel key={selected.id} doc={selected} student={student} onClose={() => select()} />}
+        {selected && <EssayPanel key={selected.id} doc={selected} student={student} pressed={pressed === selected.id} onClose={() => select()} />}
       </div>
     </>
   )
@@ -223,7 +230,7 @@ function AddEssayForm({ student, onDone }: { student: Student; onDone: (id?: str
 
 // ── The selected essay ──────────────────────────────────────────────────────
 
-function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: Student; onClose: () => void }) {
+function EssayPanel({ doc, student, pressed, onClose }: { doc: StudentDocument; student: Student; /** Opened by a press just now, not by the address. */ pressed: boolean; onClose: () => void }) {
   const { saveEssayDraft, updateDocument, removeDocument, setEssayFeedback } = useStore.getState()
   const data = useData()
   const confirm = useConfirm()
@@ -235,6 +242,14 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
   // Keep the editor in step when the saved draft changes underneath it.
   useEffect(() => setText(draft?.text ?? ''), [draft?.n, draft?.text])
 
+  // On a phone the panel opens under the list, out of sight: go to it. Not when the page opened with it.
+  const panel = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!pressed || window.innerWidth >= 1280) return
+    panel.current?.focus({ preventScroll: true })
+    panel.current?.scrollIntoView({ block: 'start' })
+  }, [pressed])
+
   const feedback = doc.feedback
   const pending = feedback?.review === 'pending'
   const dirty = text !== (draft?.text ?? '')
@@ -243,17 +258,17 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
   const getFeedback = () => run(async () => setEssayFeedback(doc.id, await essayFeedback(doc, student)))
 
   return (
-    <aside aria-label="Selected essay" className="flex min-w-0 flex-col gap-4 rounded-xl border border-line bg-surface p-5 xl:sticky xl:top-6">
+    <aside ref={panel} tabIndex={-1} aria-label="Selected essay" className="motion-rise flex min-w-0 flex-col gap-4 rounded-card border border-line bg-surface p-5 focus:outline-none xl:sticky xl:top-6">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <SectionLabel>Selected</SectionLabel>
-          <h2 className="text-lg font-bold">{doc.name}</h2>
+          <h2 className="text-lg font-semibold">{doc.name}</h2>
           <p className="text-[13px] text-muted">
             {doc.target} · {draft ? `Draft ${draft.n} · ${wordCount(draft.text)}${doc.wordLimit ? ` of ${doc.wordLimit}` : ''} words · saved ${formatDate(draft.savedOn)}` : 'no draft pasted yet'}
           </p>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-xl text-muted hover:bg-surface-2">
-          ×
+        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading">
+          <X size={20} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
 
@@ -321,12 +336,9 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
         <ul className="flex flex-col gap-2">
           {[...(doc.drafts ?? [])].reverse().map((d) => (
             <li key={d.n}>
-              <details className="rounded-lg border border-line">
-                <summary className="flex min-h-11 items-center px-3 text-sm font-semibold">
-                  Draft {d.n} · {formatDate(d.savedOn)} · {wordCount(d.text)} words
-                </summary>
-                <p className="whitespace-pre-wrap border-t border-line p-3 font-serif text-sm leading-relaxed">{d.text}</p>
-              </details>
+              <Disclosure label={`Draft ${d.n} · ${formatDate(d.savedOn)} · ${wordCount(d.text)} words`}>
+                <p className="max-w-prose whitespace-pre-wrap rounded-control border border-line p-3 font-serif text-sm leading-relaxed">{d.text}</p>
+              </Disclosure>
             </li>
           ))}
         </ul>

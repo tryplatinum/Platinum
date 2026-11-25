@@ -111,15 +111,21 @@ export default function WeeklyTexts() {
             <ProgressBar label="Drafting the weekly texts" done={progress.done} total={progress.total} />
           </div>
         )}
-        <p className="border-t border-line px-5 py-3 text-[13px] text-muted">
-          Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]} (
-          <Link to="/app/settings#reminder-rules" className="font-medium text-accent hover:underline">
-            change the day
-          </Link>
-          ). A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Nothing is
-          texted automatically. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well, for you to approve on its own.
-          {' The student link is added when the text is sent (shown as “[student link added when sent]” in the draft).'}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 border-t border-line px-5 py-1 text-[13px] text-muted">
+          <p>
+            Each week starts on {WEEKDAYS[data.firm.weeklyTextDay]} (
+            <Link to="/app/settings#reminder-rules" className="inline-flex min-h-6 items-center font-medium text-accent hover:underline">
+              change the day
+            </Link>
+            ). Nothing is texted automatically.
+          </p>
+          <Disclosure label="How this works" className="basis-full">
+            <p className="max-w-prose pb-3 leading-relaxed">
+              A student appears here when they have a late task, a task due in the next 7 days, or a meeting in the next 7 days, until you send or skip their text. Where “Also tell parent” is ticked, a separate short message to the parent is drafted as well,
+              for you to approve on its own. The student link is added when the text is sent (shown as “[student link added when sent]” in the draft).
+            </p>
+          </Disclosure>
+        </div>
         {rows.length === 0 ? (
           <div className="border-t border-line">
             <Empty title={done.length ? 'All of this week’s texts are sent or skipped.' : 'No student needs a text this week. They appear here when something is late, due in the next 7 days, or a meeting is coming up.'} />
@@ -189,6 +195,7 @@ function Row({
   )
   const tell = parent.offered && parent.parent && (
     <CheckRow
+      className={draft ? undefined : 'w-56'}
       checked={parent.ticked}
       disabled={busy || draft?.parentCopy?.status === 'sent'}
       onChange={onTellParent}

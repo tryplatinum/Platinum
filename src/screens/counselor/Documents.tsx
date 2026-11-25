@@ -11,7 +11,7 @@ import { FilingRow } from '../../components/files/FilingRow'
 import { UploadWindow, useFileDrop } from '../../components/files/UploadWindow'
 import { DrivePicker } from '../../components/google/DrivePicker'
 import { MotionList } from '../../components/motion'
-import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase } from '../../components/ui'
+import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase, usePageTitle } from '../../components/ui'
 import { activeStudents, fullName } from '../../lib/derive'
 import { filesToCheck, folderOf, foldersInOrder, isSorting, newFiles, waitingFiles } from '../../lib/files'
 import { driveReady, useGoogleStatus } from '../../services/google'
@@ -20,6 +20,7 @@ import type { StudentDocument } from '../../types'
 
 export default function Documents() {
   const data = useData()
+  usePageTitle('Documents')
   const { refreshFiles } = useStore.getState()
   const [params, setParams] = useSearchParams()
   const [uploading, setUploading] = useState<File[]>()

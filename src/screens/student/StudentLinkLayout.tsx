@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { Outlet, useParams } from 'react-router-dom'
-import { Card } from '../../components/ui'
+import { Card, Skeleton } from '../../components/ui'
 import { openStudentLink } from '../../store/session'
 import { useStore } from '../../store/store'
 
@@ -42,9 +42,11 @@ export function StudentLinkLayout() {
       ) : ready && student ? (
         <Outlet context={student} />
       ) : (
-        <p role="status" className="py-10 text-center text-sm text-muted">
-          Loading…
-        </p>
+        <div role="status" aria-label="Loading…" className="flex flex-col gap-4">
+          <Skeleton className="h-16 w-2/3" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
       )}
     </main>
   )

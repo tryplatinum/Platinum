@@ -7,7 +7,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { leaveStudentLink, retrySession, signOut } from '../store/session'
 import { useStore } from '../store/store'
 import { Logo } from './Logo'
-import { Button } from './ui'
+import { Button, Skeleton } from './ui'
 
 /**
  * A centred message under the logo, on the canvas: sign-in, loading and
@@ -15,12 +15,12 @@ import { Button } from './ui'
  */
 export function Splash({ children, reveal }: { children: ReactNode; reveal?: boolean }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-canvas px-4 py-12">
+    <main className="flex min-h-full items-center justify-center bg-canvas px-4 py-12">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
         <Logo width={200} className={reveal ? 'motion-logo' : undefined} />
         {children}
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -38,6 +38,29 @@ function Problem({ message, onRetry }: { message: string; onRetry: () => void })
         </div>
       </div>
     </Splash>
+  )
+}
+
+/** The sidebar and a page, before there is anything to put in them. */
+function WorkspaceLoading() {
+  return (
+    <div role="status" aria-label="Loading your workspace…" className="flex min-h-full flex-col lg:flex-row">
+      <div className="flex items-center justify-between border-b border-line bg-sidebar px-3 py-1.5 lg:h-dvh lg:w-60 lg:flex-col lg:items-stretch lg:justify-start lg:gap-3 lg:border-b-0 lg:border-r lg:px-4 lg:py-5">
+        <span className="flex min-h-11 items-center">
+          <Logo width={124} />
+        </span>
+        <span className="hidden flex-col gap-3 lg:flex">
+          {['a', 'b', 'c', 'd', 'e', 'f'].map((k) => (
+            <Skeleton key={k} className="h-8 w-full" />
+          ))}
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    </div>
   )
 }
 
@@ -68,6 +91,7 @@ export function RequireFirm() {
   if (account.status === 'needs_firm') return <Navigate to="/setup" replace state={{ from }} />
   if (account.status === 'error') return <Problem message={account.message} onRetry={() => void retrySession()} />
   if (load === 'error') return <Problem message={loadError ?? 'Unknown error.'} onRetry={() => void reload()} />
-  if (load !== 'ready' || mode !== 'firm') return loading
+  // Signed in, and the rows are on their way: the shape of the page, so nothing jumps when they arrive.
+  if (load !== 'ready' || mode !== 'firm') return <WorkspaceLoading />
   return <Outlet />
 }

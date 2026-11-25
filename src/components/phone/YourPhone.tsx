@@ -112,7 +112,7 @@ export function YourPhone() {
   const canConnect = gmail.connected && gmail.allowed
 
   return (
-    <Card className="flex flex-col gap-3 p-5">
+    <Card className="motion-fade flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">Your phone</h2>
@@ -166,7 +166,7 @@ export function YourPhone() {
             <Button disabled={busy} onClick={() => setConnecting(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={busy || !canConnect || !label.trim()}>
+            <Button type="submit" variant="primary" busy={busy} disabled={!canConnect || !label.trim()}>
               Connect
             </Button>
           </div>
@@ -212,7 +212,7 @@ export function YourPhone() {
               void run(() => callPhone('number', { phone: number }), 'Number saved.')
             }}
           >
-            <Field label="Your own number, for the test" className="min-w-[14rem] flex-1">
+            <Field label="Your own number, for the test" className="min-w-0 flex-1 basis-56">
               <input className={inputClass} type="tel" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="+1 555 000 0000" />
             </Field>
             <Button type="submit" disabled={busy || number.trim() === (device.ownPhone ?? '')}>
@@ -256,30 +256,18 @@ export function YourPhone() {
               Copy as CSV
             </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px]">
-              <thead className="text-muted">
-                <tr>
-                  <th className="py-1 pr-3 font-semibold">To</th>
-                  <th className="py-1 pr-3 font-semibold">Status</th>
-                  <th className="py-1 pr-3 font-semibold">Made</th>
-                  <th className="py-1 pr-3 font-semibold">To phone</th>
-                  <th className="py-1 font-semibold">To report</th>
-                </tr>
-              </thead>
-              <tbody>
-                {status.jobs.map((job) => (
-                  <tr key={job.id} className="border-t border-line">
-                    <td className="py-1.5 pr-3">{job.to}</td>
-                    <td className="py-1.5 pr-3">{JOB_LABEL[job.status]}</td>
-                    <td className="py-1.5 pr-3 text-muted">{new Date(job.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{seconds(secondsBetween(job.createdAt, job.claimedAt))}</td>
-                    <td className="py-1.5 tabular-nums">{seconds(secondsBetween(job.claimedAt, job.reportedAt))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* One list at every width: the labels sit with the numbers, so nothing is off the side of a phone. */}
+          <ul className="text-[13px]">
+            {status.jobs.map((job) => (
+              <li key={job.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 border-t border-line py-2 first:border-t-0">
+                <span className="nums w-24 font-semibold">{job.to}</span>
+                <span className="min-w-36 flex-1">{JOB_LABEL[job.status]}</span>
+                <span className="nums text-muted">{new Date(job.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
+                <span className="nums text-muted">To phone {seconds(secondsBetween(job.createdAt, job.claimedAt))}</span>
+                <span className="nums text-muted">To report {seconds(secondsBetween(job.claimedAt, job.reportedAt))}</span>
+              </li>
+            ))}
+          </ul>
           <p className="text-[13px] text-muted">“To phone” is the time from the text being made to your phone taking it. “To report” is from then until your phone said how it went.</p>
         </div>
       )}

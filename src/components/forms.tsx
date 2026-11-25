@@ -11,12 +11,12 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { draftMeeting, type DraftMode } from '../services/workflows'
 import { useData, useStore } from '../store/store'
 import type { Channel, ID, Language, Meeting, Parent } from '../types'
-import { AiErrorNote, Button, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useConfirm, useToast } from './ui'
+import { AiErrorNote, Button, CheckRow, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useConfirm, useToast } from './ui'
 
 const CHANNELS = Object.entries(CHANNEL_LABEL) as [Channel, string][]
 const LANGUAGES = Object.entries(LANGUAGE_LABEL) as [Language, string][]
 
-function FormActions({ onClose, submit, onDelete, deleteLabel, disabled }: { onClose: () => void; submit: string; onDelete?: () => void; deleteLabel?: string; disabled?: boolean }) {
+function FormActions({ onClose, submit, onDelete, deleteLabel, disabled, busy }: { onClose: () => void; submit: string; onDelete?: () => void; deleteLabel?: string; disabled?: boolean; busy?: boolean }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
       {onDelete ? (
@@ -28,7 +28,7 @@ function FormActions({ onClose, submit, onDelete, deleteLabel, disabled }: { onC
       )}
       <div className="flex gap-2">
         <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={disabled}>
+        <Button type="submit" variant="primary" disabled={disabled} busy={busy}>
           {submit}
         </Button>
       </div>
@@ -47,7 +47,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch })
 
   return (
-    <Modal title="Add a student" onClose={onClose}>
+    <Modal title="Add a student" onClose={onClose} typed={Boolean(f.firstName || f.lastName || f.school || f.email || f.phone)}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -131,7 +131,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
   const clean = (v: string) => v.trim() || undefined
 
   return (
-    <Modal title={parent ? `Edit ${parent.name}` : 'Add a parent or guardian'} onClose={onClose}>
+    <Modal title={parent ? `Edit ${parent.name}` : 'Add a parent or guardian'} onClose={onClose} typed={f.name !== (parent?.name ?? '') || f.note !== (parent?.note ?? '') || f.phone !== (parent?.phone ?? '') || f.email !== (parent?.email ?? '')}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -187,10 +187,9 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
             ))}
           </select>
         </Field>
-        <label className="flex min-h-11 items-center gap-3 text-sm">
-          <input type="checkbox" className="h-5 w-5" checked={f.isPrimary} onChange={(e) => set({ isPrimary: e.target.checked })} />
+        <CheckRow checked={f.isPrimary} onChange={(isPrimary) => set({ isPrimary })}>
           Main contact for this family
-        </label>
+        </CheckRow>
         <Field label="Your private note (optional)">
           <input className={inputClass} value={f.note} onChange={(e) => set({ note: e.target.value })} placeholder="e.g. replies fastest to voice messages" />
         </Field>
@@ -350,7 +349,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
     })
 
   return (
-    <Modal title="Log a meeting" onClose={onClose} wide>
+    <Modal title="Log a meeting" onClose={onClose} wide typed={notes.trim() !== ''}>
       {students.length === 0 ? (
         <p className="text-sm text-muted">Add a student first, then you can log a meeting with them.</p>
       ) : (
@@ -405,7 +404,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
             <textarea className={textareaClass} rows={9} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Paste or type what was discussed, decided and assigned…" />
           </Field>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2">
+            <label data-press className="inline-flex min-h-11 cursor-pointer items-center rounded-control border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent">
               <input
                 type="file"
                 accept=".txt,.md,.vtt,text/plain"
@@ -443,7 +442,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
           )}
           {busy && <Thinking label={`AI is reading the notes and drafting follow-ups for ${who?.firstName}…`} />}
           <p className="text-[13px] text-muted">Everything drafted waits for your approval. Nothing goes to {who?.firstName ?? 'the student'} or the family from here.</p>
-          <FormActions onClose={onClose} submit={logged ? 'Try drafting again' : notes.trim() ? 'Log and draft' : 'Log without notes'} disabled={busy || tooLong} />
+          <FormActions onClose={onClose} submit={logged ? 'Try drafting again' : notes.trim() ? 'Log and draft' : 'Log without notes'} disabled={tooLong} busy={busy} />
         </form>
       )}
     </Modal>

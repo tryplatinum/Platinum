@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { FolderSettings } from '../../components/files/FolderSettings'
 import { GoogleAccount } from '../../components/google/GoogleAccount'
 import { YourPhone } from '../../components/phone/YourPhone'
-import { Button, Card, CardHeader, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useConfirm, useToast } from '../../components/ui'
+import { Button, Card, CardHeader, CheckRow, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useConfirm, usePageTitle, useToast } from '../../components/ui'
 import { WEEKDAYS } from '../../lib/derive'
 import { useData, useStore } from '../../store/store'
 import { setAppearance, useAppearance } from '../../theme'
@@ -15,6 +15,7 @@ import type { ReminderMode } from '../../types'
 
 export default function Settings() {
   const { hash } = useLocation()
+  usePageTitle('Settings')
   useEffect(() => {
     if (hash) document.getElementById(hash.slice(1))?.scrollIntoView()
   }, [hash])
@@ -112,7 +113,7 @@ function ReminderRules() {
       <ul>
         {rules.map((rule) => (
           <li key={rule.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
-            <div className="min-w-[14rem] flex-1">
+            <div className="min-w-0 flex-1 basis-56">
               <p className="text-sm font-semibold">{rule.label}</p>
               <p className="text-[13px] text-muted">{rule.description}</p>
             </div>
@@ -159,13 +160,9 @@ function AppearanceSetting() {
   return (
     <Card className="flex flex-col items-start gap-3 p-5">
       <CardHeader size="section" title="Appearance" sub="Kept in this browser." />
-      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-        <input type="checkbox" className="h-5 w-5 shrink-0" checked={auto} onChange={(e) => setAppearance(e.target.checked ? 'auto' : theme)} />
-        <span>
-          Match this device
-          <span className="block text-xs font-normal text-muted">{auto ? `Showing ${theme} now` : 'Off: choose below'}</span>
-        </span>
-      </label>
+      <CheckRow checked={auto} onChange={(on) => setAppearance(on ? 'auto' : theme)} hint={auto ? `Showing ${theme} now` : 'Off: choose below'}>
+        Match this device
+      </CheckRow>
       {!auto && (
         <SegmentedControl
           label="Appearance"

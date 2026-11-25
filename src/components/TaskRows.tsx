@@ -45,21 +45,21 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
 
   if (!isOpen(task)) {
     return (
-      <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-canvas px-4 py-2.5">
         <CheckCircle done label={task.title} onToggle={toggle} />
         <span className="min-w-0 flex-1 text-sm text-muted line-through">{task.title}</span>
         <span className="text-[13px] text-muted">
           Done{task.completedOn && ` ${formatDate(task.completedOn)}`}
           {task.completedBy && ` by ${WHO[task.completedBy](student)}`}
         </span>
-      </li>
+      </div>
     )
   }
 
   return (
-    <li
+    <div
       className={cx(
-        'rounded-lg border border-l-4',
+        'rounded-control border border-l-4',
         late ? 'border-bad-line border-l-bad-bar bg-bad-tint' : task.owner === 'counselor' && viewer === 'counselor' ? 'border-line border-l-accent bg-surface' : 'border-line border-l-line-strong bg-surface',
       )}
     >
@@ -73,7 +73,7 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
         </button>
         <DueChip task={task} />
         {viewer === 'counselor' && reminderRecipient(student, task) && (
-          <Button variant={late ? 'remind' : 'secondary'} onClick={() => setReminding(!reminding)} aria-expanded={reminding}>
+          <Button variant={late ? 'remind' : 'secondary'} onClick={() => setReminding(!reminding)} aria-expanded={reminding} aria-label={`Remind about ${task.title}`}>
             Remind
           </Button>
         )}
@@ -84,12 +84,16 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
         )}
       </div>
       {reminding && (
-        <div className="px-4 pb-3">
+        <div className="motion-rise px-4 pb-3">
           <ReminderComposer student={student} task={task} onDone={() => setReminding(false)} />
         </div>
       )}
-      {open && <TaskDetails task={task} student={student} viewer={viewer} onDeleted={() => setOpen(false)} />}
-    </li>
+      {open && (
+        <div className="motion-rise">
+          <TaskDetails task={task} student={student} viewer={viewer} onDeleted={() => setOpen(false)} />
+        </div>
+      )}
+    </div>
   )
 }
 
