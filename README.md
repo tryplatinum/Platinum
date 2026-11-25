@@ -4,7 +4,7 @@ A workspace for private college counselors: every student in one place, with an 
 
 It is still a v0. Four limits matter before you put real work in it:
 
-1. **Nothing is delivered.** Reminders, parent reports, recaps and feedback are written to a log (Messages sent). Use "Copy" to paste a message into email, text, WeChat or LINE yourself. The weekly text to each student is the same: Platinum writes it, and you send it from your own phone.
+1. **Approved messages go only to an allowlist.** Reminders, parent reports, recaps and feedback wait 60 seconds after you approve them, then go out through the allowlist. You can still copy any of them and send it by hand by email, text, WeChat or LINE. The weekly text to each student is always sent by hand: Platinum writes it, and you send it from your own phone.
 2. **AI requests send data to Anthropic.** When AI is connected, the facts for one student (first name, scores, tasks, deadlines, your pasted notes or essay text) are sent to Anthropic's API to write a draft. Last names, emails, phone numbers and messaging handles are left out. While "Sort files automatically" is on, the first two pages of every uploaded file are sent too. There is no privacy agreement in place, and students are minors: decide whether that is acceptable before entering real students.
 3. **Nothing AI-written reaches a student or parent until you approve it.** Each approval records who approved (name and account) and when.
 4. **A student link is a password.** Anyone holding a student's link can see that student's page and mark their tasks done. Send it only to the student, and revoke it if it leaks.
@@ -82,10 +82,10 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | "Late", progress, next deadline, "waiting on", status, counts | **Real**, computed in `src/lib/derive.ts`. Never produced by the AI |
 | AI drafts (meeting follow-through, tasks from notes, brief, parent report, essay feedback, reminders) | **Real**, via a server function calling Claude, for signed-in members of a firm. Labelled placeholders when the server has no API key |
 | Approvals | **Real.** Drafts become tasks, profile changes, recaps and reports only on approval, with the approver's name, account id and time |
-| Sending (email, text, WeChat, LINE) | **Faked.** Every send writes to Messages sent and the confirmation says "Delivery is not connected in v0" |
+| Sending (email, text, WeChat, LINE) | **Real for email and text, to the allowlist only.** An approved message waits 60 seconds, then the dispatcher sends it through a transport (the default only logs). LINE and WeChat never send; copy those and send them by hand |
 | Weekly text to each student | **Real** drafts and a real record of what was sent or skipped each week. **You** send each text from your own phone ("Copy" or "Open in Messages"); Platinum texts nobody |
 | Things to remember about each student | **Real.** Personal details a student mentioned, suggested by the AI from meeting notes or typed in, saved only on approval, and used for one line in a text to the student |
-| "Also tell parent" | **Real** setting per student and a real, separate draft to the main contact. Like every message, **you** deliver it |
+| "Also tell parent" | **Real** setting per student and a real, separate draft to the main contact. Approved and sent on its own, like any message |
 | Reminder rules and queue | Real rules, real queue, fixed wording. No scheduler: a button stands in for the daily send |
 | Report schedule | A recorded intention. Nothing is drafted on a timer |
 | Meeting recording | None. You paste or type notes or a transcript |

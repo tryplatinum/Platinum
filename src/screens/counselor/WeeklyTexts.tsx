@@ -13,8 +13,8 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, LinkButton, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
-import { OpenInMessages } from '../../components/OpenInMessages'
+import { AiErrorNote, AiTag, Button, Card, CardHeader, Empty, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
+import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from '../../components/WeeklyTextSend'
 import { formatTimestamp } from '../../lib/dates'
 import { WEEKDAYS, findParent, findStudent, fullName, parentCopyChoice, parentCopyTask, weeklyTextRows, weeklyTextsDone, type WeeklyTextRow } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -23,8 +23,6 @@ import { WEEKLY_TEXT_MAX, weeklyTextFactLines, weeklyTextFacts } from '../../lib
 import { draftWeeklyParentCopy, draftWeeklyText, type WeeklyDraftOptions } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
 import type { Student, WeeklyText } from '../../types'
-
-const SENT_FROM_PHONE = 'You can undo the queued message for 60 seconds.'
 
 export default function WeeklyTexts() {
   const data = useData()
@@ -169,8 +167,7 @@ function Row({
 }) {
   const { student, draft } = row
   const firm = useData().firm
-  const { updateWeeklyText, sendWeeklyText, skipWeeklyText } = useStore.getState()
-  const toast = useToast()
+  const { updateWeeklyText, skipWeeklyText } = useStore.getState()
   const [text, setText] = useState(draft?.body ?? '')
   // A new or redrafted text replaces what is in the box.
   useEffect(() => setText(draft?.body ?? ''), [draft?.id, draft?.body])
@@ -178,16 +175,7 @@ function Row({
   // Before a draft exists, show the facts it would be built from (link filled at send).
   const facts = draft?.facts ?? weeklyTextFactLines(weeklyTextFacts(student, firm.counselorFirstName, row.items, STUDENT_LINK_PLACEHOLDER))
   const phone = student.phone?.trim()
-  const ready = Boolean(draft && text.trim())
-  const shown = previewStudentLink(text)
-  const over = shown.length > WEEKLY_TEXT_MAX
-
-  /** Pressing Copy or Open in Messages is the counselor's approval of the text as it stands in the box. */
-  const approve = (via: 'copy' | 'sms') => {
-    if (!draft) return
-    updateWeeklyText(draft.id, text)
-    sendWeeklyText(draft.id, via)
-  }
+  const over = weeklyTextTooLong(text)
 
   return (
     <li className="flex flex-col gap-3 border-t border-line px-5 py-4">
@@ -227,7 +215,7 @@ function Row({
                 onBlur={() => updateWeeklyText(draft.id, text)}
               />
               <p className={cx('text-[13px]', over ? 'font-semibold text-bad' : 'text-muted')} aria-live="polite">
-                {shown.length} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
+                {weeklyTextLength(text)} of {WEEKLY_TEXT_MAX} characters{over && '. Too long for one text: shorten it.'}
               </p>
               {draft.lead && (
                 <p className="text-[13px] text-ink-soft">
@@ -265,40 +253,15 @@ function Row({
               <Button onClick={() => onDraft()} disabled={busy}>
                 {busy ? 'Drafting…' : 'Draft'}
               </Button>
-            ) : !phone ? (
-              <LinkButton to={`/app/students/${student.id}?tab=profile`}>Add a phone number</LinkButton>
             ) : (
-              <>
-                <Button
-                  variant="primary"
-                  disabled={!ready || over}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(text)
-                    approve('copy')
-                    toast(`Copied. Paste it into a text to ${student.firstName}. ${SENT_FROM_PHONE}`)
-                  }}
-                >
-                  Copy
-                </Button>
-                <OpenInMessages
-                  phone={phone}
-                  text={text}
-                  disabled={!ready || over}
-                  onOpen={() => {
-                    approve('sms')
-                    toast(`Opening your Messages app. ${SENT_FROM_PHONE}`)
-                  }}
-                />
+              <WeeklyTextSend draft={draft} student={student} text={text}>
                 <Button variant="quiet" onClick={() => onDraft()} disabled={busy}>
                   {busy ? 'Drafting…' : 'Draft again'}
                 </Button>
-              </>
+              </WeeklyTextSend>
             )}
           </div>
-          {draft && phone && (
-            <p className="text-[13px] text-muted">“Open in Messages” needs a messaging app on this device. If nothing opens, use Copy. Either one counts as your approval and marks this text sent.</p>
-          )}
-          {draft && !phone && <p className="text-[13px] text-muted">{student.firstName} has no phone number on file, so there is nowhere to send this.</p>}
+          {draft && <WeeklyTextSendNote student={student} />}
         </div>
       </div>
 

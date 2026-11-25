@@ -337,7 +337,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
       <div className="flex flex-col gap-3 rounded-lg border border-accent-line bg-accent-soft p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-semibold">{feedback?.review === 'approved' ? 'Feedback sent' : 'Feedback draft'}</span>
-          {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Dismissed'}</Pill>)}
+          {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Discarded'}</Pill>)}
         </div>
         <AiErrorNote message={error} />
         {busy && <Thinking label="AI is reading the draft…" />}
@@ -410,14 +410,20 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
                 variant="primary"
                 onClick={() => {
                   reviewEssayFeedback(doc.id, 'approved')
-                  toast(`Feedback shared with ${student.firstName}.`)
+                  toast('Approved. Sending in 60 seconds.')
                 }}
               >
-                Approve and send to {student.firstName}
+                Approve and send
               </Button>
               <Button onClick={() => setEditingFeedback(!editingFeedback)}>{editingFeedback ? 'Done editing' : 'Edit'}</Button>
-              <Button variant="quiet" onClick={() => reviewEssayFeedback(doc.id, 'dismissed')}>
-                Dismiss
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  reviewEssayFeedback(doc.id, 'dismissed')
+                  toast('Discarded.')
+                }}
+              >
+                Discard
               </Button>
             </>
           )}

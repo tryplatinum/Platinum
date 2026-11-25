@@ -187,12 +187,19 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
       )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
-        <Button onClick={() => discardReport(report.id)}>Discard</Button>
+        <Button
+          onClick={() => {
+            discardReport(report.id)
+            toast('Discarded.')
+          }}
+        >
+          Discard
+        </Button>
         <Button
           variant="primary"
           onClick={() => {
             approveReport(report.id)
-            toast(`Report to ${parent.name} approved.`)
+            toast('Approved. Sending in 60 seconds.')
           }}
         >
           Approve and send
@@ -226,7 +233,7 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="mt-3 flex flex-col gap-2">
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
-            <ApprovalStamp approval={report.approval} /> Logged as sent. v0 does not deliver messages.
+            <ApprovalStamp approval={report.approval} /> Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.
           </p>
         </div>
       )}

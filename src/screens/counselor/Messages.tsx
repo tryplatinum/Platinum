@@ -1,7 +1,8 @@
 // Messages sent. Sent: the log of everything that "went out". Weekly texts: the
 // week's short text to each student. Queue: reminders that are due under the
 // rules. Rules: what is automatic and what waits.
-// v0 logs messages and does not deliver them; the page says so at the top.
+// Approved messages wait 60 seconds, then go out through the allowlist, and can
+// still be copied and sent by hand; the page says so at the top.
 
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -340,7 +341,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
   const automatic = queue.filter((r) => r.mode === 'automatic')
   const send = (items: ReminderDraft[], trigger: 'approved' | 'automatic') => {
     items.forEach((r) => sendMessage({ ...r.message, trigger }))
-    toast(`${items.length} ${items.length === 1 ? 'reminder' : 'reminders'} approved.`)
+    toast(trigger === 'approved' ? 'Approved. Sending in 60 seconds.' : `${items.length} ${items.length === 1 ? 'reminder is' : 'reminders are'} queued.`)
   }
 
   if (queue.length === 0) {

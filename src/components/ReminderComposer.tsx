@@ -1,7 +1,7 @@
 // A reminder about one task, drafted by the AI for one person in their
 // language and for their preferred channel. The counselor reads it, edits if
-// needed, and sends. "Send" writes to the Messages sent log; nothing is
-// delivered in v0, and the confirmation says so.
+// needed, and approves. An approved message waits 60 seconds, then goes out
+// through the allowlist. It can still be copied and sent by hand.
 //
 // A reminder to the student can come with a parent copy: a second, separate
 // draft to the primary parent, sent (or not) on its own. Whether "Also tell
@@ -14,7 +14,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../services/ai'
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
-import { AiErrorNote, AiTag, Button, PlaceholderNote, SectionLabel, Thinking, textareaClass } from './ui'
+import { AiErrorNote, AiTag, Button, PlaceholderNote, SectionLabel, Thinking, textareaClass, useToast } from './ui'
 
 const CHANNEL_NOUN = { text: 'text message', email: 'email', wechat: 'WeChat message', line: 'LINE message' } as const
 
@@ -34,6 +34,7 @@ const sameRecipient = (a: Pick<Draft, 'toKind' | 'parentId'>, b: Pick<Draft, 'to
 export function ReminderComposer({ student, task, onDone }: { student: Student; task: Task; onDone: () => void }) {
   const data = useData()
   const sendMessage = useStore((s) => s.sendMessage)
+  const toast = useToast()
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(0)
   const [error, setError] = useState<string>()
@@ -88,6 +89,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
     }, d.toKind === 'student' ? d.usedNote : undefined)
+    toast('Approved. Sending in 60 seconds.')
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()
     else setDrafts((all) => all.map((x, j) => (j === i ? { ...x, sent: true } : x)))
@@ -141,10 +143,10 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             )}
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
-                <span className="text-[13px] font-semibold text-good">Sent to {d.toName}. Logged in Messages sent.</span>
+                <span className="text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in 60 seconds.</span>
               ) : (
-                <Button variant="primary" onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
-                  Send to {d.toName}
+                <Button variant="primary" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
+                  Approve and send
                 </Button>
               )}
             </div>
@@ -173,7 +175,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
           {drafts.some((d) => d.sent) ? 'Close' : 'Cancel'}
         </Button>
         <span className="text-xs text-muted">
-          Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. v0 logs messages; it does not deliver them.
+          Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.
         </span>
       </div>
     </div>

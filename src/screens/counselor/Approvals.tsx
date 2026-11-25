@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
+import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextTooLong } from '../../components/WeeklyTextSend'
 import { Button, Card, CardHeader, Empty, Modal, PageHeader, Pill, cx, inputBase, textareaClass, useToast } from '../../components/ui'
 import { formatTimestamp } from '../../lib/dates'
 import { APPROVAL_TYPE_LABEL, allPendingApprovals, approvalGroups, findStudent, fullName, type ApprovalItem } from '../../lib/derive'
@@ -68,7 +69,7 @@ function WaitingElsewhere() {
     drafts.length === 1 ? `/app/students/${drafts[0]!.studentId}/list-draft` : '/app/students'
   return (
     <Card>
-      <CardHeader size="section" className="border-b border-line px-5 py-4" title="Waiting on other screens" sub="These stay on William’s queues. Open them there to review." />
+      <CardHeader size="section" className="border-b border-line px-5 py-4" title="Waiting on other screens" />
       <ul>
         {drafts.length > 0 && (
           <li className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
@@ -132,13 +133,17 @@ function ApprovalGroupCard({ studentId, sourceLabel, items }: { studentId: strin
   const toast = useToast()
   const student = findStudent(data, studentId)
   const [confirmAll, setConfirmAll] = useState(false)
-  const sends = items.filter((i) => i.isSend).length
+  // A weekly text is sent by hand, so it cannot be approved along with the rest.
+  const approvable = items.filter((i) => i.kind !== 'weekly_text')
+  const left = items.length - approvable.length
+  const sends = approvable.filter((i) => i.isSend).length
+  const leftLine = `${left} weekly ${left === 1 ? 'text is' : 'texts are'} left for you to send by hand.`
 
   if (!student) return null
 
   const approveAll = () => {
-    for (const item of items) approveItem(item)
-    toast(sends > 0 ? `Approved ${items.length}. ${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.` : `Approved ${items.length}.`)
+    for (const item of approvable) approveItem(item)
+    toast([`Approved ${approvable.length}.`, sends > 0 && `${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.`, left > 0 && leftLine].filter(Boolean).join(' '))
     setConfirmAll(false)
   }
 
@@ -157,7 +162,8 @@ function ApprovalGroupCard({ studentId, sourceLabel, items }: { studentId: strin
           </>
         }
         action={
-          items.length > 1 && (
+          items.length > 1 &&
+          approvable.length > 0 && (
             <Button variant="primary" onClick={() => setConfirmAll(true)}>
               Approve all
             </Button>
@@ -172,12 +178,13 @@ function ApprovalGroupCard({ studentId, sourceLabel, items }: { studentId: strin
       {confirmAll && (
         <Modal title="Approve all in this group?" onClose={() => setConfirmAll(false)}>
           <p className="text-sm text-ink-soft">
-            {items.length} {items.length === 1 ? 'item' : 'items'}
+            {approvable.length} {approvable.length === 1 ? 'item' : 'items'}
             {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send.` : '.'} Each send still gets its own 60-second undo window.
+            {left > 0 && ` ${leftLine}`}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="primary" onClick={approveAll}>
-              Approve {items.length}
+              {sends > 0 ? 'Approve and send' : 'Approve'} {approvable.length}
             </Button>
             <Button onClick={() => setConfirmAll(false)}>Cancel</Button>
           </div>
@@ -194,13 +201,14 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
   const [discarding, setDiscarding] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const student = findStudent(data, item.studentId)
+  const weekly = item.kind === 'weekly_text' ? data.weeklyTexts.find((w) => w.id === item.weeklyTextId) : undefined
   const profile = item.kind === 'profile' && item.meetingId && item.draftId
     ? data.meetings.find((m) => m.id === item.meetingId)?.ai?.profileChanges.find((c) => c.id === item.draftId)
     : undefined
 
   const onApprove = () => {
     void Promise.resolve(approveItem(item))
-      .then(() => toast(item.isSend ? `Approved. Undo is on the toast.` : `Approved.`))
+      .then(() => toast(item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
       .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not approve.'))
   }
 
@@ -208,9 +216,9 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
     void Promise.resolve(discardItem(item))
       .then(() => {
         setDiscarding(false)
-        toast('Discarded.')
+        toast(weekly ? 'Skipped this week.' : 'Discarded.')
       })
-      .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not discard.'))
+      .catch((error: unknown) => toast(error instanceof Error ? error.message : weekly ? 'Could not skip the text.' : 'Could not discard.'))
   }
 
   const onSkip = async (mode: 'once' | 'until_on') => {
@@ -258,11 +266,17 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
           {item.sourcesLine && (
             <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>
           )}
+          {weekly && student && <WeeklyTextSendNote student={student} />}
+          {weekly && weeklyTextTooLong(weekly.body) && <p className="text-[13px] font-semibold text-bad">Too long for one text: shorten it.</p>}
         </div>
         <span className="flex flex-wrap gap-1.5">
-          <Button variant="primary" onClick={onApprove}>
-            Approve
-          </Button>
+          {weekly ? (
+            student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
+          ) : (
+            <Button variant="primary" onClick={onApprove}>
+              {item.isSend ? 'Approve and send' : 'Approve'}
+            </Button>
+          )}
           {canEdit(item) && (
             <Button onClick={() => setEditing(!editing)} aria-expanded={editing}>
               {editing ? 'Done' : 'Edit'}
@@ -273,18 +287,18 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
           )}
           {canDiscard(item) && (
             <Button variant="quiet" onClick={() => setDiscarding(true)}>
-              Discard
+              {weekly ? 'Skip' : 'Discard'}
             </Button>
           )}
         </span>
       </div>
       {editing && student && <EditPanel item={item} onClose={() => setEditing(false)} />}
       {discarding && (
-        <Modal title="Discard this draft?" onClose={() => setDiscarding(false)}>
-          <p className="text-sm text-ink-soft">It will leave the queue and will not be sent or saved.</p>
+        <Modal title={weekly ? 'Skip this week’s text?' : 'Discard this draft?'} onClose={() => setDiscarding(false)}>
+          <p className="text-sm text-ink-soft">{weekly ? 'It will not be sent this week. You can take it back under “Done this week” in Weekly texts.' : 'It will leave the queue and will not be sent or saved.'}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="primary" onClick={onDiscard}>
-              Discard
+              {weekly ? 'Skip this week' : 'Discard'}
             </Button>
             <Button onClick={() => setDiscarding(false)}>Keep it</Button>
           </div>
@@ -753,7 +767,7 @@ function approveItem(item: ApprovalItem): void | Promise<void> {
       if (item.docId) s.reviewEssayFeedback(item.docId, 'approved')
       break
     case 'weekly_text':
-      if (item.weeklyTextId) s.sendWeeklyText(item.weeklyTextId, 'copy')
+      // Sent by hand with Copy or Open in Messages (WeeklyTextSend), never from here.
       break
     case 'weekly_parent':
       if (item.weeklyTextId) s.sendWeeklyParentCopy(item.weeklyTextId)

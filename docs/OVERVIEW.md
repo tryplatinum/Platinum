@@ -497,7 +497,6 @@ From `docs/BUILD_LOG.md` and earlier build prompts:
 
 ### Where older docs and the code disagree
 
-- `README.md` and some UI copy (`ReportsTab.tsx`, `ReminderComposer.tsx`, `MeetingReview.tsx`, the comment at the top of `Messages.tsx`) say v0 does not deliver messages. The dispatcher can deliver through Gmail and the phone when those are turned on.
 - `README.md` says Vercel deploys `api/ai.ts` and `api/student.ts`; there are nine functions. `AGENTS.md` says `npm run dev` includes `/api/ai` and `/api/student`; it mounts all nine.
 - `AGENTS.md` says students and parents are reached by LINE and WeChat; both are refused in code.
 - `.env.example` says the log transport prints the body; it prints a masked recipient and the body length only. It also describes Gmail sending as "later"; it exists.

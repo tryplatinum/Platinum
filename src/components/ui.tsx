@@ -223,7 +223,7 @@ export function ReviewTag({ review, approvedLabel = 'Approved' }: { review: Revi
   // Fades in when a draft is approved while it is on screen, not for drafts approved earlier.
   const first = useRef(review)
   if (review === 'approved') return <Pill tone="good" className={first.current !== 'approved' ? 'motion-fade' : undefined}>{approvedLabel}</Pill>
-  if (review === 'dismissed') return <Pill tone="neutral">Dismissed</Pill>
+  if (review === 'dismissed') return <Pill tone="neutral">Discarded</Pill>
   return <Pill tone="accent">Needs approval</Pill>
 }
 
