@@ -293,7 +293,10 @@ src/services/outbox.ts    Simulated sending
 src/services/colleges.ts  The browser side of the college directory: search, figures for linked rows
 
 src/components/ui.tsx     Card, Button, Pill, Tabs, SegmentedControl, FilterChips, DateChip,
-                          ProgressWithCount, CheckCircle, Toast, Modal, AI tags
+                          ProgressWithCount, CheckCircle, CheckRow, Disclosure, Note, Skeleton,
+                          Toast, Modal, ConfirmDialog (useConfirm), AI tags
+src/components/motion.tsx Lists whose rows come and go, open and close, the active marker, focus
+                          that is never lost. Timings are in src/index.css; /app/styleguide shows each
 src/components/Layout.tsx Sidebar layout and student preview layout
 src/components/RequireFirm.tsx  The gate: session, firm, data loaded
 src/components/StudentLinkModal.tsx  Create, copy and revoke a student's link
@@ -302,7 +305,7 @@ src/components/StudentTable.tsx, TaskRows.tsx, ReminderComposer.tsx, Bilingual.t
 src/components/meeting/   MeetingReview (numbered sections), MeetingReport, BriefCard
 src/components/colleges.tsx  College type-ahead, and the figures for a linked list row
 
-src/screens/counselor/    Approvals (the Inbox), Students, Settings, StudentPage (+ student/ tabs),
+src/screens/counselor/    Today, Approvals (the Inbox), Students, Settings, StudentPage (+ student/ tabs),
                           Meetings (by student, calendar), Messages, WeeklyTexts, SignIn (+ firm setup, reset)
 src/screens/student/      The student's phone-width view, and its layout for the secret link
 src/App.tsx               All routes, and redirects from the old URLs

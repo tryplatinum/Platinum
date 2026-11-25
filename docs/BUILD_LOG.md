@@ -1,5 +1,22 @@
 # Build log
 
+## Today, navigation, interface fixes and motion (branch `ui-ux-redesign`, on top of `ui-ux-fixes`)
+
+Front end only. No migration, server, API, outbox or dispatch change, and `src/store/store.ts` is as `ui-ux-fixes` left it. Every send still goes through `sendMessage`, `queue_message` and the 60-second hold.
+
+- **Today** (`/app/today`, `Today.tsx`, `src/lib/today.ts`): meetings, the three most urgent drafts on the shared card, and students behind or slipping. Opening it asks nobody for anything. Sign-in, the logo and unknown addresses land there. The Inbox stays at `/app`.
+- **Navigation.** Today, Inbox, Students, Meetings, Messages, Documents; Activity, Settings and Sign out in the footer. One badge, the Inbox's. The Assistant button is in the sidebar on a laptop, and in the one top bar with the logo and Menu below `lg`.
+- **Assistant below `lg`** is a dialog: the page behind it is `inert`, Escape closes it, focus goes back to the button.
+- **`src/components/motion.tsx`.** `MotionList` keeps a row on screen for 340 ms after it has left the data (its children must be keyed, and a leaving row gets no new props, so anything it shows about how it was decided is its own state). `Reveal`, `useReveal`, `useMarker`, `Count`, `TimeLeft`, `useRoomFor`, `focusNear`. Timings and keyframes are in `src/index.css`.
+- **`ui.tsx`.** `ConfirmDialog` and `useConfirm` replaced all fifteen `window.confirm` and `window.prompt` calls. `Button` has `busy` (it keeps focus, so it is `aria-disabled`, not `disabled`). `CheckRow`, `Disclosure`, `Note`, `Skeleton`, `ProgressBar`, `SendLabel`, `TabPanel`, `usePageTitle`. `Modal` starts focus at `data-autofocus` and gives it back.
+- **Approval card.** One place for every edit form, each field labelled. The meeting review uses it too (`meetingApprovals` in `derive.ts`). `data-focus-home` marks where focus goes when a card is replaced by its outcome.
+- **Targets.** `tap-link` and `check-row` in `index.css`: 44px on a phone, 24 anywhere.
+- **PR 31** (10-second hold) edits some of the same copy. `TimeLeft` goes by the message's own times, so it needs no change.
+
+**The skill.** `ui-ux-pro-max` is not installed on this machine. Its public quick reference was read as text; none of its scripts were run.
+
+**Checked** from `preview.html` with the sample caseload and the database calls stubbed at the network, in headless Chrome, light and dark, at 1440 and 375, and with reduced motion. Not run against a real database, Google account or phone, or in Safari.
+
 ## UI and UX fixes (branch `ui-ux-fixes`)
 
 Four fixes. No migration, no API route, no outbox or dispatch change.
