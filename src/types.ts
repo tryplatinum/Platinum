@@ -746,6 +746,8 @@ export interface ActivityEvent {
   studentId: ID
   actor: Actor
   text: string
+  /** The signed-in person who wrote a counselor line. The database requires it to be the writer. */
+  actorUser?: ID
 }
 
 /**

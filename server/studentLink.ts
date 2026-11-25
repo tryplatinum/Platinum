@@ -49,7 +49,6 @@ export async function findLink(token: string): Promise<Link | undefined> {
     .maybeSingle()
   if (error) throw new Error(`student link lookup failed: ${error.message}`)
   if (!data) return undefined
-  // Null expiry = never expires (links created before M0.3).
   if (linkIsExpired(data.expires_at)) return undefined
   return { firmId: data.firm_id, studentId: data.student_id, id: data.id }
 }

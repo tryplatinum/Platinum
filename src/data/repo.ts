@@ -7,6 +7,7 @@
 // Outbox rows are the exception: queue_message and cancel_message are the only
 // writes, and apply_changes rejects a batch that names the outbox.
 
+import { studentLinkExpiry } from '../../shared/dispatch'
 import type { QueuePayload } from '../../shared/outbox'
 import { DEFAULT_REMINDER_RULES } from './seed'
 import type { Database, Json } from '../lib/database.types'
@@ -285,6 +286,7 @@ const activityFrom = (r: Row<'activity'>): ActivityEvent => ({
   studentId: r.student_id,
   actor: r.actor as ActivityEvent['actor'],
   text: r.text,
+  actorUser: u(r.actor_user),
 })
 
 const weeklyTextFrom = (r: Row<'weekly_texts'>): WeeklyText => ({
@@ -315,7 +317,10 @@ const personalNoteFrom = (r: Row<'personal_notes'>): PersonalNote => ({
   approval: r.approval as unknown as PersonalNote['approval'],
 })
 
-const linkFrom = (r: Row<'student_links'>): StudentLink => ({
+/** Every column but token_hash, which signed-in people cannot read. */
+const LINK_COLUMNS = 'id, firm_id, student_id, created_by, created_at, updated_at, revoked_at, expires_at'
+
+const linkFrom = (r: Pick<Row<'student_links'>, 'id' | 'student_id' | 'created_at' | 'revoked_at'>): StudentLink => ({
   id: r.id,
   studentId: r.student_id,
   createdAt: stamp(r.created_at),
@@ -518,6 +523,7 @@ const activityRow = (e: ActivityEvent): Out<'activity'> => ({
   at: e.at,
   actor: e.actor,
   text: e.text,
+  actor_user: n(e.actorUser),
 })
 
 const weeklyTextRow = (w: WeeklyText): Out<'weekly_texts'> => ({
@@ -646,7 +652,9 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   prepended('documents', before.documents, after.documents, documentRow, true)
   prepended('reports', before.reports, after.reports, reportRow, true)
   // Activity is only ever added to. The outbox is not in this batch: queue_message writes it.
-  prepended('activity', before.activity, after.activity, activityRow, false)
+  // Only counselor lines are written from here; the database refuses any other actor.
+  const counselorLines = (list: ActivityEvent[]) => list.filter((e) => e.actor === 'counselor')
+  prepended('activity', counselorLines(before.activity), counselorLines(after.activity), activityRow, false)
 
   put('reminder_rules', diffList(before.reminderRules, after.reminderRules).changed.map(ruleRow))
 
@@ -809,17 +817,13 @@ const agentProposalFrom = (r: {
 
 /** Updates a pending proposal’s editable payload (Approvals inline edit). */
 export async function updateAgentProposalPayload(id: ID, payload: Record<string, unknown>): Promise<void> {
-  const { error } = await supabase.from('agent_proposals').update({ payload: payload as Json }).eq('id', id).eq('status', 'pending')
+  const { error } = await supabase.rpc('edit_agent_proposal', { proposal: id, payload: payload as Json })
   if (error) fail(error, 'Could not update the proposal')
 }
 
-/** Marks a proposal approved or discarded. */
-export async function decideAgentProposal(id: ID, status: 'approved' | 'discarded', userId: ID): Promise<void> {
-  const { error } = await supabase
-    .from('agent_proposals')
-    .update({ status, decided_by: userId, decided_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('status', 'pending')
+/** Marks a pending proposal approved or discarded. The database records the caller as the decider. */
+export async function decideAgentProposal(id: ID, status: 'approved' | 'discarded'): Promise<void> {
+  const { error } = await supabase.rpc('decide_agent_proposal', { proposal: id, decision: status })
   if (error) fail(error, 'Could not update the proposal')
 }
 
@@ -846,7 +850,7 @@ export async function undoReminderSkip(id: ID): Promise<void> {
 const toHex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('')
 
 export async function listStudentLinks(firmId: ID): Promise<StudentLink[]> {
-  const { data, error } = await supabase.from('student_links').select('*').eq('firm_id', firmId).is('revoked_at', null).order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('student_links').select(LINK_COLUMNS).eq('firm_id', firmId).is('revoked_at', null).order('created_at', { ascending: false })
   if (error) fail(error, 'Could not load student links')
   return data.map(linkFrom)
 }
@@ -866,17 +870,22 @@ export async function createStudentLink(firmId: ID, studentId: ID, userId: ID): 
   const token = newToken()
   const { data, error } = await supabase
     .from('student_links')
-    .insert({ firm_id: firmId, student_id: studentId, token_hash: await hashToken(token), created_by: userId })
-    .select('*')
+    .insert({ firm_id: firmId, student_id: studentId, token_hash: await hashToken(token), created_by: userId, expires_at: studentLinkExpiry() })
+    .select(LINK_COLUMNS)
     .single()
   if (error) fail(error, 'Could not create the link')
   return { link: linkFrom(data), token }
 }
 
-/** Replaces the hash. The previous token stops working. The new token is returned once. */
+/** Replaces the hash and starts a new expiry. The previous token stops working. The new token is returned once. */
 export async function rotateStudentLink(id: ID): Promise<{ link: StudentLink; token: string }> {
   const token = newToken()
-  const { data, error } = await supabase.from('student_links').update({ token_hash: await hashToken(token) }).eq('id', id).select('*').single()
+  const { data, error } = await supabase
+    .from('student_links')
+    .update({ token_hash: await hashToken(token), expires_at: studentLinkExpiry() })
+    .eq('id', id)
+    .select(LINK_COLUMNS)
+    .single()
   if (error) fail(error, 'Could not replace the link')
   return { link: linkFrom(data), token }
 }
@@ -904,6 +913,13 @@ export async function cancelMessage(id: ID): Promise<Queued> {
   const { data, error } = await supabase.rpc('cancel_message', { id })
   if (error) fail(error, 'Could not undo the message')
   return queuedFrom(data)
+}
+
+/** The AI line saying a meeting's drafts are ready. The database writes it, worded from the meeting's title. */
+export async function logMeetingDraftsReady(meetingId: ID): Promise<ActivityEvent> {
+  const { data, error } = await supabase.rpc('log_meeting_drafts_ready', { meeting: meetingId })
+  if (error) fail(error, 'Could not record the drafts in the activity log')
+  return activityFrom(data as unknown as Row<'activity'>)
 }
 
 export async function revokeStudentLink(id: ID): Promise<void> {

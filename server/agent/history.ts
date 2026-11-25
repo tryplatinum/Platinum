@@ -5,7 +5,7 @@
 
 import { proposalSummary, type AgentHistory, type AgentHistoryMessage, type AgentHistoryProposal, type AgentTurnSource } from '../../shared/agent.js'
 import type { Json } from '../../src/lib/database.types.js'
-import { AgentHttpError } from './run.js'
+import { agentServerError } from './run.js'
 import { dedupeSources, sourcesFromStoredTools, textFromContent, toolNamesIn } from './sources.js'
 import type { Db } from './types.js'
 
@@ -27,15 +27,15 @@ export async function loadAgentThread(user: Db, firmId: string, counselorId: str
   let lookup = user.from('agent_threads').select('id').eq('firm_id', firmId).eq('counselor_id', counselorId)
   lookup = studentId ? lookup.eq('student_id', studentId) : lookup.is('student_id', null)
   const thread = await lookup.maybeSingle()
-  if (thread.error) throw new AgentHttpError('server', thread.error.message, 500)
+  if (thread.error) throw agentServerError('finding the thread', thread.error)
   if (!thread.data) return { ok: true, threadId: null, messages: [] }
 
   const [messages, proposals] = await Promise.all([
     user.from('agent_messages').select('id, role, content, created_at').eq('thread_id', thread.data.id).order('created_at', { ascending: false }).limit(RAW_LIMIT),
     user.from('agent_proposals').select('id, kind, student_id, rationale, payload, status, created_at').eq('thread_id', thread.data.id).order('created_at', { ascending: true }),
   ])
-  if (messages.error) throw new AgentHttpError('server', messages.error.message, 500)
-  if (proposals.error) throw new AgentHttpError('server', proposals.error.message, 500)
+  if (messages.error) throw agentServerError('loading the history', messages.error)
+  if (proposals.error) throw agentServerError('loading the proposals', proposals.error)
 
   const visible = assemble((messages.data ?? []).slice().reverse(), proposals.data ?? [])
   return { ok: true, threadId: thread.data.id, messages: visible.slice(-VISIBLE_LIMIT) }

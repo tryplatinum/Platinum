@@ -1,6 +1,7 @@
 // POST /api/translate — English for one pending assistant message, on demand.
 // Uses bodyEn already stored on the proposal when it is there. Otherwise one
-// Claude call on the main model, then the English is saved on the proposal.
+// Claude call on the main model, then the English is saved on the proposal
+// through edit_agent_proposal, with the counselor's own token.
 
 import { z } from 'zod'
 import type { Json } from '../src/lib/database.types.js'
@@ -16,6 +17,12 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 const fail = (code: string, message: string, status: number) => json({ ok: false, code, message }, status)
+
+/** Logs the real error here and gives the browser only the fixed message. */
+const serverFail = (doing: string, error: unknown) => {
+  console.error(`[translate] ${doing}:`, error instanceof Error ? error.message : ((error as { message?: string } | null)?.message ?? 'unknown'))
+  return fail('server', 'Something went wrong. Try again.', 500)
+}
 
 export async function POST(request: Request): Promise<Response> {
   if (!authConfigured()) return fail('not_configured', 'The server has no Supabase settings.', 503)
@@ -38,7 +45,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!body.success) return fail('bad_request', 'Invalid request: proposalId.', 400)
 
   const { data, error } = await caller.client.from('agent_proposals').select('id, status, payload').eq('id', body.data.proposalId).maybeSingle()
-  if (error) return fail('server', 'Could not read that draft.', 500)
+  if (error) return serverFail('reading the draft', error)
   if (!data || data.status !== 'pending') return fail('not_found', 'That draft is not waiting for review.', 404)
 
   const payload = data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload) ? (data.payload as Record<string, unknown>) : {}
@@ -48,14 +55,14 @@ export async function POST(request: Request): Promise<Response> {
   const stored = typeof payload.bodyEn === 'string' ? payload.bodyEn.trim() : ''
   if (language === 'en' || stored) return json({ ok: true, bodyEn: stored || message })
 
+  let bodyEn: string
   try {
-    const bodyEn = await translateForCounselor(message, language)
-    const next = { ...payload, bodyEn }
-    const saved = await caller.client.from('agent_proposals').update({ payload: next as Json }).eq('id', data.id).eq('status', 'pending')
-    if (saved.error) return fail('server', 'Could not save the English.', 500)
-    return json({ ok: true, bodyEn })
+    bodyEn = await translateForCounselor(message, language)
   } catch (err) {
-    console.error('[translate]', err instanceof Error ? err.message : err)
+    console.error('[translate]', err instanceof Error ? err.message : 'unknown')
     return fail('upstream', 'The English could not be written. Please try again.', 502)
   }
+  const saved = await caller.client.rpc('edit_agent_proposal', { proposal: data.id, payload: { ...payload, bodyEn } as Json })
+  if (saved.error) return serverFail('saving the English', saved.error)
+  return json({ ok: true, bodyEn })
 }

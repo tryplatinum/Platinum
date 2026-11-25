@@ -465,7 +465,8 @@ The review screen groups the draft by band. Each row has the college's name and 
 - **No backups of your own, no export.** The data is in your Supabase project; backups are whatever your Supabase plan provides.
 - **Rate limits are in memory** on both server functions. See above.
 - **Last save wins.** No realtime and no conflict handling between two devices editing the same thing.
-- **A student link does not expire on its own**, and anyone in the firm can read it. Revoke it if it leaks.
+- **A student link opens for 30 days** after it is made or replaced. Revoke it if it leaks before then.
+- **Loading the sample saves only its counselor activity lines.** The sample's student, parent, AI and system lines show until the next reload.
 - **Weekly texts are English only** and one caseload draft is up to one AI request per student: more than 30 students in five minutes will hit the rate limit, and the rows that failed say so and can be drafted again.
 - **A sent weekly text means "handed to you"**, not "delivered".
 - **Which task a weekly text leads with is a judgment, and can be wrong.** The row shows the choice and the reason; reorder the text yourself if you disagree. The reason is the model's own sentence and is not checked.

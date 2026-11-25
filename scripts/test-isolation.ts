@@ -80,7 +80,7 @@ async function seed(account: TestAccount): Promise<Seeded> {
       documents: [{ id: randomUUID(), student_id: studentId, name: 'Essay', kind: 'essay', category: 'application', added_on: '2026-11-01', added_by: 'counselor', drafts: [{ n: 1, text: 'PRIVATE DRAFT', savedOn: '2026-11-01' }] }],
       reports: [{ id: randomUUID(), student_id: studentId, parent_id: parentId, created_on: '2026-11-01', status: 'draft', language: 'en', channel: 'email', subject: 'S', body_en: 'PRIVATE REPORT' }],
       reminder_rules: [{ rule: 'student_late', days: 2, mode: 'off' }],
-      activity: [{ id: randomUUID(), student_id: studentId, at: new Date().toISOString(), actor: 'counselor', text: 'seeded' }],
+      activity: [{ id: randomUUID(), student_id: studentId, at: new Date().toISOString(), actor: 'counselor', actor_user: account.userId, text: 'seeded' }],
       personal_notes: [
         { id: noteId, student_id: studentId, text: NOTE_TEXT, event_date: '2030-01-12', source: 'meeting', meeting_id: meetingId, approval: { by: 'Counselor', byId: account.userId, at: new Date().toISOString() } },
         { id: randomUUID(), student_id: studentId, text: 'Robotics scrimmage REMEMBERED', source: 'counselor', approval: { by: 'Counselor', byId: account.userId, at: new Date().toISOString() } },
@@ -134,10 +134,12 @@ try {
     const theirs = seeded[other.label as 'A' | 'B']
     for (const table of ALL_TABLES) {
       const key = table === 'firms' ? 'id' : 'firm_id'
-      const rows = await me.client.from(table).select('*')
+      // A signed-in person may read every column of student_links but token_hash.
+      const columns = table === 'student_links' ? 'id, firm_id' : '*'
+      const rows = await me.client.from(table).select(columns)
       const own = (rows.data ?? []) as unknown as Record<string, string>[]
       check(`${me.label} reads only its own ${table}`, !rows.error && own.length > 0 && own.every((r) => r[key] === me.firmId), `${own.length} rows`)
-      const direct = await me.client.from(table).select('*').eq(key as 'id', other.firmId)
+      const direct = await me.client.from(table).select(columns).eq(key as 'id', other.firmId)
       check(`${me.label} cannot read ${other.label}'s ${table}`, (direct.data ?? []).length === 0)
     }
     for (const table of TABLES) {
@@ -182,6 +184,62 @@ try {
   check('the parent copy setting takes only its three values', Boolean(badSetting.error))
   const setting = await adminClient().from('students').select('parent_copy').eq('firm_id', a.firmId).single()
   check('a student saved without the setting gets when_slipping', setting.data?.parent_copy === 'when_slipping')
+
+  // ── Link hashes, the assistant's tables, the outbox and who wrote an activity line ──
+  {
+    const admin = adminClient()
+    check('a signed-in person cannot read token_hash', Boolean((await a.client.from('student_links').select('token_hash')).error))
+    check('…nor every column of student_links at once', Boolean((await a.client.from('student_links').select('*')).error))
+    const listed = await a.client.from('student_links').select('id, student_id, created_at, revoked_at, expires_at').eq('firm_id', a.firmId)
+    check('…but can still list its links, each with an expiry', !listed.error && (listed.data ?? []).length > 0 && listed.data!.every((l) => Boolean(l.expires_at)))
+    const noExpiry = await a.client.from('student_links').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, token_hash: randomBytes(32).toString('hex'), created_by: a.userId, expires_at: null as unknown as string })
+    check('a link cannot be saved without an expiry', Boolean(noExpiry.error))
+
+    const thread = await admin.from('agent_threads').insert({ firm_id: a.firmId, counselor_id: a.userId, student_id: seeded.A.studentId }).select('id').single()
+    if (thread.error) throw new Error(`opening a thread failed: ${thread.error.message}`)
+    const proposal = await admin.from('agent_proposals').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, thread_id: thread.data.id, kind: 'task', payload: { title: 'T' } }).select('id').single()
+    if (proposal.error) throw new Error(`saving a proposal failed: ${proposal.error.message}`)
+    check('A can read its own proposals', ((await a.client.from('agent_proposals').select('id').eq('id', proposal.data.id)).data ?? []).length === 1)
+    check('a signed-in person cannot insert a thread', Boolean((await a.client.from('agent_threads').insert({ firm_id: a.firmId, counselor_id: a.userId, student_id: null })).error))
+    check('…nor a message', Boolean((await a.client.from('agent_messages').insert({ firm_id: a.firmId, thread_id: thread.data.id, role: 'user', content: [] })).error))
+    check('…nor a proposal', Boolean((await a.client.from('agent_proposals').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, thread_id: thread.data.id, kind: 'task', payload: {} })).error))
+    check('…nor update a proposal directly', Boolean((await a.client.from('agent_proposals').update({ status: 'approved' }).eq('id', proposal.data.id)).error))
+    const crossFirm = await admin.from('agent_proposals').insert({ firm_id: a.firmId, student_id: seeded.B.studentId, thread_id: thread.data.id, kind: 'task', payload: {} })
+    check("even the server cannot save a proposal for another firm's student", Boolean(crossFirm.error))
+    const byB = await b.client.rpc('decide_agent_proposal', { proposal: proposal.data.id, decision: 'approved' })
+    const edit = await a.client.rpc('edit_agent_proposal', { proposal: proposal.data.id, payload: { title: 'Edited' } })
+    const byA = await a.client.rpc('decide_agent_proposal', { proposal: proposal.data.id, decision: 'approved' })
+    const decided = (await admin.from('agent_proposals').select('status, decided_by, payload').eq('id', proposal.data.id).single()).data
+    check("B cannot decide A's proposal", byB.data === false)
+    check('A edits and approves it, and is recorded as the decider', edit.data === true && byA.data === true && decided?.status === 'approved' && decided.decided_by === a.userId && (decided.payload as { title?: string }).title === 'Edited')
+    check('a decided proposal cannot be edited again', (await a.client.rpc('edit_agent_proposal', { proposal: proposal.data.id, payload: { title: 'Later' } })).data === false)
+
+    const skip = await a.client.from('reminder_skips').insert({ firm_id: a.firmId, dedupe_key: 'isolation-test', skipped_by: a.userId }).select('id').single()
+    check('a reminder skip can be saved and undone', !skip.error && !(await a.client.from('reminder_skips').delete().eq('id', skip.data!.id)).error)
+    check('a signed-in person cannot change a reminder skip', Boolean((await a.client.from('reminder_skips').update({ dedupe_key: 'x' }).eq('firm_id', a.firmId)).error))
+
+    check('a signed-in person cannot read the daily assistant budget', Boolean((await a.client.from('agent_usage').select('*')).error))
+    check('…nor take from it', Boolean((await a.client.rpc('reserve_agent_call', { firm: a.firmId, day_limit: 1000 })).error))
+
+    const outboxInsert = await a.client.from('outbox').insert({ firm_id: a.firmId, student_id: seeded.A.studentId, to_kind: 'student', to_name: 'N', channel: 'text', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved', status: 'queued', send_after: new Date().toISOString() })
+    check('the outbox takes no direct insert', Boolean(outboxInsert.error))
+    const outboxUpdate = await a.client.from('outbox').update({ status: 'sent' }).eq('firm_id', a.firmId).select('id')
+    check('…nor a direct update', Boolean(outboxUpdate.error) || (outboxUpdate.data ?? []).length === 0)
+
+    const line = (actor: string, actorUser: string | null) => ({ firm_id: a.firmId, student_id: seeded.A.studentId, actor, actor_user: actorUser, text: `isolation ${actor}` })
+    check('a counselor line written as yourself is saved', !(await a.client.from('activity').insert(line('counselor', a.userId))).error)
+    check('a line claiming to be from the system is refused', Boolean((await a.client.from('activity').insert(line('system', a.userId))).error))
+    check('…or from the student, a parent or the AI', Boolean((await a.client.from('activity').insert(line('student', a.userId))).error) && Boolean((await a.client.from('activity').insert(line('parent', a.userId))).error) && Boolean((await a.client.from('activity').insert(line('ai', a.userId))).error))
+    check('a counselor line in someone else’s name is refused', Boolean((await a.client.from('activity').insert(line('counselor', b.userId))).error) && Boolean((await a.client.from('activity').insert(line('counselor', null))).error))
+    const turned = await a.client.from('activity').update({ actor: 'system' }).eq('firm_id', a.firmId).select('id')
+    check('an existing line cannot be turned into a system line', Boolean(turned.error) || (turned.data ?? []).length === 0)
+    const queuedLine = await admin.from('activity').select('actor_user').eq('firm_id', a.firmId).eq('actor', 'counselor').neq('text', 'seeded').not('text', 'like', 'isolation%').limit(1).maybeSingle()
+    check('a line written by queue_message records who queued it', queuedLine.data?.actor_user === a.userId, String(queuedLine.data?.actor_user))
+    const meeting = (await admin.from('meetings').select('id').eq('firm_id', a.firmId).limit(1).single()).data!
+    const ready = await a.client.rpc('log_meeting_drafts_ready', { meeting: meeting.id })
+    check('the drafts-ready AI line is written by the database', !ready.error && (ready.data as { actor?: string } | null)?.actor === 'ai')
+    check("B cannot write it for A's meeting", Boolean((await b.client.rpc('log_meeting_drafts_ready', { meeting: meeting.id })).error))
+  }
 
   // ── The anon key alone ──
   const anon = anonClient()

@@ -6,7 +6,7 @@
 import { AgentRequestSchema, type AgentErrorCode } from '../shared/agent.js'
 import { loadAgentThread } from '../server/agent/history.js'
 import { readProgress } from '../server/agent/progress.js'
-import { AgentHttpError, runAgent } from '../server/agent/run.js'
+import { AGENT_SERVER_MESSAGE, AgentHttpError, runAgent } from '../server/agent/run.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, serviceClient, serviceConfigured } from '../server/supabase.js'
 
@@ -48,8 +48,8 @@ export async function GET(request: Request): Promise<Response> {
     return json(await loadAgentThread(caller.client, caller.firmId, caller.userId, studentId))
   } catch (error) {
     if (error instanceof AgentHttpError) return fail(error.code as AgentErrorCode, error.message, error.status)
-    console.error('[agent] history', error)
-    return fail('server', 'Something went wrong in the assistant. Please try again.', 500)
+    console.error('[agent] history:', error instanceof Error ? error.message : 'unknown')
+    return fail('server', AGENT_SERVER_MESSAGE, 500)
   }
 }
 
@@ -103,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof AgentHttpError) {
       return fail(error.code as AgentErrorCode, error.message, error.status)
     }
-    console.error('[agent] unhandled', error)
-    return fail('server', 'Something went wrong in the assistant. Please try again.', 500)
+    console.error('[agent] unhandled:', error instanceof Error ? error.message : 'unknown')
+    return fail('server', AGENT_SERVER_MESSAGE, 500)
   }
 }

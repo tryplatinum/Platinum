@@ -30,7 +30,7 @@ export async function POST(request: Request): Promise<Response> {
     const summary = await dispatchFirm(caller.firmId)
     return json({ ok: true, ...summary })
   } catch (error) {
-    console.error('[dispatch]', error instanceof Error ? error.message : error)
-    return json({ ok: false, message: 'Could not send queued messages.' }, 500)
+    console.error('[dispatch]', error instanceof Error ? error.message : 'unknown')
+    return json({ ok: false, code: 'server', message: 'Something went wrong. Try again.' }, 500)
   }
 }

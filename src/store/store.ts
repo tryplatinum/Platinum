@@ -9,7 +9,7 @@
 
 import { create } from 'zustand'
 import { withFreshIds } from '../data/ids'
-import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, decideAgentProposal, diffData, firstNameOf, listStudentLinks, loadAll, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, updateAgentProposalPayload, type Changes } from '../data/repo'
+import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, decideAgentProposal, diffData, firstNameOf, listStudentLinks, loadAll, logMeetingDraftsReady, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, updateAgentProposalPayload, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
 import { notify, notifyQueued, notifySkipUndo } from '../lib/notify'
 import { validateQueuePayload } from '../../shared/outbox'
@@ -19,6 +19,7 @@ import { fullName } from '../lib/derive'
 import type { MeetingDrafts } from '../services/ai'
 import type { OutgoingMessage } from '../services/outbox'
 import type {
+  ActivityEvent,
   Actor,
   AppData,
   Approval,
@@ -253,8 +254,19 @@ function patchById<T extends { id: ID }>(list: T[], id: ID, fn: (item: T) => T):
   return list.map((item) => (item.id === id ? fn(item) : item))
 }
 
+/** The signed-in person, recorded on the counselor lines they write. */
+function signedInUser(): ID | undefined {
+  const { account } = useStore.getState()
+  return account.status === 'ready' ? account.userId : undefined
+}
+
+/**
+ * Adds a line to the activity log in memory. Only counselor lines are saved by
+ * save(); any other actor is written by the database or the server.
+ */
 function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): AppData {
-  return { ...data, activity: [{ id: newId(), at: nowTimestamp(), studentId, actor, text }, ...data.activity].slice(0, ACTIVITY_LIMIT) }
+  const entry: ActivityEvent = { id: newId(), at: nowTimestamp(), studentId, actor, text, ...(actor === 'counselor' ? { actorUser: signedInUser() } : {}) }
+  return { ...data, activity: [entry, ...data.activity].slice(0, ACTIVITY_LIMIT) }
 }
 
 /** Adds a queued message in memory. save() asks the database to record the approval. */
@@ -472,6 +484,21 @@ function save(before: AppData, after: AppData, given?: Changes) {
     })
 }
 
+/** Runs after every write queued so far, so the rows it relies on are already saved. */
+function afterWrites(work: () => Promise<unknown>, doing: string) {
+  if (useStore.getState().account.status !== 'ready') return
+  pendingWrites++
+  writes = writes
+    .then(work)
+    .then(
+      () => undefined,
+      (error) => notify(`${doing} ${reasonOf(error)}`),
+    )
+    .finally(() => {
+      pendingWrites--
+    })
+}
+
 // Leaving or reloading the page cancels a save that is still on its way, so the
 // browser asks first. Saves take well under a second; this only shows in that window.
 if (typeof window !== 'undefined') {
@@ -531,7 +558,10 @@ export const useStore = create<State & Actions>()((set, get) => {
     // Clearing removes the caseload. The firm's folders are settings and stay.
     // Sample history is not written into the outbox. New messages are queued on approval.
     const base = clear ? { ...emptyData(before.firm), documentTypes: before.documentTypes } : before
-    const added = add ? { ...add, outbox: [] } : undefined
+    // Only the sample's counselor lines are saved, as the person loading it. The
+    // student, parent, AI and system lines stay in memory until the next reload.
+    const userId = signedInUser()
+    const added = add ? { ...add, outbox: [], activity: add.activity.map((e) => (e.actor === 'counselor' ? { ...e, actorUser: userId } : e)) } : undefined
     const after = added ? { ...merged(base, added), outbox: base.outbox } : base
     const changes: Changes = (added && diffData(emptyData(before.firm), merged(emptyData(before.firm), added))) || { upsert: {}, delete: {} }
     changes.clear = clear
@@ -905,13 +935,16 @@ export const useStore = create<State & Actions>()((set, get) => {
     setMeetingBrief: (id, brief) => change((data) => patchMeeting(data, id, (m) => ({ ...m, brief, agenda: m.agenda ?? brief.agenda.map((a) => a.topic) }))),
 
     // ── Meeting drafts and their review ──
-    setMeetingDrafts: (meetingId, drafts) =>
+    setMeetingDrafts: (meetingId, drafts) => {
       change((data) => {
         const meeting = data.meetings.find((m) => m.id === meetingId)
         if (!meeting) return data
         const next = patchMeeting(data, meetingId, (m) => ({ ...m, ai: drafts.ai, recap: drafts.recap }))
         return logActivity(next, meeting.studentId, 'ai', `Drafts from “${meeting.title}” are ready for review`)
-      }),
+      })
+      // The line above is shown at once. The saved one is written by the database.
+      if (get().data.meetings.some((m) => m.id === meetingId)) afterWrites(() => logMeetingDraftsReady(meetingId), 'The activity log was not updated.')
+    },
 
     reviewNotes: (meetingId, decision) =>
       change((data) =>
@@ -1142,7 +1175,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         )
       }
 
-      await decideAgentProposal(id, 'approved', account.userId)
+      await decideAgentProposal(id, 'approved')
       change((d) => {
         const next = {
           ...d,
@@ -1159,7 +1192,7 @@ export const useStore = create<State & Actions>()((set, get) => {
       if (account.status !== 'ready') throw new Error('Sign in first.')
       const proposal = data.agentProposals.find((p) => p.id === id && p.status === 'pending')
       if (!proposal) return
-      await decideAgentProposal(id, 'discarded', account.userId)
+      await decideAgentProposal(id, 'discarded')
       change((d) => {
         const next = {
           ...d,

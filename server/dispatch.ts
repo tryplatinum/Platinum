@@ -9,6 +9,8 @@ import {
   fillStudentLink,
   parseAllowlist,
   resolveAddress,
+  studentLinkExpiry,
+  withoutStudentLinks,
   type RecipientContact,
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
@@ -120,7 +122,7 @@ async function withStudentLink(row: OutboxRow, body: string, bodyEn: string | nu
   if (!base) throw new Error('PUBLIC_APP_URL is not set on the server')
 
   const token = newToken()
-  const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString()
+  const expiresAt = studentLinkExpiry()
   const { error } = await serviceClient()
     .from('student_links')
     .insert({
@@ -172,7 +174,7 @@ async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllo
     await markSent(row, result.providerMessageId)
     return 'sent'
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'send failed'
+    const message = withoutStudentLinks(error instanceof Error ? error.message : 'send failed')
     // The phone transport says why a text can be sent by hand instead.
     const detail = error instanceof Error && 'deliveryDetail' in error && typeof error.deliveryDetail === 'string' ? error.deliveryDetail : undefined
     // LogTransport and allowlist refusal never throw into here for the allowlist
