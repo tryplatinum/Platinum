@@ -76,7 +76,7 @@ function Waiting({ s }: { s: StudentSummary }) {
 }
 
 /** Remind the person it waits on, or open the student when it waits on the counselor. */
-function Act({ s, open, onToggle, className }: { s: StudentSummary; open: boolean; onToggle: () => void; className?: string }) {
+function Act({ s, open, onToggle, className, short }: { s: StudentSummary; open: boolean; onToggle: () => void; className?: string; /** "Remind", where the line beside it says who. */ short?: boolean }) {
   const w = s.waitingOn
   if (!w) return null
   if (w.owner === 'counselor')
@@ -86,33 +86,62 @@ function Act({ s, open, onToggle, className }: { s: StudentSummary; open: boolea
       </LinkButton>
     )
   return (
-    <Button variant="remind" className={className} aria-expanded={open} aria-label={`${w.owner === 'parent' ? 'Remind parent' : 'Remind student'}: ${fullName(s.student)}`} onClick={onToggle}>
-      {w.owner === 'parent' ? 'Remind parent' : 'Remind student'}
+    <Button variant={short ? 'secondary' : 'remind'} className={className} aria-expanded={open} aria-label={`${w.owner === 'parent' ? 'Remind parent' : 'Remind student'}: ${fullName(s.student)}`} onClick={onToggle}>
+      {short ? 'Remind' : w.owner === 'parent' ? 'Remind parent' : 'Remind student'}
     </Button>
   )
 }
 
 // ── Stacked cards ───────────────────────────────────────────────────────────
 
-/** `brief` leaves out progress and the deadline, for a short list of who needs chasing. */
+/** The one line that says why a student is on the list: what they are waiting on, or the first reason. */
+function why(s: StudentSummary): string {
+  const w = s.waitingOn
+  if (!w) return s.reasons[0] ?? statusText(s)
+  return `${w.label}: ${w.task.title} · ${w.daysLate > 0 ? `${w.daysLate} ${w.daysLate === 1 ? 'day' : 'days'} late` : `due ${formatDate(w.task.dueDate)}`}`
+}
+
+/** `brief` is one compact row a student, for a short list of who needs chasing: name, status, why, and the button. */
 export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; brief?: boolean }) {
   const [reminding, setReminding] = useState<string>()
   return (
     <ul className="text-sm">
       {rows.map((s) => {
         const open = reminding === s.student.id
+        if (brief)
+          return (
+            <li key={s.student.id} className="border-t border-line px-4 py-2.5 first:border-t-0 sm:px-5">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <Link to={`/app/students/${s.student.id}`} className="tap-link font-semibold text-heading hover:text-accent hover:underline">
+                      {fullName(s.student)}
+                    </Link>
+                    <StatusPill status={s.status} />
+                  </div>
+                  <p className="truncate text-[13px] text-ink-soft" title={why(s)}>
+                    {why(s)}
+                  </p>
+                </div>
+                <Act s={s} open={open} short onToggle={() => setReminding(open ? undefined : s.student.id)} className="shrink-0" />
+              </div>
+              {open && s.waitingOn && (
+                <div className="motion-rise mt-2">
+                  <ReminderComposer student={s.student} task={s.waitingOn.task} onDone={() => setReminding(undefined)} />
+                </div>
+              )}
+            </li>
+          )
         return (
           <li key={s.student.id} className="flex flex-col gap-3 border-t border-line px-5 py-4 first:border-t-0">
             <div>
               <Who s={s} />
             </div>
-            {!brief && <Progress s={s} />}
-            {!brief && <NextDeadline s={s} />}
-            {/* What it waits on is said just below, with the button. */}
-            {brief && <p className="text-[13px] text-ink-soft empty:hidden">{s.reasons.filter((r) => !r.startsWith('Waiting on')).join(' · ')}</p>}
+            <Progress s={s} />
+            <NextDeadline s={s} />
             <div className="flex flex-col gap-2">
               <div>
-                {!brief && <p className="text-xs font-semibold text-muted">Waiting on</p>}
+                <p className="text-xs font-semibold text-muted">Waiting on</p>
                 <Waiting s={s} />
               </div>
               <Act s={s} open={open} onToggle={() => setReminding(open ? undefined : s.student.id)} className="self-start" />

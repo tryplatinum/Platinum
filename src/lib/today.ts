@@ -2,7 +2,7 @@
 
 import type { AppData, Meeting, Student } from '../types'
 import { addDays, daysBetween, todayISO, type ISODate } from './dates'
-import { activeStudents, type StudentSummary } from './derive'
+import { activeStudents, type ApprovalItem, type StudentSummary } from './derive'
 
 export interface TodayMeeting {
   meeting: Meeting
@@ -48,4 +48,21 @@ export function slippingStudents(all: StudentSummary[]): StudentSummary[] {
   return all
     .filter((s) => s.status === 'behind' || s.status === 'slipping')
     .sort((a, b) => rank(a) - rank(b) || (b.waitingOn?.daysLate ?? 0) - (a.waitingOn?.daysLate ?? 0) || b.progress.late - a.progress.late)
+}
+
+/**
+ * A few drafts to clear from Today, chosen for spread: the oldest first, and no
+ * more than one for any student, so it is never three of one family's reminders.
+ */
+export function waitingSpread(approvals: ApprovalItem[], count = 3): ApprovalItem[] {
+  const seen = new Set<string>()
+  const picked: ApprovalItem[] = []
+  // A stable sort: drafts of the same age keep the order the Inbox gives them.
+  for (const item of [...approvals].sort((a, b) => (Date.parse(a.sortAt) || 0) - (Date.parse(b.sortAt) || 0))) {
+    if (seen.has(item.studentId)) continue
+    seen.add(item.studentId)
+    picked.push(item)
+    if (picked.length === count) break
+  }
+  return picked
 }

@@ -111,6 +111,27 @@ export function PageHeader({ title, above, sub, pill, actions }: { title: ReactN
   )
 }
 
+/**
+ * One number a counselor reads at a glance, and the way to what it counts.
+ * It is tinted only when the number calls for it: `warn` or `bad`.
+ */
+export function StatTile({ to, value, label, tone }: { to: string; value: number; label: string; tone?: 'warn' | 'bad' }) {
+  return (
+    <Link
+      to={to}
+      data-press
+      aria-label={`${value} ${label}`}
+      className={cx(
+        'flex min-h-11 min-w-0 flex-col gap-1 rounded-card border px-3 py-3 transition-colors sm:px-4',
+        tone === 'bad' ? 'border-bad-line bg-bad-tint hover:bg-bad-soft' : tone === 'warn' ? 'border-line bg-warn-soft' : 'border-line bg-surface hover:bg-surface-2',
+      )}
+    >
+      <span className={cx('nums font-display text-[28px] font-semibold leading-none', tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-heading')}>{value}</span>
+      <span className="text-[13px] leading-snug text-ink-soft">{label}</span>
+    </Link>
+  )
+}
+
 /** Small caps-style label: 12px semibold, muted. */
 export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cx('text-xs font-semibold uppercase tracking-wide text-muted', className)}>{children}</div>

@@ -1,27 +1,33 @@
-// Today: where the day starts. Who am I meeting, what is waiting for me, who is
-// slipping. Everything here is worked out from data already loaded (lib/today.ts,
-// lib/inbox.ts, lib/derive.ts): opening the page asks nobody for anything. Each
-// control is the one used elsewhere, doing the same job.
+// Today: where the day starts. Three numbers, then what is waiting for me, who
+// I am meeting, and who is slipping. Everything here is worked out from data
+// already loaded (lib/today.ts, lib/inbox.ts, lib/derive.ts): opening the page
+// asks nobody for anything. Each control is the one used elsewhere, doing the
+// same job. A draft is the Inbox's short row, and opens in place to the whole
+// card, so it is read in full before it is approved.
 
-import { useState, type ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { useId, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApprovalCard } from '../../components/ApprovalCard'
 import { UploadWindow } from '../../components/files/UploadWindow'
 import { LogMeetingModal, MeetingFormModal, StudentFormModal } from '../../components/forms'
 import { OnTheirWay } from '../../components/OnTheirWay'
 import { StudentCards } from '../../components/StudentTable'
-import { MotionList } from '../../components/motion'
-import { AiErrorNote, Button, Card, CardHeader, Empty, LinkButton, PageHeader, Pill, Thinking, useAi, usePageTitle } from '../../components/ui'
+import { InboxLine } from '../../components/InboxLine'
+import { MotionList, Reveal } from '../../components/motion'
+import { AiErrorNote, Button, Card, CardHeader, Empty, LinkButton, PageHeader, Pill, StatTile, Thinking, useAi, usePageTitle } from '../../components/ui'
 import { formatDateLong, formatRelative, formatTime, todayISO } from '../../lib/dates'
-import { approvalGroups, fullName, pendingInMeeting, summarizeAll } from '../../lib/derive'
-import { inboxContents, inboxSize } from '../../lib/inbox'
-import { meetingsForToday, slippingStudents, type TodayMeeting } from '../../lib/today'
+import { findStudent, fullName, pendingInMeeting, summarizeAll } from '../../lib/derive'
+import { approvalRow, inboxContents, inboxSize, type InboxRow } from '../../lib/inbox'
+import { meetingsForToday, slippingStudents, waitingSpread, type TodayMeeting } from '../../lib/today'
 import { prepareBrief } from '../../services/workflows'
 import { useData, useStore } from '../../store/store'
 import type { ID } from '../../types'
 
 /** Enough to clear a few before the first meeting, and no more than a screen. */
 const SHOWN = 3
+/** Who to chase first. Everyone else is on Students. */
+const SLIPPING_SHOWN = 5
 
 type Open = { kind: 'log'; studentId?: ID; meetingId?: ID } | { kind: 'schedule'; studentId?: ID } | { kind: 'student' } | { kind: 'upload' }
 
@@ -38,14 +44,12 @@ export default function Today() {
   const close = () => setOpen(undefined)
   const none = all.length === 0
   const today = meetings.list.filter((m) => m.when === 'today').length
-  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
   return (
     <>
       <PageHeader
         above={formatDateLong(todayISO())}
         title="Today"
-        sub={none ? undefined : `${plural(today, 'meeting')} today · ${waiting} waiting for you · ${plural(slipping.length, 'student')} behind or slipping`}
         actions={
           <>
             <Button variant="primary" disabled={none} onClick={() => setOpen({ kind: 'log' })}>
@@ -63,28 +67,43 @@ export default function Today() {
       {none ? (
         <NewFirm onAdd={() => setOpen({ kind: 'student' })} />
       ) : (
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="flex min-w-0 flex-col gap-6">
-            <MeetingsCard meetings={meetings} onOpen={setOpen} />
-            <WaitingCard waiting={waiting} inbox={inbox} />
+        <>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <StatTile to="/app/meetings" value={today} label={today === 1 ? 'Meeting today' : 'Meetings today'} />
+            <StatTile to="/app" value={waiting} label="Waiting for you" />
+            <StatTile to="/app/students" value={slipping.length} label="Slipping" tone={slipping.some((s) => s.status === 'behind') ? 'bad' : slipping.length > 0 ? 'warn' : undefined} />
           </div>
-          <Card>
-            <CardHeader
-              size="section"
-              className="px-5 py-4"
-              title="Slipping"
-              count={slipping.length}
-              action={
-                <Link to="/app/students" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
-                  All students
-                </Link>
-              }
-            />
-            <div className="border-t border-line">
-              {slipping.length === 0 ? <Empty title="Nobody is behind or slipping." /> : <StudentCards rows={slipping} brief />}
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            <WaitingCard waiting={waiting} inbox={inbox} />
+            <div className="flex min-w-0 flex-col gap-6">
+              <MeetingsCard meetings={meetings} onOpen={setOpen} />
+              <Card>
+                <CardHeader
+                  size="section"
+                  className="px-4 py-2 sm:px-5"
+                  title="Slipping"
+                  count={slipping.length}
+                  action={
+                    <Link to="/app/students" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
+                      All students
+                    </Link>
+                  }
+                />
+                <div className="border-t border-line">
+                  {slipping.length === 0 ? <Empty title="Nobody is behind or slipping." /> : <StudentCards rows={slipping.slice(0, SLIPPING_SHOWN)} brief />}
+                  {slipping.length > SLIPPING_SHOWN && (
+                    <p className="border-t border-line px-4 py-1 text-sm text-muted sm:px-5">
+                      {slipping.length - SLIPPING_SHOWN} more.{' '}
+                      <Link to="/app/students" className="tap-link font-semibold text-accent hover:underline">
+                        All students
+                      </Link>
+                    </p>
+                  )}
+                </div>
+              </Card>
             </div>
-          </Card>
-        </div>
+          </div>
+        </>
       )}
 
       {open?.kind === 'log' && <LogMeetingModal studentId={open.studentId} meetingId={open.meetingId} onClose={close} />}
@@ -116,24 +135,21 @@ function NewFirm({ onAdd }: { onAdd: () => void }) {
 function MeetingsCard({ meetings, onOpen }: { meetings: ReturnType<typeof meetingsForToday>; onOpen: (open: Open) => void }) {
   const { list, next } = meetings
   const heading = (m: TodayMeeting, i: number) => (i === 0 || list[i - 1].when !== m.when ? { earlier: 'Not logged yet', today: 'Today', tomorrow: 'Tomorrow' }[m.when] : undefined)
-  return (
-    <Card>
-      <CardHeader
-        size="section"
-        className="px-5 py-4"
-        title="Meetings"
-        action={
-          <Link to="/app/meetings?view=calendar" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
-            Calendar
-          </Link>
-        }
-      />
-      {list.length === 0 && (
-        <p className="border-t border-line px-5 py-4 text-sm text-muted">
+  const calendar = (
+    <Link to="/app/meetings?view=calendar" className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-accent hover:underline">
+      Calendar
+    </Link>
+  )
+  // Nothing today or tomorrow is one line, not a card with a heading over a sentence.
+  if (list.length === 0)
+    return (
+      <Card className="flex items-center justify-between gap-3 px-4 py-1 sm:px-5">
+        <h2 className="sr-only">Meetings</h2>
+        <p className="py-2 text-sm text-ink-soft">
           No meetings today or tomorrow.{' '}
           {next ? (
             <>
-              Next is{' '}
+              Next:{' '}
               <Link to={`/app/meetings?student=${next.student.id}`} className="tap-link font-semibold text-accent hover:underline">
                 {fullName(next.student)}
               </Link>
@@ -143,14 +159,17 @@ function MeetingsCard({ meetings, onOpen }: { meetings: ReturnType<typeof meetin
             'Nothing is scheduled.'
           )}
         </p>
-      )}
-      {list.length > 0 && (
-        <MotionList itemClassName="border-t border-line">
-          {list.map((m, i) => (
-            <MeetingRow key={m.meeting.id} item={m} heading={heading(m, i)} onOpen={onOpen} />
-          ))}
-        </MotionList>
-      )}
+        {calendar}
+      </Card>
+    )
+  return (
+    <Card>
+      <CardHeader size="section" className="px-4 py-2 sm:px-5" title="Meetings" action={calendar} />
+      <MotionList itemClassName="border-t border-line">
+        {list.map((m, i) => (
+          <MeetingRow key={m.meeting.id} item={m} heading={heading(m, i)} onOpen={onOpen} />
+        ))}
+      </MotionList>
     </Card>
   )
 }
@@ -236,8 +255,9 @@ function MeetingRow({ item, heading, onOpen }: { item: TodayMeeting; heading?: s
 // ── Waiting ─────────────────────────────────────────────────────────────────
 
 function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<typeof inboxContents> }) {
-  const items = approvalGroups(inbox.approvals).flatMap((g) => g.items)
-  const shown = items.slice(0, SHOWN)
+  const data = useData()
+  const [open, setOpen] = useState<string>()
+  const shown = waitingSpread(inbox.approvals, SHOWN).map((item) => approvalRow(data, item))
   const files = inbox.toFile.length + inbox.toCheck.length
   const lists = inbox.listDrafts.length
   const rest = [files > 0 && `${files} ${files === 1 ? 'file' : 'files'} to file or check`, lists > 0 && `${lists} college list ${lists === 1 ? 'draft' : 'drafts'}`].filter(Boolean)
@@ -245,35 +265,53 @@ function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<ty
     <Card>
       <CardHeader
         size="section"
-        className="px-5 py-4"
+        className="px-4 py-2 sm:px-5"
         title="Waiting for you"
         count={waiting}
-        sub={waiting > shown.length && shown.length > 0 ? `The ${shown.length === 1 ? 'most urgent one' : `${shown.length} most urgent`}. The rest are in the Inbox.` : undefined}
         action={
           <Link to="/app" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
             Open the Inbox
           </Link>
         }
       />
-      <OnTheirWay className="border-t border-line px-5 py-3" />
+      <OnTheirWay className="border-t border-line px-4 py-3 sm:px-5" />
       {waiting === 0 && (
         <div className="border-t border-line">
           <Empty title="Nothing is waiting for you." />
         </div>
       )}
-      <MotionList itemClassName="border-t border-line" label="The most urgent drafts">
-        {shown.map((item) => (
-          <ApprovalCard key={item.key} item={item} showStudent />
+      <MotionList itemClassName="border-t border-line" label="The oldest drafts, one for each student">
+        {shown.map((row) => (
+          <WaitingRow key={row.key} row={row} open={open === row.key} onToggle={() => setOpen(open === row.key ? undefined : row.key)} />
         ))}
       </MotionList>
-      {rest.length > 0 && (
-        <p className="border-t border-line px-5 py-3 text-sm text-muted">
-          Also waiting: {rest.join(' and ')}.{' '}
+      {waiting > shown.length && (
+        <p className="border-t border-line px-4 py-1 text-sm text-muted sm:px-5">
+          {shown.length > 0 && 'The oldest, one for each student. '}
+          {rest.length > 0 && `Also ${rest.join(' and ')}. `}
           <Link to="/app" className="tap-link font-semibold text-accent hover:underline">
-            See them in the Inbox
+            {shown.length > 0 ? `All ${waiting} in the Inbox` : 'See them in the Inbox'}
           </Link>
         </p>
       )}
     </Card>
+  )
+}
+
+/** The Inbox's short row. Its name opens the whole card in place, where it is read, edited and approved. */
+function WaitingRow({ row, open, onToggle }: { row: InboxRow; open: boolean; onToggle: () => void }) {
+  const id = useId()
+  const student = findStudent(useData(), row.studentId ?? '')
+  if (!row.item) return null
+  return (
+    <div>
+      <button type="button" aria-expanded={open} aria-controls={id} aria-label={row.label} onClick={onToggle} className="flex min-h-11 w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-2 sm:px-5">
+        <InboxLine row={row} student={student && fullName(student)} className="flex-1" />
+        <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
+      </button>
+      <Reveal open={open} id={id}>
+        <ApprovalCard item={row.item} className="border-t border-line bg-canvas" />
+      </Reveal>
+    </div>
   )
 }
