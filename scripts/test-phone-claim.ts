@@ -51,6 +51,7 @@ const made = await db
     key_hash: createHash('sha256').update(randomBytes(32)).digest('hex'),
     wake_email: 'nobody@example.com',
     revoked_at: new Date().toISOString(),
+    key_expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   })
   .select('id')
   .single()
@@ -124,7 +125,7 @@ try {
 
   // ── The rules the table itself holds ──
   const sameHash = await db.from('phone_devices').select('key_hash').eq('id', device).single()
-  const duplicate = await db.from('phone_devices').insert({ firm_id: member.data.firm_id, counselor_id: member.data.user_id, label: 'duplicate', key_hash: sameHash.data?.key_hash ?? '', wake_email: 'nobody@example.com', revoked_at: new Date().toISOString() })
+  const duplicate = await db.from('phone_devices').insert({ firm_id: member.data.firm_id, counselor_id: member.data.user_id, label: 'duplicate', key_hash: sameHash.data?.key_hash ?? '', wake_email: 'nobody@example.com', revoked_at: new Date().toISOString(), key_expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() })
   check('two phones cannot share a key hash', duplicate.error?.code === '23505')
   const badNumber = await db.from('phone_send_jobs').insert({ device_id: device, to_phone: '555-0143', body: 'x' })
   check('a job’s number must be E.164', badNumber.error?.code === '23514')

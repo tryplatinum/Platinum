@@ -6,6 +6,10 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const newDeviceKey = () => randomBytes(32).toString('base64url')
 
+/** Eight characters, without 0/O and 1/I, so a person can read the code aloud. */
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+export const newSetupCode = () => Array.from(randomBytes(8), (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('')
+
 export const hashKey = (key: string) => createHash('sha256').update(key, 'utf8').digest('hex')
 
 /** 32 bytes as base64url is 43 characters. Anything else is not a key and is not looked up. */

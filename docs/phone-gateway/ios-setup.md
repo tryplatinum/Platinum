@@ -5,12 +5,12 @@ DRAFT. These steps were written before anything was tried on a real iPhone. Will
 ## Before you start
 
 - Your Gmail account (the one connected in Platinum's Firm settings) must be added to Apple's Mail app on this iPhone, with Mail turned on for it.
-- You need the device key and the site address from the `/phone-setup` page. The key is shown once.
+- You need the one-time setup code from "Your phone" in Firm settings. It works once and expires after 10 minutes.
 
 ## Steps
 
-1. Tap "Copy key" above, then tap "Get the shortcut" and add the shortcut to your Shortcuts app.
-2. When the shortcut asks for its setup values, paste the key into "Device key".
+1. Type the setup code above and tap "Get the device key". Then tap "Copy key", tap "Get the shortcut", and add the shortcut to your Shortcuts app.
+2. When the shortcut asks for its setup values, paste the key into "Device key". The key expires after 90 days; pair the phone again then.
 3. Come back to this page, tap "Copy" next to the site address, and paste it into "Site address" in the shortcut.
 4. Run the shortcut once by hand. When iOS asks, allow it to connect to the site and to send messages.
 5. In the Shortcuts app, open Automation and add a new personal automation: "Email", sender is your own Gmail address, subject contains "Platinum wake".
@@ -20,7 +20,7 @@ DRAFT. These steps were written before anything was tried on a real iPhone. Will
 
 ## What the shortcut does
 
-It sends a request to the site address with the device key and `{"action":"claim"}`. If the answer has `"next":"send"`, it sends `body` to `to_phone` with Messages, then sends `{"action":"report","job_id":…,"claim_id":…,"result":"submitted"}` (or `"failed"` with an `error`). It repeats until the answer is `{"next":"none"}`.
+It sends a request to the site address with the device key and `{"action":"claim"}`. If the answer has `"next":"send"`, it sends `body` to `to_phone` with Messages, then sends `{"action":"report","job_id":…,"claim_id":…,"result":"submitted"}` (or `"failed"` with an `error`). It repeats until the answer is `{"next":"none"}`. A report should come within 10 minutes of the claim. After that the text shows as unconfirmed in Messages and is never handed out again; a later report still settles it. If the answer says "Pair your phone again", the key was revoked or has expired: get a new setup code in Firm settings.
 
 The shortcut only sends. It never reads your messages and uploads nothing except whether each text was handed to Messages.
 

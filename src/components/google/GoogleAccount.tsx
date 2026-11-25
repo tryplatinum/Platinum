@@ -58,6 +58,11 @@ export function GoogleAccount() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {status.connected && status.driveReconnect && !status.reconnect && (
+            <Button variant="primary" disabled={busy} onClick={() => void connect()}>
+              Reconnect Google Drive
+            </Button>
+          )}
           {status.connected && status.reconnect && (
             <Button variant="primary" disabled={busy} onClick={() => void connect()}>
               {status.gmail ? 'Reconnect Gmail' : 'Reconnect Google'}
@@ -75,11 +80,16 @@ export function GoogleAccount() {
         </div>
       </div>
       <p className="text-[13px] text-muted">
-        Platinum can read all files in the connected Drive and never changes them. Files you import are copied here; nothing in Drive is edited, moved or deleted. The connection is yours alone: colleagues connect their own.
+        Platinum can open files you pick in Google Drive and never changes them. It cannot browse the rest of your Drive. Files you import are copied here. The connection is yours alone: colleagues connect their own.
       </p>
+      {status.connected && status.driveReconnect && !status.reconnect && (
+        <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
+          Reconnect Google Drive. This connection can still read every file in Drive, and Platinum will not use it until you connect again. Files already imported are not affected.
+        </p>
+      )}
       {status.connected && status.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Google has ended this connection. Reconnect to browse Drive and to sync linked folders again{status.gmail ? ', and so that approved emails can be sent from your Gmail' : ''}. Files already imported are not affected.
+          Google has ended this connection. Reconnect to choose files in Drive again{status.gmail ? ', and so that approved emails can be sent from your Gmail' : ''}. Files already imported are not affected.
         </p>
       )}
       {status.connected && !status.reconnect && (

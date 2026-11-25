@@ -1,6 +1,8 @@
 // Reading a counselor's Google Drive. Read only: every request here is a GET,
-// and the only scope ever asked for is drive.readonly. Nothing in a Drive is
-// changed, moved or deleted.
+// and the only scope ever asked for is drive.file. Nothing in a Drive is
+// changed, moved or deleted. The app cannot search the whole Drive. It can
+// open a file the counselor picked, or list a folder they picked, and only
+// the files that permission can see.
 //
 // Listings are passed to the browser as they come and are not saved. Everything
 // Google answers is checked with the Zod shapes in shared/google.ts before it
@@ -17,7 +19,6 @@ import {
   driveFile,
   driveKind,
   driveList,
-  sharedDriveList,
   type DriveEntry,
   type DriveFile,
   type DriveListing,
@@ -27,7 +28,7 @@ import { DRIVE_API, google } from './config.js'
 import { GoogleError, RECONNECT_MESSAGE, accessTokenFor, dropAccessToken, type Who } from './connection.js'
 
 const FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink,trashed,shortcutDetails(targetId,targetMimeType)'
-const ALL_DRIVES = { supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' }
+const WHOLE_DRIVE = new Set(['root', 'shared', 'drives'])
 
 /** One GET to the Drive API as this user. A token Google no longer takes is asked for again, once. */
 async function driveGet(who: Who, path: string, params: Record<string, string>): Promise<Response> {
@@ -98,24 +99,17 @@ const quoted = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "
  * folder, or a search by name and contents (Drive's own search).
  */
 export async function browseDrive(who: Who, input: { parent: string; query?: string; pageToken?: string }): Promise<DriveListing> {
-  if (!input.query && input.parent === 'drives') {
-    const page = parsed(sharedDriveList, await driveJson(who, '/drives', { pageSize: '100', ...(input.pageToken ? { pageToken: input.pageToken } : {}) }))
-    return { entries: page.drives.map((d) => ({ id: d.id, name: d.name, kind: 'drive', label: 'Shared drive' })), nextPageToken: page.nextPageToken }
+  // drive.file cannot see My Drive, Shared with me, shared drives, or a search of all of them.
+  if (input.query || WHOLE_DRIVE.has(input.parent)) {
+    throw new GoogleError('refused', 'Choose a file with the Google Picker. Platinum cannot search the whole Drive.', 400)
   }
-  const q = input.query
-    ? `(name contains ${quoted(input.query)} or fullText contains ${quoted(input.query)}) and trashed = false`
-    : input.parent === 'shared'
-      ? 'sharedWithMe = true and trashed = false'
-      : `${quoted(input.parent)} in parents and trashed = false`
   const page = parsed(
     driveList,
     await driveJson(who, '/files', {
-      q,
+      q: `${quoted(input.parent)} in parents and trashed = false`,
       fields: `nextPageToken,files(${FIELDS})`,
       pageSize: '100',
-      ...ALL_DRIVES,
-      // Drive does not sort a full-text search.
-      ...(input.query ? { corpora: 'allDrives' } : { orderBy: 'folder,name' }),
+      orderBy: 'folder,name',
       ...(input.pageToken ? { pageToken: input.pageToken } : {}),
     }),
   )
@@ -234,7 +228,7 @@ export async function listFolderTree(who: Who, folderId: string, now: () => numb
         }
         const page: { files: DriveFile[]; nextPageToken?: string } = parsed(
           driveList,
-          await driveJson(who, '/files', { q: `${quoted(folder.id)} in parents and trashed = false`, fields: `nextPageToken,files(${FIELDS})`, pageSize: '200', orderBy: 'folder,name', ...ALL_DRIVES, ...(pageToken ? { pageToken } : {}) }),
+          await driveJson(who, '/files', { q: `${quoted(folder.id)} in parents and trashed = false`, fields: `nextPageToken,files(${FIELDS})`, pageSize: '200', orderBy: 'folder,name', ...(pageToken ? { pageToken } : {}) }),
         )
         for (const found of page.files) {
           let file = found

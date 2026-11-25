@@ -8,7 +8,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, SegmentedControl, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
 import { STUDENT_LINK_PLACEHOLDER, previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
-import { HAND_SENT_NOTE, NOT_CONFIRMED, canSendByHand } from '../../../shared/phoneGateway'
+import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
 import { OpenInMessages } from '../../components/OpenInMessages'
 import { callPhone, phoneReason } from '../../services/phone'
 import { formatTimestamp } from '../../lib/dates'
@@ -226,22 +226,30 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
   const waitingForPhone = m.status === 'sending' && m.detail === 'phone_waiting'
   const notConfirmed = m.status === 'sending' && m.detail === 'phone_unknown'
   /** The same text, logged later as sent by hand: this row needs nothing more. */
-  const sentByHand = data.outbox.some((o) => o.id !== m.id && o.note === HAND_SENT_NOTE && o.status !== 'cancelled' && o.studentId === m.studentId && o.toName === m.toName && o.body === m.body && o.sentAt > m.sentAt)
+  const sentByHand =
+    m.error === PHONE_REASON.sentAgain || data.outbox.some((o) => o.id !== m.id && o.note === HAND_SENT_NOTE && o.status !== 'cancelled' && o.studentId === m.studentId && o.toName === m.toName && o.body === m.body && o.sentAt > m.sentAt)
   const byHand = canSendByHand(m) && !sentByHand
   const student = findStudent(data, m.studentId)
   const phone = (m.toKind === 'parent' ? student?.parents.find((p) => p.id === m.parentId)?.phone : student?.phone)?.trim()
   /** The student's link is added by the server when it sends, so this text cannot be completed here. */
   const needsLink = m.body.includes(STUDENT_LINK_PLACEHOLDER)
-  const askPhone = async (action: string, body: Record<string, unknown>) => {
+  const askPhone = async (action: string, body: Record<string, unknown>): Promise<boolean> => {
     setBusy(true)
     try {
       await callPhone(action, body)
+      return true
     } catch (e) {
       toast(phoneReason(e))
+      return false
     } finally {
       await reload(true)
       setBusy(false)
     }
+  }
+  const sendAgain = async () => {
+    if (!(await askPhone('resolve', { outboxId: m.id, sent: false, again: true }))) return
+    again(m.note)
+    toast('Queued again. Undo is on the toast.')
   }
   return (
     <li className="border-t border-line px-5 py-3">
@@ -275,8 +283,8 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
             <Button disabled={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: true })}>
               It was sent
             </Button>
-            <Button disabled={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: false })}>
-              It was not sent
+            <Button disabled={busy} onClick={() => void sendAgain()}>
+              Send again
             </Button>
           </div>
         </div>

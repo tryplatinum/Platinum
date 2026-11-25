@@ -5,7 +5,7 @@
 //
 // Nothing here sends anything, and nothing logs a number or message text.
 
-import { PHONE_REASON, STOP_AFTER, jobCanMove, phoneHasStopped, type JobStatus } from '../../shared/phoneGateway.js'
+import { PHONE_REASON, STOP_AFTER, jobCanMove, jobIsFinal, phoneHasStopped, type JobStatus } from '../../shared/phoneGateway.js'
 import { serviceClient } from '../supabase.js'
 import type { Job } from './config.js'
 
@@ -62,17 +62,20 @@ async function tellOutbox(job: Job, to: JobStatus, by: By): Promise<void> {
     const { error } = await db().from('outbox').update(patch).eq('id', row.id).eq('status', 'sending')
     if (error) console.error('[phone] outbox not updated:', error.message)
   }
-  const { error } = await db().from('activity').insert({ firm_id: row.firm_id, student_id: row.student_id, actor: 'system', text: line })
+  const { error } = await db().from('activity').insert({ firm_id: row.firm_id, student_id: row.student_id, actor: by.actor === 'counselor' ? 'counselor' : 'system', text: line })
   if (error) console.error('[phone] activity not written:', error.message)
 }
 
 /**
  * Moves a job to a new status, or returns undefined when the rules refuse the
- * move or someone else changed the job first. Nothing ever returns to pending.
+ * move or someone else changed the job first. A finished job drops its text in
+ * the same update.
  */
 export async function moveJob(job: Job, to: JobStatus, by: By, fields: Partial<Pick<Job, 'error' | 'reported_at'>> = {}): Promise<Job | undefined> {
   if (!jobCanMove(job.status, to)) return undefined
-  const { data, error } = await db().from('phone_send_jobs').update({ status: to, ...fields }).eq('id', job.id).eq('status', job.status).select('*').maybeSingle()
+  // The phone already has the text from the claim response. A finished row does not keep it.
+  const patch = jobIsFinal(to) ? { ...fields, body: null } : fields
+  const { data, error } = await db().from('phone_send_jobs').update({ status: to, ...patch }).eq('id', job.id).eq('status', job.status).select('*').maybeSingle()
   if (error) throw new Error('the phone job could not be updated')
   if (!data) return undefined
   await recordEvent(data.id, job.status, to, by)
@@ -101,8 +104,9 @@ export async function createJob(input: { outboxId: string | null; deviceId: stri
 
 /**
  * Gives up on jobs nobody answered: a waiting job past its ten minutes becomes
- * expired; a job a phone took and did not report on within two minutes becomes
- * unknown. An unknown job is never handed out again, because it may have been sent.
+ * expired. A job a phone took and did not report on within ten minutes becomes
+ * unknown (unconfirmed). It is never handed out again: the phone may have sent
+ * it, so the counselor decides.
  *
  * Runs whenever a phone asks for work, whenever a counselor looks at their
  * phone's status, and whenever the dispatcher runs. Returns how many jobs it moved.

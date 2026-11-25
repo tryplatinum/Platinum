@@ -12,7 +12,7 @@
 // "two claims at once" is proven against the stand-in, not against Postgres.
 // Row level security and the grants on the three tables are not checked here.
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { POST } from '../api/phone.js'
@@ -21,15 +21,19 @@ import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
 import { outboxStatusLabel } from '../shared/outbox.js'
 import {
   CLAIMS_PER_HOUR,
+  DEVICE_KEY_MS,
   HAND_SENT_NOTE,
+  JOB_LEASE_MS,
   JOB_STATUSES,
   NOT_CONFIRMED,
+  PAIR_AGAIN,
   PHONE_REASON,
   TEST_BODY,
   WAKE_BODY,
   WAKE_SUBJECT,
   canSendByHand,
   jobCanMove,
+  jobIsFinal,
   jobsCsv,
   phoneHasStopped,
   phoneStatusLabel,
@@ -63,7 +67,8 @@ function check(name: string, pass: boolean, detail = ''): void {
   let wrong = 0
   for (const from of JOB_STATUSES) for (const to of JOB_STATUSES) if (jobCanMove(from, to) !== allowed.has(`${from}>${to}`)) wrong++
   check('every allowed move passes and every other move is refused', wrong === 0, `${JOB_STATUSES.length * JOB_STATUSES.length} pairs tried`)
-  check('nothing ever returns to pending', JOB_STATUSES.every((from) => !jobCanMove(from, 'pending')))
+  check('nothing ever returns to pending, so nothing is handed out twice', JOB_STATUSES.every((from) => !jobCanMove(from, 'pending')))
+  check('submitted, failed, expired and cancelled are final; pending, claimed and unknown are not', ['submitted', 'failed', 'expired', 'cancelled'].every(jobIsFinal) && !['pending', 'claimed', 'unknown'].some(jobIsFinal))
   check('a finished job goes nowhere', ['submitted', 'failed', 'expired', 'cancelled'].every((from) => JOB_STATUSES.every((to) => !jobCanMove(from, to))))
   check('an unknown status is refused, not a crash', !jobCanMove('__proto__', 'claimed') && !jobCanMove('pending', 'delivered') && !jobCanMove('', ''))
   check('three unanswered jobs in a row stop a phone', phoneHasStopped(['expired', 'unknown', 'expired']) && !phoneHasStopped(['expired', 'unknown']) && !phoneHasStopped(['submitted', 'expired', 'expired', 'expired']))
@@ -152,7 +157,7 @@ db.rpc('claim_phone_send_job', (args) => {
     .filter((j) => j.device_id === args.device && j.status === 'pending' && String(j.expires_at) > now)
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || Number(a.seq) - Number(b.seq))[0]
   if (!job) return []
-  Object.assign(job, { status: 'claimed', claim_id: crypto.randomUUID(), claimed_at: now, lease_expires_at: new Date(Date.now() + 120_000).toISOString() })
+  Object.assign(job, { status: 'claimed', claim_id: crypto.randomUUID(), claimed_at: now, lease_expires_at: new Date(Date.now() + JOB_LEASE_MS).toISOString() })
   return [job]
 })
 
@@ -281,21 +286,50 @@ check('a wake address that is not on the allowed list is refused', notAllowed.st
 check('a request with no sign-in is refused', (await call(undefined, { action: 'connect', label: 'x' })).status === 401 && (await call('not-a-token', { action: 'status' })).status === 401)
 check('an unknown action is refused', (await call('token-lin', { action: 'send' })).status === 400)
 
+const codes = () => db.table('phone_setup_codes')
+const PAIR_AGAIN_TEXT = JSON.stringify({ next: 'none', message: PAIR_AGAIN })
+const pairWith = (code: unknown) => call(undefined, { action: 'pair', code })
+
 const first = await call('token-lin', { action: 'connect', label: 'Old iPhone', noticeShown: true })
-const firstKey = String((first.json.data as Row).key)
-check('connect returns the device key once: 32 random bytes as base64url', first.status === 200 && /^[A-Za-z0-9_-]{43}$/.test(firstKey))
+const firstCode = String((first.json.data as Row).code)
+check('connect returns a one-time setup code, not a key', first.status === 200 && /^[A-HJ-NP-Z2-9]{8}$/.test(firstCode) && !('key' in (first.json.data as Row)) && devices().length === 0)
+check('…which expires in ten minutes and is stored only as a hash', codes().length === 1 && codes()[0].code_hash === hashKey(firstCode) && !JSON.stringify(codes()).includes(firstCode) && Math.abs(Date.parse(String(codes()[0].expires_at)) - Date.now() - 600_000) < 5_000)
+check('a code that was never issued is refused', (await pairWith('ZZZZ9999')).status === 400 && devices().length === 0)
+const firstPair = await pairWith(firstCode.toLowerCase())
+const firstKey = String((firstPair.json.data as Row).key)
+check('the code is exchanged, with no sign-in, for the device key: 32 random bytes as base64url', firstPair.status === 200 && /^[A-Za-z0-9_-]{43}$/.test(firstKey))
 check('the database holds only the SHA-256 hash of the key', devices().length === 1 && devices()[0].key_hash === hashKey(firstKey) && !JSON.stringify(devices()).includes(firstKey))
+check('…and the key expires in 90 days', Math.abs(Date.parse(String(devices()[0].key_expires_at)) - Date.now() - DEVICE_KEY_MS) < 5_000)
+check('a setup code works once', (await pairWith(firstCode)).status === 400 && devices().length === 1)
 check('the wake address is the counselor’s own connected Gmail address', devices()[0].wake_email === WAKE_ADDRESS && devices()[0].platform === 'ios_shortcut')
-const second = await call('token-lin', { action: 'connect', label: 'Dana’s iPhone' })
-const KEY_NOW = String((second.json.data as Row).key)
-check('connecting again revokes the earlier phone', devices().length === 2 && devices().filter((d) => !d.revoked_at).length === 1 && KEY_NOW !== firstKey)
+
+const stale = String(((await call('token-lin', { action: 'connect', label: 'Dana’s iPhone' })).json.data as Row).code)
+codes().find((c) => c.code_hash === hashKey(stale))!.expires_at = new Date(Date.now() - 1000).toISOString()
+const tooOld = await pairWith(stale)
+check('a setup code older than ten minutes is refused, and says to pair again', tooOld.status === 400 && /Pair your phone again/.test(String(tooOld.json.message)) && devices().length === 1)
+const retired = String(((await call('token-lin', { action: 'connect', label: 'Dana’s iPhone' })).json.data as Row).code)
+const second = String(((await call('token-lin', { action: 'connect', label: 'Dana’s iPhone' })).json.data as Row).code)
+check('asking for a new code retires the one before it', (await pairWith(retired)).status === 400 && devices().length === 1)
+const KEY_NOW = String(((await pairWith(second)).json.data as Row).key)
+check('pairing again revokes the earlier phone', devices().length === 2 && devices().filter((d) => !d.revoked_at).length === 1 && KEY_NOW !== firstKey)
 check('…and the notice is not shown twice', devices().every((d) => d.notice_shown_at))
 const revoked = await call(firstKey, { action: 'claim' })
-check('a revoked key gets 401 and { "next": "none" }', revoked.status === 401 && revoked.text === '{"next":"none"}')
+check('a revoked key gets 401 and “Pair your phone again”, still with { "next": "none" }', revoked.status === 401 && revoked.text === PAIR_AGAIN_TEXT)
 const unknownKey = await call('A'.repeat(43), { action: 'claim' })
-check('an unknown key gets the same answer', unknownKey.status === 401 && unknownKey.text === '{"next":"none"}' && (await call(undefined, { action: 'claim' })).status === 401)
+check('an unknown key gets the same answer', unknownKey.status === 401 && unknownKey.text === PAIR_AGAIN_TEXT && (await call(undefined, { action: 'claim' })).status === 401)
 const DEVICE = String(devices().find((d) => !d.revoked_at)!.id)
 const device = () => devices().find((d) => d.id === DEVICE)!
+{
+  const keep = device().key_expires_at
+  device().key_expires_at = new Date(Date.now() - 1000).toISOString()
+  const expired = await call(KEY_NOW, { action: 'claim' })
+  device().key_expires_at = keep
+  check('a key older than 90 days gets the same answer', expired.status === 401 && expired.text === PAIR_AGAIN_TEXT)
+}
+{
+  const setupScreens = ['src/components/phone/YourPhone.tsx', 'src/screens/PhoneSetup.tsx'].map((file) => readFileSync(file, 'utf8')).join('\n')
+  check('no setup address carries a key: no #k= on /phone-setup', !/#k=|location\.hash/.test(setupScreens))
+}
 
 {
   const status = dataOf(await call('token-lin', { action: 'status' }))
@@ -307,12 +341,13 @@ const device = () => devices().find((d) => d.id === DEVICE)!
 
 const one = queue()
 const toStudent = queue({ to_kind: 'student', to_name: 'Kai Example', parent_id: null, kind: 'weekly_text', body: `Hi Kai, your tasks: ${STUDENT_LINK_PLACEHOLDER}` })
+let linked!: string
 {
   const summary = await dispatch({ phone: true })
   check('with TRANSPORT_TEXT=phone an approved text makes exactly one job', jobs().filter((j) => j.outbox_id === one).length === 1 && summary.waiting === 2 && summary.sent === 0 && summary.failed === 0)
   check('…for the phone of the counselor who approved it', jobOf(one)?.device_id === DEVICE && jobOf(one)?.status === 'pending')
   check('…with the exact recipient, as E.164, and the exact text', jobOf(one)?.to_phone === PARENT_PHONE && jobOf(one)?.body === BODY)
-  const linked = String(jobOf(toStudent)?.body)
+  linked = String(jobOf(toStudent)?.body)
   check('…including the student link the dispatcher added', jobOf(toStudent)?.to_phone === STUDENT_PHONE && /^Hi Kai, your tasks: http:\/\/localhost:5173\/s\/[A-Za-z0-9_-]{43}$/.test(linked) && !linked.includes(STUDENT_LINK_PLACEHOLDER))
   check('the row waits for the phone: still “sending”, so the dispatcher will not pick it up again', rowOf(one).status === 'sending' && rowOf(one).delivery_detail === 'phone_waiting' && rowOf(one).provider_message_id === null)
   check('two jobs made inside 20 seconds ride on one wake email', mails.length === 1 && jobs().length === 2)
@@ -339,7 +374,8 @@ const claimOne = await call(KEY_NOW, { action: 'claim' })
 check('claim answers a flat object with next, job_id, claim_id, to_phone and body', claimOne.status === 200 && Object.keys(claimOne.json).sort().join() === 'body,claim_id,job_id,next,to_phone' && claimOne.json.next === 'send' && Object.values(claimOne.json).every((v) => typeof v === 'string'))
 check('…the oldest job first, with the number and text exactly as stored', claimOne.json.job_id === jobOf(one)?.id && claimOne.json.to_phone === PARENT_PHONE && claimOne.json.body === BODY)
 check('the phone has now been seen', Boolean(device().first_seen_at && device().last_seen_at) && dataOf(await call('token-lin', { action: 'status' })).device?.state === 'connected')
-check('the job is claimed with a two-minute lease', jobOf(one)?.status === 'claimed' && Date.parse(String(jobOf(one)?.lease_expires_at)) - Date.now() > 100_000)
+check('the job is claimed with a ten-minute lease', jobOf(one)?.status === 'claimed' && Math.abs(Date.parse(String(jobOf(one)?.lease_expires_at)) - Date.now() - JOB_LEASE_MS) < 5_000)
+check('…and keeps its text while it is claimed', jobOf(one)?.body === BODY)
 
 const wrongClaim = await call(KEY_NOW, { action: 'report', job_id: claimOne.json.job_id, claim_id: crypto.randomUUID(), result: 'submitted' })
 check('a report with the wrong claim id is refused', wrongClaim.status === 409 && wrongClaim.json.ok === false && jobOf(one)?.status === 'claimed' && rowOf(one).status === 'sending')
@@ -347,6 +383,7 @@ check('a report that is not understood is refused', (await call(KEY_NOW, { actio
 const reported = await call(KEY_NOW, { action: 'report', job_id: claimOne.json.job_id, claim_id: claimOne.json.claim_id, result: 'submitted' })
 check('a report with the right claim id is accepted with { "ok": true }', reported.status === 200 && reported.text === '{"ok":true}' && jobOf(one)?.status === 'submitted' && Boolean(jobOf(one)?.reported_at))
 check('the message becomes “Sent from your phone”', rowOf(one).status === 'sent' && rowOf(one).delivery_detail === 'phone_sent' && rowOf(one).provider_message_id === `phone_${String(jobOf(one)?.id)}`)
+check('a submitted job no longer holds its text', jobOf(one)?.body === null)
 {
   const before = { events: events().length, activity: db.table('activity').length, reportedAt: jobOf(one)?.reported_at }
   const repeat = await call(KEY_NOW, { action: 'report', job_id: claimOne.json.job_id, claim_id: claimOne.json.claim_id, result: 'submitted' })
@@ -363,6 +400,7 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   const failedReport = await call(KEY_NOW, { action: 'report', job_id: got[0].json.job_id, claim_id: got[0].json.claim_id, result: 'failed', error: 'Messages said\nNot Delivered <b>' })
   check('a failure the phone reports fails the message with a plain, one-line reason', failedReport.json.ok === true && rowOf(toStudent).status === 'failed' && rowOf(toStudent).delivery_detail === 'phone_failed' && rowOf(toStudent).error === 'Your phone could not send it: Messages said Not Delivered <b>')
   check('…and it can then be sent by hand', canSendByHand({ channel: 'text', status: 'failed', detail: String(rowOf(toStudent).delivery_detail) }))
+  check('a failed job no longer holds its text, or the student link in it', jobOf(toStudent)?.body === null && !JSON.stringify(jobs()).includes(linked))
   const none = await call(KEY_NOW, { action: 'claim' })
   check('with no work, claim answers { "next": "none" }', none.status === 200 && none.text === '{"next":"none"}')
 }
@@ -404,33 +442,71 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   check('a job nobody took in ten minutes expires and is never handed out', answer.text === '{"next":"none"}' && jobOf(late)?.status === 'expired')
   check('…the message says “Phone did not answer” and can be sent by hand', rowOf(late).status === 'failed' && rowOf(late).delivery_detail === 'phone_expired' && rowOf(late).error === PHONE_REASON.expired && canSendByHand({ channel: 'text', status: 'failed', detail: 'phone_expired' }))
   check('…and the sweep is the actor on record', events().some((e) => e.job_id === jobOf(late)?.id && e.from_status === 'pending' && e.to_status === 'expired' && e.actor === 'sweep'))
+  check('an expired job no longer holds its text', jobOf(late)?.body === null)
 
+  // Another phone, of another counselor, to prove no other device can claim or settle a job.
+  const OTHER_KEY = 'B'.repeat(43)
+  devices().push({ id: '88888888-8888-4888-8888-888888888882', firm_id: FIRM, counselor_id: '55555555-5555-4555-8555-555555555559', platform: 'ios_shortcut', label: 'Another phone', key_hash: hashKey(OTHER_KEY), key_expires_at: new Date(Date.now() + DEVICE_KEY_MS).toISOString(), wake_email: 'other@example.com', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null, created_at: new Date().toISOString() })
+
+  // The lease runs out before the phone reports: the job becomes unconfirmed, never pending.
   clearJobs()
   const silent = queue()
   await dispatch({ phone: true })
   const claim = await call(KEY_NOW, { action: 'claim' })
   jobOf(silent)!.lease_expires_at = new Date(Date.now() - 1000).toISOString()
   await call('token-lin', { action: 'status' })
-  check('a job the phone took and did not report on in two minutes becomes unknown', claim.json.next === 'send' && jobOf(silent)?.status === 'unknown')
-  check('…the message is “Not confirmed”, and still held so nothing sends it again', rowOf(silent).status === 'sending' && rowOf(silent).delivery_detail === 'phone_unknown' && !canSendByHand({ channel: 'text', status: 'sending', detail: 'phone_unknown' }))
-  const never = [await call(KEY_NOW, { action: 'claim' }), await call(KEY_NOW, { action: 'claim' })]
-  check('an unknown job is never returned by claim again', never.every((a) => a.text === '{"next":"none"}') && jobOf(silent)?.status === 'unknown' && (await dispatch({ phone: true })).processed === 0)
+  check('an expired claim becomes unconfirmed, not pending', claim.json.next === 'send' && jobOf(silent)?.status === 'unknown' && jobOf(silent)?.claim_id === claim.json.claim_id)
+  check('…the message says “Not confirmed” and is still held, so the dispatcher will not send it again', rowOf(silent).status === 'sending' && rowOf(silent).delivery_detail === 'phone_unknown' && !canSendByHand({ channel: 'text', status: 'sending', detail: 'phone_unknown' }))
+  check('…with the sweep on record', events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'claimed' && e.to_status === 'unknown' && e.actor === 'sweep'))
+  const never = [await call(KEY_NOW, { action: 'claim' }), await call(OTHER_KEY, { action: 'claim' }), await call(KEY_NOW, { action: 'claim' })]
+  check('an unconfirmed job is never claimed again, by this phone or any other', never.every((a) => a.text === '{"next":"none"}') && jobOf(silent)?.status === 'unknown' && (await dispatch({ phone: true })).processed === 0 && jobs().length === 1)
+  const fromOther = await call(OTHER_KEY, { action: 'report', job_id: claim.json.job_id, claim_id: claim.json.claim_id, result: 'submitted' })
+  check('another device cannot settle it, even with the right ids', fromOther.status === 409 && jobOf(silent)?.status === 'unknown')
+  const printedBefore = printed.length
   const lateReport = await call(KEY_NOW, { action: 'report', job_id: claim.json.job_id, claim_id: claim.json.claim_id, result: 'submitted' })
-  check('a late report resolves it, and is recorded as late', lateReport.json.ok === true && jobOf(silent)?.status === 'submitted' && rowOf(silent).status === 'sent' && rowOf(silent).delivery_detail === 'phone_sent' && events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'unknown' && e.late === true))
+  check('a late report from the claiming device still resolves it', lateReport.json.ok === true && jobOf(silent)?.status === 'submitted' && rowOf(silent).status === 'sent' && rowOf(silent).delivery_detail === 'phone_sent' && jobOf(silent)?.body === null)
+  check('…logged as late, with no number or text', printed.slice(printedBefore).some((line) => line.includes('[phone] late report')))
+  check('…and recorded as late, from the device', events().some((e) => e.job_id === jobOf(silent)?.id && e.from_status === 'unknown' && e.to_status === 'submitted' && e.actor === 'device' && e.late === true))
 
-  // The counselor answers instead.
+  // The phone reports after its ten minutes, before any sweep has run: accepted as late.
   clearJobs()
-  const askNo = queue()
+  const slow = queue()
+  await dispatch({ phone: true })
+  const slowClaim = await call(KEY_NOW, { action: 'claim' })
+  jobOf(slow)!.claimed_at = new Date(Date.now() - JOB_LEASE_MS - 1000).toISOString()
+  const slowReport = await call(KEY_NOW, { action: 'report', job_id: slowClaim.json.job_id, claim_id: slowClaim.json.claim_id, result: 'failed', error: 'No service' })
+  check('a report after ten minutes but before the sweep is accepted, and recorded as late', slowReport.json.ok === true && jobOf(slow)?.status === 'failed' && rowOf(slow).status === 'failed' && events().some((e) => e.job_id === jobOf(slow)?.id && e.from_status === 'claimed' && e.to_status === 'failed' && e.late === true))
+
+  // On time, only the claiming device can report.
+  clearJobs()
+  const onTimeRow = queue()
+  await dispatch({ phone: true })
+  const mine = await call(KEY_NOW, { action: 'claim' })
+  const theirs = await call(OTHER_KEY, { action: 'report', job_id: mine.json.job_id, claim_id: mine.json.claim_id, result: 'submitted' })
+  check('only the device that claimed a job can report it', theirs.status === 409 && jobOf(onTimeRow)?.status === 'claimed' && rowOf(onTimeRow).status === 'sending')
+  const onTime = await call(KEY_NOW, { action: 'report', job_id: mine.json.job_id, claim_id: mine.json.claim_id, result: 'submitted' })
+  check('the claiming device, on time, settles it, not marked late', onTime.json.ok === true && jobOf(onTimeRow)?.status === 'submitted' && events().some((e) => e.job_id === jobOf(onTimeRow)?.id && e.to_status === 'submitted' && e.late === false))
+  devices().find((d) => d.key_hash === hashKey(OTHER_KEY))!.revoked_at = new Date().toISOString()
+
+  // The counselor decides.
+  clearJobs()
+  const askAgain = queue()
   const askYes = queue()
   await dispatch({ phone: true })
   for (let i = 0; i < 2; i++) await call(KEY_NOW, { action: 'claim' })
   jobs().forEach((j) => (j.lease_expires_at = new Date(Date.now() - 1000).toISOString()))
   await call('token-lin', { action: 'status' })
-  const no = await call('token-lin', { action: 'resolve', outboxId: askNo, sent: false })
-  check('“It was not sent” fails the message with “Counselor confirmed it was not sent”', no.status === 200 && jobOf(askNo)?.status === 'failed' && rowOf(askNo).status === 'failed' && rowOf(askNo).error === 'Counselor confirmed it was not sent' && canSendByHand({ channel: 'text', status: 'failed', detail: String(rowOf(askNo).delivery_detail) }))
+  check('(both are unconfirmed)', jobs().every((j) => j.status === 'unknown'))
+  const activityBefore = db.table('activity').length
   const yes = await call('token-lin', { action: 'resolve', jobId: jobOf(askYes)?.id, sent: true })
   check('“It was sent” marks it sent from the phone', yes.status === 200 && jobOf(askYes)?.status === 'submitted' && rowOf(askYes).status === 'sent' && events().some((e) => e.job_id === jobOf(askYes)?.id && e.actor === 'counselor' && e.actor_id === LIN))
-  check('an answer can be given once', (await call('token-lin', { action: 'resolve', outboxId: askNo, sent: true })).status === 409 && jobOf(askNo)?.status === 'failed')
+  check('…and writes an activity row with the counselor as the actor', db.table('activity').slice(activityBefore).some((a) => a.actor === 'counselor' && /You confirmed your phone sent/.test(String(a.text))))
+  const jobsBefore = jobs().length
+  const again = await call('token-lin', { action: 'resolve', outboxId: askAgain, sent: false, again: true })
+  check('“Send again” settles the old row as not confirmed, sent again', again.status === 200 && jobOf(askAgain)?.status === 'failed' && rowOf(askAgain).status === 'failed' && rowOf(askAgain).error === PHONE_REASON.sentAgain)
+  check('…and makes no job itself: the new text is a new approval through queue_message', jobs().length === jobsBefore && (await dispatch({ phone: true })).processed === 0)
+  check('“It was sent” and “Send again” cannot both be asked', (await call('token-lin', { action: 'resolve', outboxId: askYes, sent: true, again: true })).status === 400)
+  check('an answer can be given once', (await call('token-lin', { action: 'resolve', outboxId: askAgain, sent: true })).status === 409 && jobOf(askAgain)?.status === 'failed')
   check('a colleague cannot answer for someone else’s phone', (await call('token-no-gmail', { action: 'resolve', outboxId: askYes, sent: false })).status === 404)
 }
 
@@ -447,7 +523,7 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   // No phone asks and nobody opens a page: only the dispatcher runs.
   const run = await dispatch({ phone: true })
   check('a dispatcher run gives up on a job nobody took, with no page open and no phone asking', jobOf(silent)?.status === 'expired' && rowOf(silent).status === 'failed' && rowOf(silent).delivery_detail === 'phone_expired')
-  check('…and marks a job the phone took and never reported on as not confirmed', jobOf(stale)?.status === 'unknown' && rowOf(stale).delivery_detail === 'phone_unknown' && rowOf(stale).status === 'sending')
+  check('…and marks a job the phone took and never reported on as unconfirmed, never pending', jobOf(stale)?.status === 'unknown' && rowOf(stale).delivery_detail === 'phone_unknown' && rowOf(stale).status === 'sending')
   check('…and says how many it swept, so the browser reloads', run.swept === 2 && run.processed === 0)
   check('the sweep runs with TRANSPORT_TEXT unset too, and sends nothing', await (async () => {
     const late = queue()
@@ -486,7 +562,7 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   const taken = queue()
   await dispatch({ phone: true })
   const cancel = await call('token-lin', { action: 'cancel', outboxId: waiting })
-  check('a text waiting for the phone can be cancelled', cancel.status === 200 && jobOf(waiting)?.status === 'cancelled' && rowOf(waiting).status === 'cancelled')
+  check('a text waiting for the phone can be cancelled', cancel.status === 200 && jobOf(waiting)?.status === 'cancelled' && rowOf(waiting).status === 'cancelled' && jobOf(waiting)?.body === null)
   const claim = await call(KEY_NOW, { action: 'claim' })
   check('…and the phone is never given it', claim.json.job_id === jobOf(taken)?.id)
   const tooLate = await call('token-lin', { action: 'cancel', outboxId: taken })
@@ -558,7 +634,7 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
   const noGmailRow = queue({ approved_by: NO_GMAIL })
   const noApprover = queue({ approved_by: null })
   // Priya has a phone on record but no Gmail to wake it with.
-  devices().push({ id: '88888888-8888-4888-8888-888888888881', firm_id: FIRM, counselor_id: NO_GMAIL, platform: 'ios_shortcut', label: 'Priya’s iPhone', key_hash: hashKey('x'.repeat(43)), wake_email: 'priya@example.com', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null, created_at: new Date().toISOString() })
+  devices().push({ id: '88888888-8888-4888-8888-888888888881', firm_id: FIRM, counselor_id: NO_GMAIL, platform: 'ios_shortcut', label: 'Priya’s iPhone', key_hash: hashKey('x'.repeat(43)), key_expires_at: new Date(Date.now() + DEVICE_KEY_MS).toISOString(), wake_email: 'priya@example.com', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null, created_at: new Date().toISOString() })
   const summary = await dispatch({ phone: true })
   check('no phone connected: “No phone is connected. Send this one by hand.”', rowOf(noDevice).status === 'failed' && rowOf(noDevice).error === 'No phone is connected. Send this one by hand.' && rowOf(noDevice).delivery_detail === 'phone_none')
   check('no Gmail connected: the wake sentence, and no job', rowOf(noGmailRow).status === 'failed' && rowOf(noGmailRow).error === 'Connect Gmail in settings so Platinum can wake your phone, or send this one by hand.' && rowOf(noGmailRow).delivery_detail === 'phone_none')
@@ -644,15 +720,16 @@ check('the message becomes “Sent from your phone”', rowOf(one).status === 's
     await call('token-lin', { action: 'disconnect' }),
     await call('token-lin', { action: 'status' }),
   ]
-  check('no answer from any action but connect holds a key or its hash', answers.every((a) => !a.text.includes(KEY_NOW) && !a.text.includes(firstKey) && !a.text.includes(hash) && !/key_hash|"key"/.test(a.text)))
-  check('disconnect revokes the phone', Boolean(device().revoked_at) && dataOf(answers[7]).device === undefined && (await call(KEY_NOW, { action: 'claim' })).status === 401)
+  check('no answer from any action but pair holds a key or its hash', answers.every((a) => !a.text.includes(KEY_NOW) && !a.text.includes(firstKey) && !a.text.includes(hash) && !/key_hash|"key"/.test(a.text)))
+  const afterRevoke = await call(KEY_NOW, { action: 'claim' })
+  check('“Revoke this phone” sets revoked_at, and the Shortcut’s next request is told to pair again', Boolean(device().revoked_at) && dataOf(answers[7]).device === undefined && afterRevoke.status === 401 && afterRevoke.text === PAIR_AGAIN_TEXT)
   const orphan = queue()
   letWakeGapPass()
   await dispatch({ phone: true })
   check('…and the next text goes straight to send by hand', rowOf(orphan).error === PHONE_REASON.noDevice && !jobOf(orphan))
 
   const log = printed.join('\n')
-  check('nothing printed holds a device key, a hash, a phone number or message text', ![KEY_NOW, firstKey, hash, PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1555', BODY, TEST_BODY].some((secret) => log.includes(secret)))
+  check('nothing printed holds a device key, a setup code, a hash, a phone number, message text or a student link', ![KEY_NOW, firstKey, firstCode, second, hash, PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1555', BODY, TEST_BODY, linked, '/s/'].some((secret) => log.includes(secret)))
   check('no failure reason holds a key or a number', outbox().every((r) => ![KEY_NOW, hash, PARENT_PHONE, STUDENT_PHONE].some((secret) => String(r.error ?? '').includes(secret))))
   check('no event row holds a number or message text', ![PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1', 'reminder that', TEST_BODY].some((secret) => JSON.stringify(events()).includes(secret)))
   // phoneStatus with nothing configured hides the section instead of failing.

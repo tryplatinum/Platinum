@@ -11,6 +11,20 @@ export const MAX_FILE_BYTES = 26_214_400
 export const RESUMABLE_ABOVE_BYTES = 6 * 1024 * 1024
 /** A signed URL to open or download a file lives this long. */
 export const SIGNED_URL_SECONDS = 60
+/**
+ * How long a student has, from asking for an upload URL, to finish the upload.
+ * A download is opened at once, so 60 seconds is enough. An upload can be the
+ * full 25 MB, and on a slow phone that transfer takes a few minutes; the window
+ * has to cover the whole transfer, not only its start. Five minutes does.
+ *
+ * Supabase Storage takes no expiry for a signed upload URL: the URL itself
+ * lasts the project's fixed upload-URL lifetime. The server enforces this
+ * window instead: an upload finished later is removed, never filed.
+ */
+export const STUDENT_UPLOAD_SECONDS = 300
+
+/** True when an upload started at `createdAt` is past STUDENT_UPLOAD_SECONDS. An unreadable time counts as past. */
+export const uploadWindowClosed = (createdAt: string, now = Date.now()) => !(now - Date.parse(createdAt) <= STUDENT_UPLOAD_SECONDS * 1000)
 
 /** Limits on a student link. */
 export const STUDENT_FILES_PER_DAY = 10

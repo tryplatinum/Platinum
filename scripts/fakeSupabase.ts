@@ -25,6 +25,7 @@ const DEFAULTS: Record<string, () => Row> = {
   phone_devices: () => ({ platform: 'ios_shortcut', own_phone: null, notice_shown_at: null, last_wake_at: null, first_seen_at: null, last_seen_at: null, revoked_at: null }),
   phone_send_jobs: () => ({ outbox_id: null, status: 'pending', claim_id: null, claimed_at: null, lease_expires_at: null, reported_at: null, error: null, expires_at: new Date(Date.now() + 600_000).toISOString() }),
   phone_job_events: () => ({ at: new Date().toISOString(), from_status: null, actor_id: null, late: false }),
+  phone_setup_codes: () => ({ used_at: null, notice_shown: false }),
 }
 
 const UNIQUE: Record<string, (row: Row) => string | undefined> = {

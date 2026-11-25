@@ -7,7 +7,10 @@ import { z } from 'zod'
 
 export const GOOGLE_ENDPOINT = '/api/google'
 
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+/** Files the counselor picks or that this app creates. Not the rest of Drive. */
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+/** The previous Drive permission. A connection that still has only this one must reconnect. */
+export const DRIVE_SCOPE_RETIRED = 'https://www.googleapis.com/auth/drive.readonly'
 export const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
 
 /** A linked folder is read at most this many files and this many levels deep. */
@@ -89,6 +92,8 @@ export interface GoogleStatus {
   address?: string
   drive: boolean
   gmail: boolean
+  /** The stored Drive permission is the old whole-Drive one. Do not use that token for Drive. */
+  driveReconnect: boolean
   /** Google said the grant is expired or revoked. Everything shows "Reconnect Google". */
   reconnect: boolean
 }

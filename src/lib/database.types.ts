@@ -1290,6 +1290,7 @@ export type Database = {
           firm_id: string
           first_seen_at: string | null
           id: string
+          key_expires_at: string
           key_hash: string
           label: string
           last_seen_at: string | null
@@ -1306,6 +1307,7 @@ export type Database = {
           firm_id: string
           first_seen_at?: string | null
           id?: string
+          key_expires_at: string
           key_hash: string
           label: string
           last_seen_at?: string | null
@@ -1322,6 +1324,7 @@ export type Database = {
           firm_id?: string
           first_seen_at?: string | null
           id?: string
+          key_expires_at?: string
           key_hash?: string
           label?: string
           last_seen_at?: string | null
@@ -1385,7 +1388,7 @@ export type Database = {
       }
       phone_send_jobs: {
         Row: {
-          body: string
+          body: string | null
           claim_id: string | null
           claimed_at: string | null
           created_at: string
@@ -1400,7 +1403,7 @@ export type Database = {
           to_phone: string
         }
         Insert: {
-          body: string
+          body?: string | null
           claim_id?: string | null
           claimed_at?: string | null
           created_at?: string
@@ -1415,7 +1418,7 @@ export type Database = {
           to_phone: string
         }
         Update: {
-          body?: string
+          body?: string | null
           claim_id?: string | null
           claimed_at?: string | null
           created_at?: string
@@ -1442,6 +1445,50 @@ export type Database = {
             columns: ["outbox_id"]
             isOneToOne: true
             referencedRelation: "outbox"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      phone_setup_codes: {
+        Row: {
+          code_hash: string
+          counselor_id: string
+          created_at: string
+          expires_at: string
+          firm_id: string
+          id: string
+          label: string
+          notice_shown: boolean
+          used_at: string | null
+        }
+        Insert: {
+          code_hash: string
+          counselor_id: string
+          created_at?: string
+          expires_at: string
+          firm_id: string
+          id?: string
+          label: string
+          notice_shown?: boolean
+          used_at?: string | null
+        }
+        Update: {
+          code_hash?: string
+          counselor_id?: string
+          created_at?: string
+          expires_at?: string
+          firm_id?: string
+          id?: string
+          label?: string
+          notice_shown?: boolean
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phone_setup_codes_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
             referencedColumns: ["id"]
           },
         ]
@@ -2024,7 +2071,7 @@ export type Database = {
       claim_phone_send_job: {
         Args: { device: string }
         Returns: {
-          body: string
+          body: string | null
           claim_id: string | null
           claimed_at: string | null
           created_at: string

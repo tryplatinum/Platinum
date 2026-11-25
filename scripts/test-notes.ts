@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { INPUTS } from '../shared/contract.js'
+import { STUDENT_UPLOAD_SECONDS, uploadWindowClosed } from '../shared/files.js'
 import { PROMPTS } from '../server/prompts.js'
 import { buildSeed } from '../src/data/seed.js'
 import { addDays, todayISO } from '../src/lib/dates.js'
@@ -144,6 +145,13 @@ const link = readFileSync(new URL('../server/studentLink.ts', import.meta.url), 
 const tablesRead = [...link.matchAll(/\.from\('([a-z_]+)'\)/g)].map((m) => m[1])
 check('the student link reads no personal_notes or weekly_texts', !tablesRead.includes('personal_notes') && !tablesRead.includes('weekly_texts'), [...new Set(tablesRead)].join(', '))
 check('the student link never selects a meeting’s AI drafts', !/select\('[^']*\bai\b[^']*'\)/.test(link))
+{
+  const started = '2026-11-24T10:00:00.000Z'
+  const at = (seconds: number) => Date.parse(started) + seconds * 1000
+  check('a student upload may finish within five minutes of its URL', STUDENT_UPLOAD_SECONDS === 300 && !uploadWindowClosed(started, at(0)) && !uploadWindowClosed(started, at(300)))
+  check('…and is refused after, or when its start time cannot be read', uploadWindowClosed(started, at(301)) && uploadWindowClosed('not a time', at(0)))
+  check('finishing a student upload checks that window before reading the file', /uploadWindowClosed\(row\.created_at\)/.test(link) && link.indexOf('uploadWindowClosed(row.created_at)') < link.indexOf('confirmUpload(db, row)'))
+}
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed')
 process.exit(failed ? 1 : 0)
