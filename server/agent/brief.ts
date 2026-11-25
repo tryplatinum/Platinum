@@ -2,7 +2,7 @@
 // the meeting screen; facts are assembled here from live firm rows.
 
 import type { StudentFacts } from '../../shared/contract.js'
-import { runFeature } from '../claude.js'
+import { fastModelName, runFeature } from '../claude.js'
 import type { AgentContext, ToolResult } from './types.js'
 
 function daysBetween(a: string, b: string): number {
@@ -140,7 +140,7 @@ export async function prepareMeetingBrief(ctx: AgentContext, meetingId: string):
         counselorNotes: student.counselor_notes || undefined,
         lastRecap: lastRecapText,
       },
-      { maxTokens: 4_000 },
+      { maxTokens: 4_000, model: fastModelName() || undefined },
     )
     return {
       ok: true,

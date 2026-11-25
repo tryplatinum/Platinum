@@ -9,11 +9,16 @@
 
 import './loadEnv.js'
 import { randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import { POST } from '../api/agent.js'
 import { hasGluedSentence, joinAssistantText, signMessage } from '../server/agent/text.js'
 import { createAccount, removeAccount, requireSettings, adminClient } from './testAccounts.js'
 
 requireSettings()
+// The sample caseload has addresses but no Gmail and no phone. The log transport
+// counts as sendable only while this flag is on. One case turns it off.
+process.env.ALLOW_LOG_TRANSPORT = 'true'
+delete process.env.AGENT_FAST_MODEL
 if (!process.env.ANTHROPIC_API_KEY?.trim()) {
   console.error('Missing in .env: ANTHROPIC_API_KEY')
   process.exit(1)
@@ -188,6 +193,9 @@ async function ask(message: string, studentId: string | null = kevinId, env?: Re
   }
 }
 
+let mainBrief: string
+let mainBrainstorm: string
+
 try {
   check('joined text blocks are not glued', !hasGluedSentence(joinAssistantText(['Approvals.', 'Nothing is waiting.'])))
   const signed = signMessage('您好，我是Kevin的升学顾问。请提醒他交第三稿。', 'Counselor Agent', 'Test firm Agent')
@@ -221,13 +229,23 @@ try {
     check('2 channel can send', channel === 'email' || channel === 'text', `got ${String(channel)}`)
     check('2 signed with the counselor name', drafted.includes('Counselor Agent'), drafted.slice(-80))
     check('2 does not introduce the counselor by role', !/college counselor|升学顾问|升學顧問/i.test(drafted))
-    check('2 no glued sentence', !hasGluedSentence(body.reply ?? ''))
+    const reply = body.reply ?? ''
+    const snippet = drafted.replace(/\s+/g, ' ').trim().slice(0, 24)
+    check('2 reply is a short confirmation', /review it in approvals/i.test(reply) && reply.length < 500, reply.slice(0, 180))
+    check('2 reply does not restate the message', snippet.length < 12 || !reply.includes(snippet))
+    check('2 no glued sentence', !hasGluedSentence(reply))
   }
 
   {
     const { status, body } = await ask('Prep me for our next meeting.')
     check('3 prep returns ok', status === 200 && body.ok === true)
     const reply = body.reply ?? ''
+    mainBrief = reply
+    check(
+      '3 brief comes back without a second model call',
+      (body.timing?.rounds ?? 0) === 1 && (body.timing?.tools ?? []).some((tool) => tool.name === 'prepare_meeting_brief'),
+      `rounds=${body.timing?.rounds}`,
+    )
     check(
       '3 reply reflects a brief (agenda/questions/headline)',
       /agenda|question|headline|meeting|brief|prepare|overdue|deadline/i.test(reply),
@@ -238,6 +256,12 @@ try {
   {
     const { status, body } = await ask('Help me brainstorm their Common App essay.')
     check('4 brainstorm returns ok', status === 200 && body.ok === true)
+    mainBrainstorm = body.reply ?? ''
+    check(
+      '4 brainstorm comes back without a second model call',
+      (body.timing?.rounds ?? 0) === 1 && (body.timing?.tools ?? []).some((tool) => tool.name === 'essay_brainstorm'),
+      `rounds=${body.timing?.rounds}`,
+    )
     const reply = body.reply ?? ''
     check(
       '4 structured brainstorm, no essay paragraph',
@@ -308,10 +332,65 @@ try {
     check('9 no proposal when nothing can send', (after.data?.length ?? 0) === prior && (body.proposals ?? []).length === 0, `new=${(after.data?.length ?? 0) - prior}`)
     check(
       '9 says the dad has no sendable channel',
-      /isn.t connected|not connected|no other channel|cannot send|can't send|no phone|nothing can send/i.test(reply),
+      /no sendable|isn.t connected|not connected|no other channel|cannot send|can't send|no phone|nothing can send/i.test(reply),
       reply.slice(0, 180),
     )
   }
+
+  // A new system prompt cannot replay thinking signed against the old one.
+  await admin.from('agent_messages').delete().eq('firm_id', firmId)
+  {
+    const before = await account.client.from('agent_proposals').select('id').eq('firm_id', firmId)
+    const prior = before.data?.length ?? 0
+    const { status, body } = await ask("Email Kevin's mom about the essay deadline.", kevinId, { ALLOW_LOG_TRANSPORT: '' })
+    check('10 log transport off returns ok', status === 200 && body.ok === true)
+    const after = await account.client.from('agent_proposals').select('id').eq('firm_id', firmId)
+    const reply = body.reply ?? ''
+    check('10 no proposal when the log transport cannot send', (after.data?.length ?? 0) === prior && (body.proposals ?? []).length === 0, `new=${(after.data?.length ?? 0) - prior}`)
+    check(
+      '10 says nothing can send',
+      /no sendable|cannot send|can't send|not connected|gmail|phone gateway/i.test(reply),
+      reply.slice(0, 180),
+    )
+  }
+
+  await admin.from('agent_messages').delete().eq('firm_id', firmId)
+  const fastModel = 'claude-haiku-5-5'
+  process.env.AGENT_FAST_MODEL = fastModel
+  const fastBrief = await ask('Prep me for our next meeting.')
+  const fastBrainstorm = await ask('Help me brainstorm their Common App essay.')
+  delete process.env.AGENT_FAST_MODEL
+  check('fast brief returns ok', fastBrief.status === 200 && fastBrief.body.ok === true)
+  check('fast brainstorm returns ok', fastBrainstorm.status === 200 && fastBrainstorm.body.ok === true)
+  writeFileSync(
+    'docs/agent-model-compare.md',
+    [
+      '# Brief and brainstorm: main model and AGENT_FAST_MODEL',
+      '',
+      'Kevin Zhang, the sample student in `npm run test:agent`. The main model is `claude-sonnet-5-5` unless `ANTHROPIC_MODEL` is set. `AGENT_FAST_MODEL` was `claude-haiku-5-5` for the second pair only. Parent-facing drafts stay on the main model and are not in this file.',
+      '',
+      '## Meeting brief',
+      '',
+      '### Main model',
+      '',
+      mainBrief || '(no reply)',
+      '',
+      '### claude-haiku-5-5',
+      '',
+      fastBrief.body.reply || '(no reply)',
+      '',
+      '## Essay brainstorm',
+      '',
+      '### Main model',
+      '',
+      mainBrainstorm || '(no reply)',
+      '',
+      '### claude-haiku-5-5',
+      '',
+      fastBrainstorm.body.reply || '(no reply)',
+      '',
+    ].join('\n'),
+  )
 
   {
     const msgs = await admin.from('agent_messages').select('role, input_tokens, output_tokens').eq('firm_id', firmId).eq('role', 'assistant').limit(5)

@@ -22,13 +22,15 @@ type ParentRow = {
   email: string | null
   phone: string | null
   line_id: string | null
+  local_name: string | null
 }
 
 function parentLine(parent: ParentRow, states: ChannelState[]): string {
   const can = sendableNames(states)
-  const preferred = states.find((state) => state.channel === parent.channel)
-  const preferredNote = preferred?.sendable ? 'can send' : `cannot send: ${preferred?.why ?? 'unknown channel'}`
-  return `- ${parent.name} (${parent.relationship}), ${parent.language}, prefers ${parent.channel} (${preferredNote}). Can send: ${can.join(', ') || 'none'}. id ${parent.id}`
+  const who = `- ${parent.name} (${parent.relationship}), ${parent.language}, id ${parent.id}`
+  const named = parent.local_name?.trim() ? '' : ' No local name on record.'
+  if (can.length === 0) return `${who}. no sendable channel.${named}`
+  return `${who}. Send on: ${can.join(', ')}.${named}`
 }
 
 /** One block the system prompt can carry. Empty string when there is no such student. */
@@ -36,7 +38,7 @@ export async function buildStudentHeader(user: Db, firmId: string, counselorId: 
   const today = todayISO()
   const [student, parents, tasks, meetings, caps] = await Promise.all([
     user.from('students').select('first_name, last_name, grad_year, school, gpa, activities').eq('id', studentId).eq('firm_id', firmId).maybeSingle(),
-    user.from('parents').select('id, name, relationship, language, channel, email, phone, line_id').eq('student_id', studentId),
+    user.from('parents').select('id, name, relationship, language, channel, email, phone, line_id, local_name').eq('student_id', studentId),
     user.from('tasks').select('title, due_date, status').eq('student_id', studentId),
     user.from('meetings').select('id, title, date, status').eq('student_id', studentId).eq('status', 'scheduled').gte('date', today).order('date').limit(1),
     transportCaps(firmId, counselorId),

@@ -9,14 +9,14 @@ export type AgentProposalKind = (typeof AGENT_PROPOSAL_KINDS)[number]
 export const AGENT_PROPOSAL_STATUSES = ['pending', 'approved', 'discarded'] as const
 export type AgentProposalStatus = (typeof AGENT_PROPOSAL_STATUSES)[number]
 
-const shortLine = z.string().max(200)
+const shortLine = z.string().max(140)
 
 /** Essay brainstorming only — never a free-form draft of the essay itself. */
 export const EssayBrainstormSchema = z.object({
-  questions_to_ask: z.array(shortLine).max(8),
-  angles_to_explore: z.array(shortLine).max(8),
-  gaps_in_story: z.array(shortLine).max(8),
-  materials_to_gather: z.array(shortLine).max(8),
+  questions_to_ask: z.array(shortLine).max(5),
+  angles_to_explore: z.array(shortLine).max(5),
+  gaps_in_story: z.array(shortLine).max(5),
+  materials_to_gather: z.array(shortLine).max(5),
 })
 export type EssayBrainstorm = z.infer<typeof EssayBrainstormSchema>
 

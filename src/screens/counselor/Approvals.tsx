@@ -11,6 +11,7 @@ import { APPROVAL_TYPE_LABEL, allPendingApprovals, approvalGroups, findStudent, 
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue } from '../../lib/reminders'
 import { filesWaitingCount } from '../../lib/files'
+import { translateProposal } from '../../services/agentClient'
 import { useData, useStore } from '../../store/store'
 import type { DraftParentUpdate, DraftTask, OutboxMessage, ProfileChange, ProfilePatch } from '../../types'
 
@@ -248,6 +249,9 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{previewStudentLink(item.preview)}</p>
           )}
           <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>
+          {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && (
+            <ShowInEnglish proposalId={item.proposalId} />
+          )}
           {item.rationale && item.kind.startsWith('agent_') && (
             <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>
           )}
@@ -301,6 +305,34 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
         </Modal>
       )}
     </li>
+  )
+}
+
+function ShowInEnglish({ proposalId }: { proposalId: string }) {
+  const data = useData()
+  const toast = useToast()
+  const proposal = data.agentProposals.find((row) => row.id === proposalId)
+  const stored = typeof proposal?.payload.bodyEn === 'string' ? proposal.payload.bodyEn.trim() : ''
+  const [english, setEnglish] = useState(stored)
+  const [busy, setBusy] = useState(false)
+  if (english) return <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{english}</p>
+  return (
+    <Button
+      className="mt-2 self-start"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true)
+        void translateProposal(proposalId)
+          .then((bodyEn) => {
+            setEnglish(bodyEn)
+            if (proposal) useStore.getState().updateAgentProposal(proposal.id, { ...proposal.payload, bodyEn })
+          })
+          .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not show the English.'))
+          .finally(() => setBusy(false))
+      }}
+    >
+      {busy ? 'Translating…' : 'Show in English'}
+    </Button>
   )
 }
 

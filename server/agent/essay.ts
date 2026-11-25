@@ -1,14 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { EssayBrainstormSchema } from '../../shared/agent.js'
-import { AiError, modelName } from '../claude.js'
+import { AiError, fastModelName, modelName } from '../claude.js'
 import type { ToolResult } from './types.js'
 
 let client: Anthropic | undefined
 
 const SYSTEM = `You help a college counselor brainstorm an essay with a student. You never write essay text, paragraphs, openings, or sample sentences that could be pasted into the essay.
 
-Return only structured brainstorming: questions to ask the student, angles to explore, gaps in the story, and materials to gather. Each item is at most 200 characters. When activities, interests or majors are listed, use them. Never say the record has no activities when a list is provided. Do not invent biography beyond that list.`
+Return only structured brainstorming: questions to ask the student, angles to explore, gaps in the story, and materials to gather. At most 5 items in each list. Each item is at most 140 characters. When activities, interests or majors are listed, use them by name. Never say the record has no activities when a list is provided. Do not invent biography beyond that list.`
 
 /** Structured brainstorm only — no free-form essay draft. */
 export async function essayBrainstorm(input: {
@@ -20,7 +20,7 @@ export async function essayBrainstorm(input: {
   majors?: string[]
 }): Promise<ToolResult> {
   client ??= new Anthropic()
-  const model = modelName()
+  const model = fastModelName() || modelName()
   const user = [
     input.studentFirstName ? `Student first name: ${input.studentFirstName}` : '',
     input.activities?.length ? `Activities on the record: ${input.activities.join('; ')}` : '',
@@ -36,7 +36,7 @@ export async function essayBrainstorm(input: {
   try {
     const response = await client.messages.parse({
       model,
-      max_tokens: 1_500,
+      max_tokens: 700,
       system: SYSTEM,
       messages: [{ role: 'user', content: user }],
       output_config: { format: zodOutputFormat(EssayBrainstormSchema) },

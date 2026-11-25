@@ -1,5 +1,28 @@
 # Build log
 
+## M4b-4 (branch `m4b4-agent-speed`)
+
+Agent speed, second pass. The main model is still `claude-sonnet-5-5`. `AGENT_FAST_MODEL` is empty. When set, only the meeting brief and the essay brainstorm use it. Parent messages stay on the main model.
+
+Before, from M4b-3 `test:agent`: overdue 4.5s, draft 21.4s, brief 11.5s, brainstorm 19.7s.
+
+After, main model only:
+
+| Case | Wall | Rounds | What dominated |
+|---|---|---|---|
+| Overdue question | 3.1s | 1 | One model call, 1.3s. Under 6s. |
+| Draft reminder | 13.4s | 2 | The proposing call, 9.2s and 1,183 output tokens, then a 0.9s confirmation. Misses 12s by that first call. |
+| Meeting brief | 7.7s | 1 | `prepare_meeting_brief` 4.9s. The brief is the reply, so there is no second model call. Under 10s. |
+| Essay brainstorm | 10.6s | 1 | `essay_brainstorm` 7.7s. The lists are the reply. Under 12s. |
+
+With `AGENT_FAST_MODEL=claude-haiku-5-5`, same Kevin case, clean thread: brief 11.6s (the brief call 8.2s, slower than the main model this run) and brainstorm 8.6s (the brainstorm call 4.4s). The two texts are in `docs/agent-model-compare.md`. The fast model is not the default.
+
+Sendability: the log transport counts only when `ALLOW_LOG_TRANSPORT=true`. Otherwise email needs Gmail connected and text needs the phone gateway. WeChat and LINE still never send. The header lists only channels that can send, or says no sendable channel. A missing channel on `propose_message` is filled from those. A blocked name does not force another round.
+
+A reply after a proposal is capped at 200 tokens. A brief or a brainstorm is formatted on the server and returned as the reply. English for a non-English draft is `POST /api/translate`, and Approvals shows it from "Show in English". A stored `bodyEn` is reused.
+
+Checks: `typecheck`, `lint`, `test:notes`, `test:outbox`, and `test:agent` passed, including the flag-off case. On the dev server, with the flag off, asking to email Liu Min produced no proposal and said she has no sendable channel. The meeting prep came back in one round. With the flag on, the reminder reply was the short confirmation, the proposal held the Chinese message, and `POST /api/translate` returned the English and then reused it.
+
 ## M4b-3 (branch `m4b3-agent-speed`)
 
 Agent speed and draft quality. The model is still `claude-sonnet-5-5` (or `ANTHROPIC_MODEL`). No configuration problem found. `max_tokens` was 8,000 on the agent loop and 16,000 on every shared feature, including the brief. The agent loop is now 4,000, the agent’s brief call 4,000, and essay brainstorm 1,500.

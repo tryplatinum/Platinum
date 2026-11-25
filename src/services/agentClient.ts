@@ -118,5 +118,20 @@ const realAgentClient: AgentClient = {
 /** `VITE_AGENT_MOCK=true` keeps the canned client for offline UI work. */
 const agentClient: AgentClient = import.meta.env.VITE_AGENT_MOCK === 'true' ? mockAgentClient : realAgentClient
 
+/** English for one Approvals card. The server reuses a stored translation when it has one. */
+export async function translateProposal(proposalId: string): Promise<string> {
+  if (import.meta.env.VITE_AGENT_MOCK === 'true') return 'English translation.'
+  const response = await withToken((token) =>
+    fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ proposalId }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    }),
+  )
+  const body = asOk<{ ok: true; bodyEn: string }>(response.status, await readJson(response))
+  return body.bodyEn
+}
+
 export default agentClient
 export { agentClient }
