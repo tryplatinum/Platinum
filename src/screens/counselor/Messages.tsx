@@ -371,28 +371,27 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
     <>
       <Card>
         <CardHeader size="section" className="px-5 py-4" title="Waiting for you" count={waiting.length} sub="Rules set to “Ask me first”. Fixed wording, in each person’s language." />
-        {waiting.length === 0 ? (
+        {waiting.length === 0 && (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is waiting for your approval.</p>
-        ) : (
-          <MotionList itemClassName="border-t border-line">
-            {reminderApprovals(data, waiting).map((item) => {
-              const m = waiting.find((r) => r.key === item.reminderKey)?.message
-              return (
-                <ApprovalCard key={item.key} item={item} showStudent>
-                  {m && (
-                    <div className="flex flex-col gap-2">
-                      <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
-                      <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-                        <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'warn'}>{KIND_LABEL[m.kind]}</Pill>
-                        {item.sourceLine}
-                      </p>
-                    </div>
-                  )}
-                </ApprovalCard>
-              )
-            })}
-          </MotionList>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {reminderApprovals(data, waiting).map((item) => {
+            const m = waiting.find((r) => r.key === item.reminderKey)?.message
+            return (
+              <ApprovalCard key={item.key} item={item} showStudent>
+                {m && (
+                  <div className="flex flex-col gap-2">
+                    <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
+                    <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+                      <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'warn'}>{KIND_LABEL[m.kind]}</Pill>
+                      {item.sourceLine}
+                    </p>
+                  </div>
+                )}
+              </ApprovalCard>
+            )
+          })}
+        </MotionList>
       </Card>
       <Card>
         <CardHeader

@@ -83,6 +83,7 @@ export function CounselorLayout() {
     <div className="flex min-h-full flex-col lg:flex-row">
       <a
         href="#main"
+        inert={covered}
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:flex focus:min-h-11 focus:items-center focus:rounded-control focus:bg-primary focus:px-4 focus:text-sm focus:font-semibold focus:text-on-primary"
         onClick={(e) => {
           e.preventDefault()

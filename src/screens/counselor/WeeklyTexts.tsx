@@ -126,25 +126,24 @@ export default function WeeklyTexts() {
             </p>
           </Disclosure>
         </div>
-        {rows.length === 0 ? (
+        {rows.length === 0 && (
           <div className="border-t border-line">
             <Empty title={done.length ? 'All of this week’s texts are sent or skipped.' : 'No student needs a text this week. They appear here when something is late, due in the next 7 days, or a meeting is coming up.'} />
           </div>
-        ) : (
-          <MotionList itemClassName="border-t border-line">
-            {rows.map((row) => (
-              <Row
-                key={row.student.id}
-                row={row}
-                error={errors[row.student.id]}
-                busy={Boolean(busy[row.student.id])}
-                parent={parentChoice(row)}
-                onTellParent={(checked) => setTellParent(row, checked)}
-                onDraft={(options) => void draft(row, options)}
-              />
-            ))}
-          </MotionList>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {rows.map((row) => (
+            <Row
+              key={row.student.id}
+              row={row}
+              error={errors[row.student.id]}
+              busy={Boolean(busy[row.student.id])}
+              parent={parentChoice(row)}
+              onTellParent={(checked) => setTellParent(row, checked)}
+              onDraft={(options) => void draft(row, options)}
+            />
+          ))}
+        </MotionList>
       </Card>
 
       {done.length > 0 && <Done />}

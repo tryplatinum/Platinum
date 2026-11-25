@@ -151,7 +151,7 @@ export function Note({ tone = 'neutral', role, className, children }: { tone?: '
 
 type Variant = 'primary' | 'secondary' | 'remind' | 'quiet' | 'danger'
 
-const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-[color,background-color,border-color,opacity,transform] disabled:cursor-not-allowed disabled:opacity-50'
+const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-[color,background-color,border-color,opacity,transform] disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50'
 const BUTTON_VARIANT: Record<Variant, string> = {
   primary: 'bg-primary text-on-primary hover:bg-primary-hover',
   secondary: 'border border-line-strong bg-surface text-heading hover:bg-surface-2',
@@ -166,7 +166,16 @@ const BUTTON_VARIANT: Record<Variant, string> = {
  */
 export function Button({ variant = 'secondary', className, busy, disabled, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean; ref?: Ref<HTMLButtonElement> }) {
   return (
-    <button type="button" {...rest} disabled={disabled || busy} aria-busy={busy || undefined} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)}>
+    <button
+      type="button"
+      {...rest}
+      disabled={disabled && !busy}
+      // Not `disabled` while it works: that would drop the focus it has.
+      aria-disabled={busy || undefined}
+      aria-busy={busy || undefined}
+      onClick={busy ? (e) => e.preventDefault() : rest.onClick}
+      className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)}
+    >
       {busy && <LoaderCircle size={16} strokeWidth={1.75} className="motion-spin shrink-0" aria-hidden />}
       {children}
     </button>

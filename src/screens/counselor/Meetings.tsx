@@ -130,50 +130,50 @@ function ByStudent({ summaries, onModal }: { summaries: StudentSummary[]; onModa
         </div>
       )}
       {showList && (
-      <Card className="motion-page overflow-hidden">
-        <section aria-label="Students" id="meeting-students">
-          <div className="border-b border-line p-3">
-            <input ref={search} className={inputClass} type="search" placeholder="Search students" aria-label="Search students" value={query} onChange={(e) => setQuery(e.target.value)} />
-          </div>
-          <div className="lg:max-h-[70dvh] lg:overflow-y-auto">
-            {GROUPS.map((g) => {
-              const rows = shown.filter((s) => groupOf(s) === g)
-              if (rows.length === 0) return null
-              return (
-                <div key={g}>
-                  <div className="bg-canvas px-4 py-2 text-xs font-semibold text-muted">{g}</div>
-                  {rows.map((s) => {
-                    const active = selected?.student.id === s.student.id
-                    return (
-                      <button
-                        key={s.student.id}
-                        type="button"
-                        aria-current={active}
-                        onClick={() => select(s.student.id)}
-                        className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold">{fullName(s.student)}</span>
-                          {g === 'Needs review' ? (
-                            <span className="text-xs font-semibold text-accent">Review ready</span>
-                          ) : (
-                            (s.status === 'behind' || s.status === 'slipping') && <span className={cx('text-xs font-semibold', s.status === 'behind' ? 'text-bad' : 'text-warn')}>{STATUS_LABEL[s.status]}</span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 block text-xs text-muted">
-                          {g === 'Needs review' && s.lastMeeting && `Met ${formatRelative(s.lastMeeting.date)} · `}
-                          {s.nextMeeting ? `Next ${when(s.nextMeeting)}` : s.lastMeeting ? `Last met ${formatDate(s.lastMeeting.date)}` : 'No meeting yet'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
-            {shown.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">No student matches “{query}”.</p>}
-          </div>
-        </section>
-      </Card>
+        <Card className="motion-page overflow-hidden">
+          <section aria-label="Students" id="meeting-students">
+            <div className="border-b border-line p-3">
+              <input ref={search} className={inputClass} type="search" placeholder="Search students" aria-label="Search students" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            <div className="lg:max-h-[70dvh] lg:overflow-y-auto">
+              {GROUPS.map((g) => {
+                const rows = shown.filter((s) => groupOf(s) === g)
+                if (rows.length === 0) return null
+                return (
+                  <div key={g}>
+                    <div className="bg-canvas px-4 py-2 text-xs font-semibold text-muted">{g}</div>
+                    {rows.map((s) => {
+                      const active = selected?.student.id === s.student.id
+                      return (
+                        <button
+                          key={s.student.id}
+                          type="button"
+                          aria-current={active}
+                          onClick={() => select(s.student.id)}
+                          className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold">{fullName(s.student)}</span>
+                            {g === 'Needs review' ? (
+                              <span className="text-xs font-semibold text-accent">Review ready</span>
+                            ) : (
+                              (s.status === 'behind' || s.status === 'slipping') && <span className={cx('text-xs font-semibold', s.status === 'behind' ? 'text-bad' : 'text-warn')}>{STATUS_LABEL[s.status]}</span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted">
+                            {g === 'Needs review' && s.lastMeeting && `Met ${formatRelative(s.lastMeeting.date)} · `}
+                            {s.nextMeeting ? `Next ${when(s.nextMeeting)}` : s.lastMeeting ? `Last met ${formatDate(s.lastMeeting.date)}` : 'No meeting yet'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {shown.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">No student matches “{query}”.</p>}
+            </div>
+          </section>
+        </Card>
       )}
 
       {selected && !(changing && !laptop) && (

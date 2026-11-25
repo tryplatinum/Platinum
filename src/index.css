@@ -214,6 +214,16 @@ select {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+/* Where focus is put for a screen reader when the page changes: nothing to operate, so no ring. */
+h1:focus,
+main:focus {
+  outline: none;
+}
+/* Where focus goes when a row's buttons are gone: shown, inside its edge. */
+[data-motion-row]:focus-visible,
+[data-focus-home]:focus-visible {
+  outline-offset: -2px;
+}
 
 dialog::backdrop {
   background: var(--backdrop);

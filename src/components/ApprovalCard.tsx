@@ -135,90 +135,90 @@ export function ApprovalCard({
   return (
     <div ref={root} className={cx('flex flex-col gap-3', compact ? 'w-full' : 'px-4 py-3 sm:px-5', className)} data-settled={leaving ? settled : undefined}>
       <div className={cx('flex gap-x-6 gap-y-3', compact ? 'flex-col' : 'flex-wrap items-start justify-between')}>
-      <div className={cx('min-w-0', !compact && 'max-w-full flex-1 basis-80')}>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {!hideKind && <Pill>{APPROVAL_TYPE_LABEL[item.kind]}</Pill>}
-          {showStudent && student && (
-            <Link to={`/app/students/${student.id}`} className="tap-link text-[13px] font-semibold text-accent hover:underline">
-              {fullName(student)}
-            </Link>
+        <div className={cx('min-w-0', !compact && 'max-w-full flex-1 basis-80')}>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {!hideKind && <Pill>{APPROVAL_TYPE_LABEL[item.kind]}</Pill>}
+            {showStudent && student && (
+              <Link to={`/app/students/${student.id}`} className="tap-link text-[13px] font-semibold text-accent hover:underline">
+                {fullName(student)}
+              </Link>
+            )}
+            {item.toName && (
+              <span className="text-[13px] text-muted">
+                To {item.toName}
+                {item.channel && ` · ${CHANNEL_LABEL[item.channel]}`}
+                {item.language && item.language !== 'en' && ` · ${LANGUAGE_LABEL[item.language]}`}
+              </span>
+            )}
+          </div>
+          {children ? (
+            <div className="mt-3">{children}</div>
+          ) : profile ? (
+            <div className="mt-2 text-sm leading-relaxed">
+              <p className="font-medium">{profile.label}</p>
+              <p className="mt-0.5">
+                <span className="text-muted line-through">{profile.from}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{profile.to}</span>
+              </p>
+            </div>
+          ) : (
+            <>
+              <p lang={item.language} className="mt-2 max-w-prose whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {previewStudentLink(item.preview)}
+              </p>
+              {/* What the student will see behind the message, so it can all be read before it is approved. */}
+              {recap && recap.nextSteps.length > 0 && (
+                <ol className="mt-1 max-w-prose list-decimal space-y-1 pl-5 text-sm leading-relaxed" aria-label="Next steps">
+                  {recap.nextSteps.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              )}
+            </>
           )}
-          {item.toName && (
-            <span className="text-[13px] text-muted">
-              To {item.toName}
-              {item.channel && ` · ${CHANNEL_LABEL[item.channel]}`}
-              {item.language && item.language !== 'en' && ` · ${LANGUAGE_LABEL[item.language]}`}
+          {/* The assistant's source line is its reason, which the panel shows once, below. */}
+          {!children && !(compact && item.rationale) && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
+          {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && <ShowInEnglish proposalId={item.proposalId} />}
+          {item.rationale && item.kind.startsWith('agent_') && <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>}
+          {item.sourcesLine && <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>}
+          {weekly && student && !leaving && <WeeklyTextSendNote student={student} />}
+          {weekly && !leaving && weeklyTextTooLong(weekly.body) && <p className="text-[13px] font-semibold text-bad">Too long for one text: shorten it.</p>}
+        </div>
+
+        <div className="flex min-h-11 flex-wrap items-center gap-2">
+          {leaving ? (
+            <span className="motion-fade inline-flex min-h-11 items-center">
+              {settled === 'approved' || (weekly && !settled) ? (
+                <Pill tone="good">Approved</Pill>
+              ) : (
+                settled && <Pill>{settled === 'skipped' || weekly ? 'Skipped' : 'Discarded'}</Pill>
+              )}
             </span>
+          ) : sending ? (
+            <SendState messageId={sending} />
+          ) : weekly ? (
+            student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
+          ) : (
+            <Button variant="primary" onClick={onApprove} disabled={blank} busy={busy}>
+              {item.isSend ? <SendLabel>Approve and send</SendLabel> : 'Approve'}
+            </Button>
+          )}
+          {!leaving && (
+            <>
+              {canEdit(item) && !sending && (
+                <Button onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
+                  {editing ? 'Done' : 'Edit'}
+                </Button>
+              )}
+              {item.kind === 'reminder' && <Button onClick={() => setSkipping(true)}>Skip</Button>}
+              {actions}
+              {canDiscard(item) && (
+                <Button variant="quiet" onClick={() => setDiscarding(true)} disabled={busy}>
+                  {weekly ? 'Skip' : 'Discard'}
+                </Button>
+              )}
+            </>
           )}
         </div>
-        {children ? (
-          <div className="mt-3">{children}</div>
-        ) : profile ? (
-          <div className="mt-2 text-sm leading-relaxed">
-            <p className="font-medium">{profile.label}</p>
-            <p className="mt-0.5">
-              <span className="text-muted line-through">{profile.from}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{profile.to}</span>
-            </p>
-          </div>
-        ) : (
-          <>
-            <p lang={item.language} className="mt-2 max-w-prose whitespace-pre-wrap break-words text-sm leading-relaxed">
-              {previewStudentLink(item.preview)}
-            </p>
-            {/* What the student will see behind the message, so it can all be read before it is approved. */}
-            {recap && recap.nextSteps.length > 0 && (
-              <ol className="mt-1 max-w-prose list-decimal space-y-1 pl-5 text-sm leading-relaxed" aria-label="Next steps">
-                {recap.nextSteps.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ol>
-            )}
-          </>
-        )}
-        {/* The assistant's source line is its reason, which the panel shows once, below. */}
-        {!children && !(compact && item.rationale) && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
-        {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && <ShowInEnglish proposalId={item.proposalId} />}
-        {item.rationale && item.kind.startsWith('agent_') && <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>}
-        {item.sourcesLine && <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>}
-        {weekly && student && !leaving && <WeeklyTextSendNote student={student} />}
-        {weekly && !leaving && weeklyTextTooLong(weekly.body) && <p className="text-[13px] font-semibold text-bad">Too long for one text: shorten it.</p>}
-      </div>
-
-      <div className="flex min-h-11 flex-wrap items-center gap-2">
-        {leaving ? (
-          <span className="motion-fade inline-flex min-h-11 items-center">
-            {settled === 'approved' || (weekly && !settled) ? (
-              <Pill tone="good">Approved</Pill>
-            ) : (
-              settled && <Pill>{settled === 'skipped' || weekly ? 'Skipped' : 'Discarded'}</Pill>
-            )}
-          </span>
-        ) : sending ? (
-          <SendState messageId={sending} />
-        ) : weekly ? (
-          student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
-        ) : (
-          <Button variant="primary" onClick={onApprove} disabled={blank} busy={busy}>
-            {item.isSend ? <SendLabel>Approve and send</SendLabel> : 'Approve'}
-          </Button>
-        )}
-        {!leaving && (
-          <>
-            {canEdit(item) && !sending && (
-              <Button onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
-                {editing ? 'Done' : 'Edit'}
-              </Button>
-            )}
-            {item.kind === 'reminder' && <Button onClick={() => setSkipping(true)}>Skip</Button>}
-            {actions}
-            {canDiscard(item) && (
-              <Button variant="quiet" onClick={() => setDiscarding(true)} disabled={busy}>
-                {weekly ? 'Skip' : 'Discard'}
-              </Button>
-            )}
-          </>
-        )}
-      </div>
       </div>
       {editing && !sending && !leaving && student && (
         <div className="motion-rise">
@@ -385,23 +385,23 @@ function ShowInEnglish({ proposalId }: { proposalId: string }) {
   if (english) return <p className="motion-fade mt-2 max-w-prose whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{english}</p>
   return (
     <>
-    <Button
-      className="mt-2 self-start"
-      busy={busy}
-      onClick={() => {
-        setBusy(true)
-        setFailed(undefined)
-        void translateProposal(proposalId)
-          .then((bodyEn) => {
-            setEnglish(bodyEn)
-            if (proposal) useStore.getState().updateAgentProposal(proposal.id, { ...proposal.payload, bodyEn })
-          })
-          .catch((error: unknown) => setFailed(reasonOf(error, 'Could not show the English.')))
-          .finally(() => setBusy(false))
-      }}
-    >
-      {busy ? 'Translating…' : 'Show in English'}
-    </Button>
+      <Button
+        className="mt-2 self-start"
+        busy={busy}
+        onClick={() => {
+          setBusy(true)
+          setFailed(undefined)
+          void translateProposal(proposalId)
+            .then((bodyEn) => {
+              setEnglish(bodyEn)
+              if (proposal) useStore.getState().updateAgentProposal(proposal.id, { ...proposal.payload, bodyEn })
+            })
+            .catch((error: unknown) => setFailed(reasonOf(error, 'Could not show the English.')))
+            .finally(() => setBusy(false))
+        }}
+      >
+        {busy ? 'Translating…' : 'Show in English'}
+      </Button>
       {failed && (
         <p role="alert" className="mt-1 text-[13px] text-bad">
           {failed}

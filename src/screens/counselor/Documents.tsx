@@ -106,41 +106,38 @@ export default function Documents() {
 
       <Card>
         <CardHeader className="px-5 py-4" title="Waiting for you" count={waiting.length} sub="Files you or a colleague uploaded that nobody has filed yet. They are on no student’s page until someone does." />
-        {waiting.length === 0 ? (
+        {waiting.length === 0 && (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">{filtered ? 'Nothing waiting matches these filters.' : 'Nothing is waiting. Uploads you have not filed yet appear here.'}</p>
-        ) : (
-          <MotionList itemClassName="border-t border-line px-5 py-4">
-            {waiting.map((d) => (
-              <FilingRow key={d.id} doc={d} />
-            ))}
-          </MotionList>
         )}
+        <MotionList itemClassName="border-t border-line px-5 py-4">
+          {waiting.map((d) => (
+            <FilingRow key={d.id} doc={d} />
+          ))}
+        </MotionList>
       </Card>
 
       <Card>
         <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed without a person choosing the folder: the AI was not sure, could not be reached, or sorting is switched off." />
-        {toCheck.length === 0 ? (
+        {toCheck.length === 0 && (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing to check.</p>
-        ) : (
-          <MotionList itemClassName="border-t border-line">
-            {toCheck.map((d) => (
-              <FileRow key={d.id} doc={d} showStudent />
-            ))}
-          </MotionList>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {toCheck.map((d) => (
+            <FileRow key={d.id} doc={d} showStudent />
+          ))}
+        </MotionList>
       </Card>
 
       <Card>
         <CardHeader className="px-5 py-4" title="New" count={fresh.length} sub="Filed and not opened yet. Opening a file takes it off this list." />
-        {fresh.length === 0 ? (
+        {fresh.length === 0 && (
           <Empty title={filtered ? 'Nothing new matches these filters.' : 'Nothing new. Files your students add from their links, and files you upload, show here until someone opens them.'} />
-        ) : (
-          <MotionList itemClassName="border-t border-line">
-            {fresh.map((d) => (
-              <FileRow key={d.id} doc={d} showStudent />
-            ))}
-          </MotionList>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {fresh.map((d) => (
+            <FileRow key={d.id} doc={d} showStudent />
+          ))}
+        </MotionList>
       </Card>
     </div>
   )

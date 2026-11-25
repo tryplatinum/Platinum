@@ -181,6 +181,17 @@ export function MotionList({
     focusNear(row)
   }, [leaving])
 
+  // The whole list going while it holds focus: there is no row left to go to.
+  useLayoutEffect(() => {
+    const el = list.current
+    return () => {
+      if (!el?.contains(document.activeElement)) return
+      queueMicrotask(() => {
+        if (!el.isConnected && (!document.activeElement || document.activeElement === document.body)) focusPage()
+      })
+    }
+  }, [])
+
   useEffect(() => {
     if (!leaving) return
     const timer = setTimeout(() => setRows((all) => all.filter((r) => r.state !== 'leave')), reducedMotion() ? 0 : LEAVE_MS)
@@ -211,7 +222,7 @@ export function MotionList({
     )
   })
   return (
-    <Tag ref={list as RefObject<never>} className={className} aria-label={label}>
+    <Tag ref={list as RefObject<never>} className={join(className, 'empty:hidden')} aria-label={label}>
       {body}
     </Tag>
   )

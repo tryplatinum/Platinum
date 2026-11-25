@@ -417,100 +417,100 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
 
   return (
     <>
-    {covers && <div aria-hidden className="motion-page fixed inset-0 z-30 hidden bg-[var(--backdrop)] sm:block lg:hidden" onClick={onClose} />}
-    <aside
-      id="agent-panel"
-      ref={panelRef}
-      role={covers ? 'dialog' : undefined}
-      aria-modal={covers || undefined}
-      aria-labelledby="agent-panel-title"
-      data-open={open}
-      className={cx(
-        'motion-panel z-40 h-dvh min-h-0 w-full flex-col border-l border-line bg-surface',
-        open ? 'flex' : 'hidden',
-        'fixed inset-y-0 right-0 shadow-float sm:w-96',
-        'lg:sticky lg:bottom-auto lg:right-auto lg:top-0 lg:z-10 lg:shrink-0 lg:shadow-none',
-      )}
-    >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Spark size={16} />
-          <h2 id="agent-panel-title" className="truncate text-base font-semibold" title={title}>
-            {title}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close assistant"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading"
-        >
-          <X size={20} strokeWidth={1.75} aria-hidden />
-        </button>
-      </header>
-
-      <div ref={logRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4" role="log" aria-label="Conversation" tabIndex={0}>
-        {!thread.hydrated && !thread.pending && (
-          <div className="flex flex-col gap-3" role="status" aria-label="Opening this conversation">
-            <Skeleton className="ml-auto h-9 w-2/3" />
-            <Skeleton className="h-20 w-full" />
-          </div>
+      {covers && <div aria-hidden className="motion-page fixed inset-0 z-30 hidden bg-[var(--backdrop)] sm:block lg:hidden" onClick={onClose} />}
+      <aside
+        id="agent-panel"
+        ref={panelRef}
+        role={covers ? 'dialog' : undefined}
+        aria-modal={covers || undefined}
+        aria-labelledby="agent-panel-title"
+        data-open={open}
+        className={cx(
+          'motion-panel z-40 h-dvh min-h-0 w-full flex-col border-l border-line bg-surface',
+          open ? 'flex' : 'hidden',
+          'fixed inset-y-0 right-0 shadow-float sm:w-96',
+          'lg:sticky lg:bottom-auto lg:right-auto lg:top-0 lg:z-10 lg:shrink-0 lg:shadow-none',
         )}
-        {showSuggestions && (
-          <Empty title={student ? 'Ask about this student.' : 'Ask about the caseload.'}>
-            <div className="flex w-full flex-col gap-2">
-              {prompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  disabled={thread.pending}
-                  onClick={() => submit(prompt)}
-                  className="min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-left text-sm font-medium text-heading hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </Empty>
-        )}
-        {thread.messages.map((message) => (
-          <BubbleView key={message.id} message={message} studentId={studentId} pending={thread.pending} onRetry={(text) => submit(text, true)} />
-        ))}
-        {thread.pending && <Thinking inline label={thinking} />}
-      </div>
-
-      <form
-        className="shrink-0 border-t border-line p-3"
-        onSubmit={(event) => {
-          event.preventDefault()
-          submit(thread.draft)
-        }}
       >
-        <textarea
-          ref={inputRef}
-          className={textareaClass}
-          rows={3}
-          value={thread.draft}
-          disabled={thread.pending}
-          placeholder="Ask the assistant…"
-          aria-label="Message the assistant"
-          onChange={(event) => {
-            const value = event.target.value
-            patch(threadKey, (current) => ({ ...current, draft: value }))
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Spark size={16} />
+            <h2 id="agent-panel-title" className="truncate text-base font-semibold" title={title}>
+              {title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close assistant"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading"
+          >
+            <X size={20} strokeWidth={1.75} aria-hidden />
+          </button>
+        </header>
+
+        <div ref={logRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4" role="log" aria-label="Conversation" tabIndex={0}>
+          {!thread.hydrated && !thread.pending && (
+            <div className="flex flex-col gap-3" role="status" aria-label="Opening this conversation">
+              <Skeleton className="ml-auto h-9 w-2/3" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          )}
+          {showSuggestions && (
+            <Empty title={student ? 'Ask about this student.' : 'Ask about the caseload.'}>
+              <div className="flex w-full flex-col gap-2">
+                {prompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    disabled={thread.pending}
+                    onClick={() => submit(prompt)}
+                    className="min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-left text-sm font-medium text-heading hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </Empty>
+          )}
+          {thread.messages.map((message) => (
+            <BubbleView key={message.id} message={message} studentId={studentId} pending={thread.pending} onRetry={(text) => submit(text, true)} />
+          ))}
+          {thread.pending && <Thinking inline label={thinking} />}
+        </div>
+
+        <form
+          className="shrink-0 border-t border-line p-3"
+          onSubmit={(event) => {
             event.preventDefault()
             submit(thread.draft)
           }}
-        />
-        <div className="mt-2 flex justify-end">
-          <Button type="submit" variant="primary" disabled={thread.pending || thread.draft.trim() === ''}>
-            Send
-          </Button>
-        </div>
-      </form>
-    </aside>
+        >
+          <textarea
+            ref={inputRef}
+            className={textareaClass}
+            rows={3}
+            value={thread.draft}
+            disabled={thread.pending}
+            placeholder="Ask the assistant…"
+            aria-label="Message the assistant"
+            onChange={(event) => {
+              const value = event.target.value
+              patch(threadKey, (current) => ({ ...current, draft: value }))
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+              event.preventDefault()
+              submit(thread.draft)
+            }}
+          />
+          <div className="mt-2 flex justify-end">
+            <Button type="submit" variant="primary" disabled={thread.pending || thread.draft.trim() === ''}>
+              Send
+            </Button>
+          </div>
+        </form>
+      </aside>
     </>
   )
 }

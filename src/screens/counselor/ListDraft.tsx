@@ -163,7 +163,7 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
       toast(made.byModel ? 'The draft is ready to review. Nothing has been added to the list.' : 'The AI step did not run. The draft holds the top candidates in each band for you to pick from.')
       onDone()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The list could not be drafted. Please try again.')
+      setError((e instanceof Error && e.message) || 'The list could not be drafted. Please try again.')
       setBusy(false)
     }
   }
@@ -442,15 +442,14 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
         return (
           <Card key={fit}>
             <CardHeader size="section" className="px-5 py-4" title={fit} count={rows.length} sub={byModel && drafted < asked ? `You asked for ${asked}. Fewer colleges that pass your filters fall in this band.` : undefined} />
-            {rows.length === 0 ? (
+            {rows.length === 0 && (
               <p className="border-t border-line px-5 py-4 text-sm text-muted">No {fit} colleges in the draft.</p>
-            ) : (
-              <MotionList itemClassName="border-t border-line">
-                {rows.map((item) => (
-                  <DraftItemRow key={item.id} item={item} directory={directory} />
-                ))}
-              </MotionList>
             )}
+            <MotionList itemClassName="border-t border-line">
+              {rows.map((item) => (
+                <DraftItemRow key={item.id} item={item} directory={directory} />
+              ))}
+            </MotionList>
           </Card>
         )
       })}

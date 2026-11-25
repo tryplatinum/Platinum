@@ -5,6 +5,7 @@
 import { FolderOpen } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Logo, Spark } from '../../components/Logo'
+import { Count, MotionList, Reveal, TimeLeft, useLeaving, useReveal } from '../../components/motion'
 import {
   AiErrorNote,
   AiTag,
@@ -13,20 +14,26 @@ import {
   Card,
   CardHeader,
   CheckCircle,
+  CheckRow,
   DateChip,
+  Disclosure,
   Empty,
   Field,
   FilterChips,
   LinkButton,
   Modal,
+  Note,
   OwnerChip,
   PageHeader,
   Pill,
   PlaceholderNote,
+  ProgressBar,
   ProgressWithCount,
   ReviewTag,
   SectionLabel,
   SegmentedControl,
+  SendLabel,
+  Skeleton,
   StatusPill,
   Tabs,
   Thinking,
@@ -34,6 +41,7 @@ import {
   inputClass,
   textareaClass,
   useAi,
+  useConfirm,
   usePageTitle,
   useTab,
   useToast,
@@ -115,6 +123,104 @@ function Swatch({ name, className, use }: { name: string; className: string; use
   )
 }
 
+/** Every pattern of movement, from src/index.css and components/motion.tsx. */
+function Motion() {
+  const [rows, setRows] = useState(['First draft', 'Second draft', 'Third draft'])
+  const [made, setMade] = useState(3)
+  const [list, setList] = useState(0)
+  const [count, setCount] = useState(22)
+  const [time, setTime] = useState(() => span())
+  const [sheet, setSheet] = useState(false)
+  const reveal = useReveal(true)
+  return (
+    <Block title="Motion">
+      <p className="text-[13px] text-muted">
+        Things arrive in 150 to 250 ms and leave faster. Nothing runs over 400 ms except progress, and only loading indicators loop. Nothing waits for an animation: a decision is made first and shown after. With “reduce motion” on, every change is instant.
+      </p>
+
+      <CardHeader title="Rows that come and go" action={<Button onClick={() => (setRows([...rows, `Draft ${made + 1}`]), setMade(made + 1))}>Add a row</Button>} />
+      <Card>
+        <MotionList key={list} stagger itemClassName="border-t border-line first:border-t-0">
+          {rows.map((r) => (
+            <SampleRow key={r} name={r} onDecide={() => setRows((all) => all.filter((x) => x !== r))} />
+          ))}
+        </MotionList>
+        {rows.length === 0 && <Empty title="All decided." />}
+      </Card>
+      <Row>
+        <Button
+          onClick={() => {
+            setRows(['First draft', 'Second draft', 'Third draft'])
+            setList(list + 1)
+          }}
+        >
+          Show the list again
+        </Button>
+        <span className="text-[13px] text-muted">Approved settles, then leaves in 340 ms. Discarded leaves in 160. The first eight rows come in 30 ms apart.</span>
+      </Row>
+
+      <CardHeader title="Open and close" />
+      <div>
+        <Button {...reveal.button}>{reveal.open ? 'Close' : 'Open'}</Button>
+        <Reveal open={reveal.open} id={reveal.id}>
+          <p className="pt-3 text-sm">Opens in 220 ms and closes in 120, by grid rows, with no height measured.</p>
+        </Reveal>
+      </div>
+
+      <CardHeader title="Time left to undo" />
+      <div className="flex max-w-xs flex-col gap-2">
+        <span className="text-[13px] font-semibold">Approved. Sending in 10 seconds.</span>
+        <TimeLeft key={time.until} from={time.from} until={time.until} className="text-accent" />
+        <Button className="self-start" onClick={() => setTime(span())}>
+          Start again
+        </Button>
+      </div>
+
+      <CardHeader title="Counts, panels and the marker" />
+      <Row>
+        <Count value={count} className="inline-block rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary" />
+        <Button onClick={() => setCount(count - 1)}>Change the badge</Button>
+        <Button onClick={() => setSheet(!sheet)} aria-expanded={sheet}>
+          {sheet ? 'Close the panel' : 'Open the panel'}
+        </Button>
+        <div data-open={sheet} className={`motion-panel rounded-card border border-line bg-surface px-4 py-2 text-sm ${sheet ? 'block' : 'hidden'}`}>
+          Slides in as the assistant does.
+        </div>
+      </Row>
+      <p className="text-[13px] text-muted">The marker under the tabs above, and beside the places in the sidebar, is one mark that moves. Pages and tabs cross-fade in 150 ms.</p>
+    </Block>
+  )
+}
+
+const span = () => ({ from: new Date().toISOString(), until: new Date(Date.now() + 10_000).toISOString() })
+
+function SampleRow({ name, onDecide }: { name: string; onDecide: () => void }) {
+  const leaving = useLeaving()
+  // Kept by the row itself: once it has left the list it is given nothing new.
+  const [settled, setSettled] = useState<'approved' | 'discarded'>()
+  const decide = (how: 'approved' | 'discarded') => {
+    setSettled(how)
+    onDecide()
+  }
+  return (
+    <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 px-5 py-2" data-settled={leaving ? settled : undefined}>
+      <span className="text-sm font-semibold">{name}</span>
+      {leaving ? (
+        <Pill tone={settled === 'approved' ? 'good' : 'neutral'}>{settled === 'approved' ? 'Approved' : 'Discarded'}</Pill>
+      ) : (
+        <span className="flex gap-2">
+          <Button variant="primary" onClick={() => decide('approved')}>
+            Approve
+          </Button>
+          <Button variant="quiet" onClick={() => decide('discarded')}>
+            Discard
+          </Button>
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function Styleguide() {
   const toast = useToast()
   usePageTitle('Styleguide')
@@ -127,6 +233,9 @@ export default function Styleguide() {
   const [review, setReview] = useState<Review>('pending')
   const [modal, setModal] = useState(false)
   const [draft, setDraft] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [ticked, setTicked] = useState(true)
+  const confirm = useConfirm()
 
   return (
     <>
@@ -202,6 +311,16 @@ export default function Styleguide() {
             Danger
           </Button>
         </Row>
+        <Row>
+          <Button variant="primary" busy={working} onClick={() => (setWorking(true), setTimeout(() => setWorking(false), 1800))}>
+            {working ? 'Working…' : 'Busy while it works'}
+          </Button>
+          <Button variant="primary">
+            <SendLabel>Approve and send</SendLabel>
+          </Button>
+          <Button variant="primary">Approve</Button>
+          <span className="text-[13px] text-muted">The send icon is only on a button that sends. Every button moves a little when pressed.</span>
+        </Row>
       </Block>
 
       <Block title="Inputs">
@@ -224,14 +343,12 @@ export default function Styleguide() {
           <Field label="Textarea" className="sm:col-span-2">
             <textarea className={textareaClass} rows={3} defaultValue="Longer text goes here." />
           </Field>
-          <label className="flex min-h-11 items-center gap-3 text-sm">
-            <input type="checkbox" className="h-5 w-5" defaultChecked />
-            Checkbox, checked
-          </label>
-          <label className="flex min-h-11 items-center gap-3 text-sm">
-            <input type="checkbox" className="h-5 w-5" />
-            Checkbox, empty
-          </label>
+          <CheckRow checked={ticked} onChange={setTicked} hint="The whole row is the target, at least 44px tall.">
+            Check row
+          </CheckRow>
+          <CheckRow checked={false} disabled onChange={() => undefined}>
+            Check row, disabled
+          </CheckRow>
         </div>
       </Block>
 
@@ -293,6 +410,7 @@ export default function Styleguide() {
       </Block>
 
       <Block title="Progress and check marks">
+        <ProgressBar label="Example" done={progress} total={5} />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <ProgressWithCount progress={{ done: 1, total: 5, late: 2 }} status="behind" text="2 late" />
           <ProgressWithCount progress={{ done: 3, total: 5, late: 0 }} status="slipping" text="1 due soon" />
@@ -301,7 +419,7 @@ export default function Styleguide() {
         </div>
         <Row>
           <Button onClick={() => setProgress((progress + 1) % 6)}>Move the last bar</Button>
-          <span className="text-[13px] text-muted">The bar eases over 400 ms when its value changes, not on first render.</span>
+          <span className="text-[13px] text-muted">Bars ease over 400 ms when the value changes, not on first render.</span>
         </Row>
         <Row>
           <CheckCircle done={checked} label="Example task" onToggle={() => setChecked(!checked)} />
@@ -401,13 +519,48 @@ export default function Styleguide() {
         </Card>
       </Block>
 
+      <Block title="Notes, disclosures and loading">
+        <Note>Neutral note.</Note>
+        <Note tone="accent">Accent note.</Note>
+        <Note tone="warn">Warning note.</Note>
+        <Note tone="bad">Error note.</Note>
+        <Disclosure label="Disclosure" count={3}>
+          <p className="text-sm text-ink-soft">What was closed. It cannot be reached until it is open.</p>
+        </Disclosure>
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+        <p className="text-[13px] text-muted">A skeleton has the size of what will arrive, so nothing moves when it does.</p>
+      </Block>
+
       <Block title="Things that float">
         <Row>
           <Button onClick={() => setModal(true)}>Open a modal</Button>
           <Button onClick={() => toast('Saved. This is a toast.')}>Show a toast</Button>
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const yes = await confirm({ title: 'Delete file', body: 'Delete “Sample transcript”? The file is removed for good.', action: 'Delete file' })
+              toast(yes ? 'You said yes. Nothing was deleted: this is a sample.' : 'Cancelled.')
+            }}
+          >
+            Ask before deleting
+          </Button>
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const yes = await confirm({ title: 'Reset demo', body: 'This sample asks for a typed word.', action: 'Reset demo', word: 'RESET', wrongWord: 'Nothing was changed. Type RESET exactly to confirm.' })
+              toast(yes ? 'The word was right. Nothing was changed: this is a sample.' : 'Cancelled.')
+            }}
+          >
+            Ask for a typed word
+          </Button>
         </Row>
-        <p className="text-[13px] text-muted">Modals and menus fade and rise 4 px over 180 ms and close at once. Toasts slide up 8 px. With “reduce motion” on, every change is instant.</p>
+        <p className="text-[13px] text-muted">A confirm dialog names the action on its button, and Cancel has the focus.</p>
       </Block>
+
+      <Motion />
 
       {modal && (
         <Modal title="A modal" onClose={() => setModal(false)}>
