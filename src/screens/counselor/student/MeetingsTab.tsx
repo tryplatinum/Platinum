@@ -7,7 +7,7 @@ import { LogMeetingModal, MeetingFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { MeetingReport, meetingHeading } from '../../../components/meeting/MeetingReport'
 import { MeetingReview } from '../../../components/meeting/MeetingReview'
-import { Button, Card, CardHeader, Empty, SectionLabel, useConfirm } from '../../../components/ui'
+import { Button, Card, CardHeader, Empty, PhoneFold, Pill, SectionLabel, useConfirm } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTime } from '../../../lib/dates'
 import { meetingBuckets, meetingOneLine, pendingInMeeting, taskProgress, tasksFromMeeting } from '../../../lib/derive'
 import { useData, useStore } from '../../../store/store'
@@ -59,6 +59,8 @@ export default function MeetingsTab({ student }: { student: Student }) {
               {(showAll ? past : past.slice(0, 4)).map((m) => {
                 const progress = taskProgress(tasksFromMeeting(data, m.id))
                 const open = viewing === m.id
+                // An older meeting can still have drafts waiting: its row says so and opens the review, not the report.
+                const waiting = pendingInMeeting(m)
                 return (
                   <li key={m.id} className="border-t border-line px-5 py-3">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -67,14 +69,14 @@ export default function MeetingsTab({ student }: { student: Student }) {
                         <div className="text-sm font-semibold">{m.title}</div>
                         <div className="text-[13px] text-muted">{meetingOneLine(m)}</div>
                       </div>
-                      <div className="text-[13px] text-muted">{progress.total ? `${progress.done} of ${progress.total} tasks done` : 'No tasks'}</div>
-                      <Button variant="quiet" onClick={() => setViewing(open ? undefined : m.id)} aria-expanded={open}>
-                        {open ? 'Hide report' : 'View report'}
+                      {waiting > 0 ? <Pill tone="accent">{waiting} to review</Pill> : <div className="text-[13px] text-muted">{progress.total ? `${progress.done} of ${progress.total} tasks done` : 'No tasks'}</div>}
+                      <Button variant="quiet" onClick={() => setViewing(open ? undefined : m.id)} aria-expanded={open} aria-label={`${open ? 'Hide' : waiting > 0 ? 'Review' : 'View report of'} the ${formatDate(m.date)} meeting`}>
+                        {open ? 'Hide' : waiting > 0 ? 'Review' : 'View report'}
                       </Button>
                     </div>
                     {open && (
                       <div className="mt-3 flex flex-col gap-3">
-                        <MeetingReport meeting={m} student={student} />
+                        {waiting > 0 ? <MeetingReview meeting={m} student={student} /> : <MeetingReport meeting={m} student={student} />}
                         <Button
                           variant="danger"
                           className="self-start"
@@ -103,7 +105,9 @@ export default function MeetingsTab({ student }: { student: Student }) {
 
       <div className="flex min-w-0 flex-col gap-6">
         {upcoming ? (
-          <BriefCard meeting={upcoming} student={student} heading="Upcoming" />
+          <PhoneFold label="Brief for the upcoming meeting">
+            <BriefCard meeting={upcoming} student={student} heading="Upcoming" />
+          </PhoneFold>
         ) : (
           <Card tone="accent" className="flex flex-col items-start gap-3 p-5">
             <h2 className="text-base font-semibold">Nothing scheduled</h2>

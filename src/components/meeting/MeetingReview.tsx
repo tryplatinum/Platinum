@@ -4,7 +4,8 @@
 // Approved items flow into the real task list, the profile, the parent reports
 // and the student's recap; until then nothing leaves this panel.
 
-import { useState, type ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { createContext, useContext, useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, formatDateLong } from '../../lib/dates'
 import { findParent, meetingApprovals, ownerLabel, pendingInMeeting, reviewSections, type ApprovalItem, type ReviewSection } from '../../lib/derive'
@@ -14,6 +15,7 @@ import { useData, useStore } from '../../store/store'
 import type { Approval, DraftPersonalNote, DraftTask, Meeting, ProfileChange, Review, Student } from '../../types'
 import { sentByHand } from '../../lib/delivery'
 import { ApprovalCard, approveItem } from '../ApprovalCard'
+import { Reveal } from '../motion'
 import { Bilingual, recipientLine } from '../Bilingual'
 import {
   AiErrorNote,
@@ -51,6 +53,14 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
   const section = (key: ReviewSection['key']) => sections.find((s) => s.key === key)
   // Redrafting replaces every draft, so it is offered only while none has been reviewed.
   const untouched = Boolean(ai) && sections.every((s) => s.pending === s.total)
+  // One section open by default: the first with something waiting. Deciding it opens the next.
+  const [chosen, setChosen] = useState<Partial<Record<SectionKey, boolean>>>({})
+  const firstWaiting = sections.find((s) => s.pending > 0)?.key
+  const openSections = {
+    isOpen: (key: SectionKey) => chosen[key] ?? key === firstWaiting,
+    toggle: (key: SectionKey) => setChosen((c) => ({ ...c, [key]: !(c[key] ?? key === firstWaiting) })),
+    waiting: (key: SectionKey) => section(key)?.pending ?? 0,
+  }
 
   if (!ai && !meeting.recap) {
     return (
@@ -122,12 +132,14 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
       <AiErrorNote message={error} />
       {busy && <Thinking label="AI is reading the notes and drafting follow-ups…" />}
 
-      {ai && <NotesSection n={number('notes')} meeting={meeting} />}
-      {ai && section('tasks') && <TasksSection n={number('tasks')} meeting={meeting} student={student} />}
-      {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
-      {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
-      {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
-      {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
+      <OpenSections.Provider value={openSections}>
+        {ai && <NotesSection n={number('notes')} meeting={meeting} />}
+        {ai && section('tasks') && <TasksSection n={number('tasks')} meeting={meeting} student={student} />}
+        {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
+        {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
+        {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
+        {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
+      </OpenSections.Provider>
       <p className="text-[13px] text-muted">
         Reminders follow the firm’s rules.{' '}
         <Link to="/app/settings#reminder-rules" className="tap-link font-semibold text-accent hover:underline">
@@ -140,16 +152,33 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
 
 // ── Shared bits ─────────────────────────────────────────────────────────────
 
-function Section({ n, title, right, children }: { n: number; title: string; right?: ReactNode; children: ReactNode }) {
+type SectionKey = ReviewSection['key']
+
+/** Which sections of the review are open. The first one with something waiting is; the rest open in place. */
+const OpenSections = createContext<{ isOpen: (key: SectionKey) => boolean; toggle: (key: SectionKey) => void; waiting: (key: SectionKey) => number }>({ isOpen: () => true, toggle: () => undefined, waiting: () => 0 })
+
+function Section({ k, n, title, right, children }: { k: SectionKey; n: number; title: string; right?: ReactNode; children: ReactNode }) {
+  const { isOpen, toggle, waiting } = useContext(OpenSections)
+  const open = isOpen(k)
+  const id = useId()
+  const left = waiting(k)
   return (
-    <Card className="flex flex-col gap-3 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">
-          {n}. {title}
+    <Card className="flex flex-col px-3 py-2 sm:px-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <h3 className="min-w-0 flex-1 basis-56 text-base font-semibold">
+          <button type="button" aria-expanded={open} aria-controls={id} onClick={() => toggle(k)} className="flex min-h-11 w-full items-center gap-1.5 rounded-control px-1 text-left hover:bg-surface-2">
+            <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
+            <span>
+              {n}. {title}
+              {!open && left > 0 && <span className="nums font-sans text-sm font-medium text-muted"> · {left} waiting</span>}
+            </span>
+          </button>
         </h3>
-        <div className="flex flex-wrap items-center gap-2">{right}</div>
+        <div className="flex flex-wrap items-center gap-2 px-1">{right}</div>
       </div>
-      {children}
+      <Reveal open={open} id={id}>
+        <div className="flex flex-col gap-3 px-1 pb-2 pt-2">{children}</div>
+      </Reveal>
     </Card>
   )
 }
@@ -249,7 +278,7 @@ function NotesSection({ n, meeting }: { n: number; meeting: Meeting }) {
     </>
   )
   return (
-    <Section n={n} title="Meeting notes" right={<SectionState review={ai.notesReview} approval={ai.notesApproval} />}>
+    <Section k="notes" n={n} title="Meeting notes" right={<SectionState review={ai.notesReview} approval={ai.notesApproval} />}>
       <div {...HOME} className="focus:outline-none">
         {item ? (
           <ApprovalCard item={item} compact hideKind note="Approved notes become this meeting’s record. They are never sent to anyone.">
@@ -271,6 +300,7 @@ function TasksSection({ n, meeting, student }: { n: number; meeting: Meeting; st
   const pending = tasks.filter((t) => t.review === 'pending')
   return (
     <Section
+      k="tasks"
       n={n}
       title="Tasks from this meeting"
       right={
@@ -326,7 +356,7 @@ function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: 
 function ParentsSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
   const updates = meeting.ai!.parentUpdates
   return (
-    <Section n={n} title={updates.length > 1 ? 'Parent updates' : 'Parent update'} right={<ReviewTag review={groupReview(updates)} approvedLabel="Sent" />}>
+    <Section k="parents" n={n} title={updates.length > 1 ? 'Parent updates' : 'Parent update'} right={<ReviewTag review={groupReview(updates)} approvedLabel="Sent" />}>
       <ul>
         {updates.map((u) => (
           <ParentUpdateRow key={u.id} meeting={meeting} student={student} updateId={u.id} />
@@ -392,7 +422,7 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
     </div>
   )
   return (
-    <Section n={n} title={`Recap for ${student.firstName}`} right={<SectionState review={recap.review} approval={recap.approval} approvedLabel={`Shared with ${student.firstName}`} />}>
+    <Section k="recap" n={n} title={`Recap for ${student.firstName}`} right={<SectionState review={recap.review} approval={recap.approval} approvedLabel={`Shared with ${student.firstName}`} />}>
       <div {...HOME} className="focus:outline-none">
         {item ? (
           <ApprovalCard item={item} compact hideKind note={`${student.firstName} sees this in the student view only after you approve it.`}>
@@ -416,7 +446,7 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
 function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
   const notes = meeting.ai!.personalNotes ?? []
   return (
-    <Section n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
+    <Section k="remember" n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
       <p className="text-[13px] text-muted">
         Things {student.firstName} mentioned in passing. A saved one is brought up in a text to {student.firstName}: good luck beforehand, “how did it go?” afterwards, then never again. One with a date is kept until it has happened; one without is dropped at the next meeting. They are never used in anything a parent reads, and {student.firstName} cannot see this list.
       </p>
@@ -463,7 +493,7 @@ function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonal
 function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
   const changes = meeting.ai!.profileChanges
   return (
-    <Section n={n} title="Profile changes" right={<ReviewTag review={groupReview(changes)} approvedLabel="Applied" />}>
+    <Section k="profile" n={n} title="Profile changes" right={<ReviewTag review={groupReview(changes)} approvedLabel="Applied" />}>
       <ul className="flex flex-col">
         {changes.map((c) => (
           <ProfileChangeRow key={c.id} meeting={meeting} change={c} />

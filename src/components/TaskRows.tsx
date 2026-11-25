@@ -2,6 +2,7 @@
 // student's own view. Open tasks are bordered rows with a check circle; late
 // ones get the red left edge and tint. Done tasks are quiet grey rows.
 
+import { BellRing } from 'lucide-react'
 import { useState } from 'react'
 import { formatDate } from '../lib/dates'
 import { DOC_CATEGORIES, daysLate, isLate, isOpen, ownerLabel } from '../lib/derive'
@@ -73,8 +74,9 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
         </button>
         <DueChip task={task} />
         {viewer === 'counselor' && reminderRecipient(student, task) && (
-          <Button variant={late ? 'remind' : 'secondary'} onClick={() => setReminding(!reminding)} aria-expanded={reminding} aria-label={`Remind about ${task.title}`}>
-            Remind
+          // A late task says "Remind". One that is not late keeps the same button as an icon, so the list is not a column of them.
+          <Button variant={late ? 'remind' : 'secondary'} className={late ? undefined : 'w-11 px-0!'} title={late ? undefined : 'Remind'} onClick={() => setReminding(!reminding)} aria-expanded={reminding} aria-label={`Remind about ${task.title}`}>
+            {late ? 'Remind' : <BellRing size={20} strokeWidth={1.75} className="shrink-0" aria-hidden />}
           </Button>
         )}
         {viewer === 'student' && (

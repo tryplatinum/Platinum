@@ -30,7 +30,7 @@ import type { StudentStatus, TaskProgress } from '../lib/derive'
 import type { AiSource, Approval, OwnerType, Review } from '../types'
 import { PRODUCT_NAME } from '../brand'
 import { Spark } from './Logo'
-import { Count, Reveal, TimeLeft, focusNear, ghostOf, reducedMotion, useMarker, useReveal } from './motion'
+import { Count, Reveal, TimeLeft, focusNear, ghostOf, reducedMotion, useMarker, useMediaQuery, useReveal } from './motion'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -275,6 +275,30 @@ export function Disclosure({ label, children, start = false, className, count }:
       </button>
       <Reveal open={reveal.open} id={reveal.id}>
         {children}
+      </Reveal>
+    </div>
+  )
+}
+
+/**
+ * A long card that starts closed on a phone, so the page is not a wall, and is
+ * simply shown where there is room. Nothing is removed: one press opens it in place.
+ */
+export function PhoneFold({ label, count, children }: { label: string; count?: number; children: ReactNode }) {
+  const wide = useMediaQuery('(min-width: 40rem)')
+  const reveal = useReveal(false)
+  if (wide) return <>{children}</>
+  return (
+    <div className="min-w-0">
+      <button type="button" {...reveal.button} className="flex min-h-11 w-full items-center gap-1.5 rounded-card border border-line bg-surface px-4 py-2 text-left text-base font-semibold text-heading">
+        <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
+        <span className="font-display">
+          {reveal.open ? `Hide ${label.charAt(0).toLowerCase()}${label.slice(1)}` : label}
+          {!reveal.open && count !== undefined && <span className="nums font-sans font-medium text-ink-soft"> · {count}</span>}
+        </span>
+      </button>
+      <Reveal open={reveal.open} id={reveal.id}>
+        <div className="pt-3">{children}</div>
       </Reveal>
     </div>
   )
@@ -553,7 +577,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           aria-checked={value === o.value}
           tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
-          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-primary text-on-primary' : 'text-ink-soft hover:bg-surface-2')}
+          className={cx('min-h-11 rounded-md px-3 text-[13px] font-semibold', value === o.value ? 'bg-accent-soft-2 text-heading' : 'text-ink-soft hover:bg-surface-2')}
         >
           {o.label}
         </button>

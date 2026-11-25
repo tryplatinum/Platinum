@@ -6,7 +6,7 @@ import { MeetingFormModal, ParentFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { AddTaskForm, TaskItem } from '../../../components/TaskRows'
 import { MotionList } from '../../../components/motion'
-import { Button, Card, CardHeader, Disclosure, Empty, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { Button, Card, CardHeader, Disclosure, Empty, PhoneFold, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTimestamp } from '../../../lib/dates'
 import { eventWhen, isNotResponding, isOpen, isSlipping, nextMeeting, noteStatusLine, personalNotesByLife, sortByUrgency, statusText, summarize, tasksFor } from '../../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
@@ -22,11 +22,15 @@ export default function Overview({ student }: { student: Student }) {
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-w-0 flex-col gap-6">
         <TasksCard student={student} />
-        <CollegeList student={student} />
+        <PhoneFold label="College list" count={data.colleges.filter((c) => c.studentId === student.id).length}>
+          <CollegeList student={student} />
+        </PhoneFold>
       </div>
       <div className="flex min-w-0 flex-col gap-6">
         {upcoming ? (
-          <BriefCard meeting={upcoming} student={student} />
+          <PhoneFold label="Brief for the next meeting">
+            <BriefCard meeting={upcoming} student={student} />
+          </PhoneFold>
         ) : (
           <Card tone="accent" className="flex flex-col items-start gap-3 p-5">
             <h2 className="text-base font-semibold">No meeting scheduled</h2>
@@ -49,7 +53,6 @@ export default function Overview({ student }: { student: Student }) {
 function TasksCard({ student }: { student: Student }) {
   const data = useData()
   const [adding, setAdding] = useState(false)
-  const [showAllDone, setShowAllDone] = useState(false)
   const tasks = sortByUrgency(tasksFor(data, student.id))
   const open = tasks.filter(isOpen)
   const done = tasks.filter((t) => !isOpen(t))
@@ -81,19 +84,13 @@ function TasksCard({ student }: { student: Student }) {
             </MotionList>
           )}
           {done.length > 0 && (
-            <>
-              <SectionLabel>Done · {done.length}</SectionLabel>
+            <Disclosure label="Done" count={done.length}>
               <MotionList itemClassName="pb-2 last:pb-0">
-                {(showAllDone ? done : done.slice(0, 3)).map((t) => (
+                {done.map((t) => (
                   <TaskItem key={t.id} task={t} student={student} viewer="counselor" />
                 ))}
               </MotionList>
-              {done.length > 3 && (
-                <Button variant="quiet" className="self-start" onClick={() => setShowAllDone(!showAllDone)}>
-                  {showAllDone ? 'Show fewer' : `Show ${done.length - 3} more done`}
-                </Button>
-              )}
-            </>
+            </Disclosure>
           )}
         </>
       )}
