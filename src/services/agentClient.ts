@@ -28,10 +28,12 @@ export class AgentNetworkError extends Error {
 }
 
 export interface AgentClient {
-  /** Send one counselor message. `studentId` null is the general thread. */
-  send(studentId: string | null, message: string): Promise<AgentResponse>
+  /** Send one counselor message. `studentId` null is the general thread. `requestId` lets the panel poll progress. */
+  send(studentId: string | null, message: string, requestId?: string): Promise<AgentResponse>
   /** The saved thread for this page. Empty when this counselor has not written here yet. */
   loadThread(studentId: string | null): Promise<AgentHistory>
+  /** The step label for a request still running, or null. */
+  progress(requestId: string): Promise<string | null>
 }
 
 const TIMEOUT_MS = 120_000
@@ -78,16 +80,27 @@ function asOk<T extends { ok: true }>(status: number, body: unknown): T {
 }
 
 const realAgentClient: AgentClient = {
-  async send(studentId, message) {
+  async send(studentId, message, requestId) {
     const response = await withToken((token) =>
       fetch(AGENT_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ studentId, message }),
+        body: JSON.stringify({ studentId, message, requestId }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       }),
     )
     return asOk<AgentResponse>(response.status, await readJson(response))
+  },
+
+  async progress(requestId) {
+    const response = await withToken((token) =>
+      fetch(`${AGENT_ENDPOINT}?progress=${encodeURIComponent(requestId)}`, {
+        headers: { accept: 'application/json', authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      }),
+    )
+    const body = asOk<{ ok: true; step: string | null }>(response.status, await readJson(response))
+    return body.step
   },
 
   async loadThread(studentId) {

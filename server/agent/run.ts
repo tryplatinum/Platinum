@@ -3,11 +3,14 @@
 // except pending proposals and message rows.
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { AgentProposalOut, AgentTurnSource } from '../../shared/agent.js'
+import type { AgentProposalOut, AgentTiming, AgentTurnSource } from '../../shared/agent.js'
 import { modelName } from '../claude.js'
 import { agentSystemPrompt } from '../prompts.js'
 import type { Json } from '../../src/lib/database.types.js'
+import { clearProgress, setProgress, stepFor } from './progress.js'
 import { dedupeSources, sourcesFromTool } from './sources.js'
+import { buildStudentHeader } from './summary.js'
+import { joinAssistantText } from './text.js'
 import { AGENT_TOOLS, runTool } from './tools.js'
 import type { AgentContext, CreatedProposal, Db } from './types.js'
 
@@ -53,6 +56,11 @@ async function loadCounselorName(user: Db, userId: string): Promise<{ name: stri
   const name = data?.display_name?.trim() || 'Counselor'
   const firstName = name.split(/\s+/)[0] || name
   return { name, firstName }
+}
+
+async function loadFirmName(user: Db, firmId: string): Promise<string> {
+  const { data } = await user.from('firms').select('name').eq('id', firmId).maybeSingle()
+  return data?.name?.trim() || ''
 }
 
 async function loadStudent(user: Db, firmId: string, studentId: string) {
@@ -118,11 +126,7 @@ async function saveMessage(
 }
 
 function textFrom(content: Anthropic.ContentBlock[]): string {
-  return content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim()
+  return joinAssistantText(content.filter((block): block is Anthropic.TextBlock => block.type === 'text').map((block) => block.text))
 }
 
 export interface AgentRunResult {
@@ -131,6 +135,7 @@ export interface AgentRunResult {
   proposals: AgentProposalOut[]
   /** Records the tools returned this turn. Not taken from the model's text. */
   sources: AgentTurnSource[]
+  timing: AgentTiming
 }
 
 export async function runAgent(args: {
@@ -140,6 +145,7 @@ export async function runAgent(args: {
   counselorId: string
   studentId: string | null
   message: string
+  requestId?: string
 }): Promise<AgentRunResult> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     throw new AgentHttpError('no_key', 'ANTHROPIC_API_KEY is not set on the server.', 503)
@@ -150,7 +156,15 @@ export async function runAgent(args: {
     throw new AgentHttpError('rate_limited', 'Daily assistant limit reached.', 429)
   }
 
-  const counselor = await loadCounselorName(args.user, args.counselorId)
+  const note = (step: string) => {
+    if (args.requestId) setProgress(args.requestId, args.counselorId, step)
+  }
+
+  const [counselor, firmName, header] = await Promise.all([
+    loadCounselorName(args.user, args.counselorId),
+    loadFirmName(args.user, args.firmId),
+    args.studentId ? buildStudentHeader(args.user, args.firmId, args.counselorId, args.studentId) : Promise.resolve(''),
+  ])
   let studentName: string | undefined
   let studentGradYear: number | undefined
   let studentOnboarded: string | undefined
@@ -169,6 +183,7 @@ export async function runAgent(args: {
     counselorId: args.counselorId,
     counselorName: counselor.name,
     counselorFirstName: counselor.firstName,
+    firmName,
     studentId: args.studentId,
     studentName,
     studentGradYear,
@@ -190,7 +205,7 @@ export async function runAgent(args: {
     counselorName: counselor.name,
     counselorFirstName: counselor.firstName,
     student: args.studentId
-      ? { name: studentName!, gradYear: studentGradYear!, onboardedOn: studentOnboarded }
+      ? { name: studentName!, gradYear: studentGradYear!, onboardedOn: studentOnboarded, header }
       : null,
   })
 
@@ -200,13 +215,17 @@ export async function runAgent(args: {
   let reply = ''
   let hitRoundCap = false
   const turnSources: AgentTurnSource[] = []
+  const timing: AgentTiming = { rounds: 0, models: [], tools: [] }
 
+  try {
   for (let round = 0; round < rounds; round++) {
+    note('Writing a reply…')
     let response: Anthropic.Message
+    const modelStarted = Date.now()
     try {
       response = await client.messages.create({
         model,
-        max_tokens: 8_000,
+        max_tokens: 4_000,
         system,
         tools: AGENT_TOOLS,
         messages,
@@ -215,6 +234,14 @@ export async function runAgent(args: {
       console.error('[agent] Claude error', error instanceof Error ? error.message : error)
       throw new AgentHttpError('upstream', 'The assistant could not reach Claude. Please try again.', 502)
     }
+    const modelMs = Date.now() - modelStarted
+    timing.rounds += 1
+    timing.models.push({
+      ms: modelMs,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    })
+    console.debug(`[agent] model round=${round + 1} ms=${modelMs} in=${response.usage.input_tokens} out=${response.usage.output_tokens}`)
 
     await saveMessage(args.service, {
       threadId,
@@ -236,9 +263,19 @@ export async function runAgent(args: {
       break
     }
 
+    note(stepFor(toolUses.map((use) => use.name)))
+    const settled = await Promise.all(
+      toolUses.map(async (use) => {
+        const started = Date.now()
+        const result = await runTool(ctx, use.name, use.input)
+        const ms = Date.now() - started
+        return { use, result, ms }
+      }),
+    )
     const toolResults: Anthropic.ToolResultBlockParam[] = []
-    for (const use of toolUses) {
-      const result = await runTool(ctx, use.name, use.input)
+    for (const { use, result, ms } of settled) {
+      timing.tools.push({ name: use.name, ms })
+      console.debug(`[agent] tool name=${use.name} ms=${ms}`)
       if (result.ok) turnSources.push(...sourcesFromTool(use.name, result.data))
       const body = result.ok ? result.data : { error: result.error }
       toolResults.push({
@@ -286,6 +323,10 @@ export async function runAgent(args: {
 
   if (!reply) reply = 'I have nothing further to add. Check Approvals if I drafted anything.'
 
+  const modelMs = timing.models.reduce((sum, row) => sum + row.ms, 0)
+  const toolMs = timing.tools.reduce((sum, row) => sum + row.ms, 0)
+  console.debug(`[agent] timing rounds=${timing.rounds} modelMs=${modelMs} toolMs=${toolMs} tools=${timing.tools.map((row) => row.name).join(',')}`)
+
   await args.service.from('agent_threads').update({ updated_at: new Date().toISOString() }).eq('id', threadId)
 
   return {
@@ -293,6 +334,10 @@ export async function runAgent(args: {
     reply,
     proposals: ctx.createdProposals.map(toOut),
     sources: dedupeSources(turnSources),
+    timing,
+  }
+  } finally {
+    if (args.requestId) clearProgress(args.requestId)
   }
 }
 
