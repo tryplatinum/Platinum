@@ -61,6 +61,15 @@ const LEGACY_STORAGE_KEY = 'platinum-v0'
 
 export type Decision = 'approved' | 'dismissed'
 
+/** The message was queued, but recording the approval failed. `messageId` is what to offer Undo for. */
+export class ProposalNotDecided extends Error {
+  readonly messageId: ID
+  constructor(messageId: ID, cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Could not record the approval.', { cause })
+    this.messageId = messageId
+  }
+}
+
 export type NewStudent = Pick<Student, 'firstName' | 'lastName' | 'gradYear' | 'school' | 'city'> &
   Partial<Pick<Student, 'localName' | 'email' | 'phone' | 'preferredChannel'>>
 
@@ -193,8 +202,12 @@ interface Actions {
   undoSkipReminder: (skipId: ID) => Promise<void>
   /** Inline edit of a pending assistant proposal payload. */
   updateAgentProposal: (id: ID, payload: Record<string, unknown>) => void
-  /** Approve a pending assistant proposal (queues/sends via existing paths). */
-  approveAgentProposal: (id: ID) => Promise<void>
+  /**
+   * Approve a pending assistant proposal (queues/sends via existing paths).
+   * Resolves to the id of the message it queued, or undefined when it queued none.
+   * Rejects with ProposalNotDecided when a message was queued but the decision was not saved.
+   */
+  approveAgentProposal: (id: ID) => Promise<ID | undefined>
   discardAgentProposal: (id: ID) => Promise<void>
 
   // Things to remember
@@ -232,8 +245,9 @@ interface Actions {
   /**
    * Queues one message. The database records the approval and holds it for 60
    * seconds. `usedNote` is the thing to remember the message mentioned, if any.
+   * Returns the id of the queued message.
    */
-  sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => void
+  sendMessage: (message: OutgoingMessage, usedNote?: UsedNote) => ID
 }
 
 /** Stored files and folders: see store/files.ts. Their rows are changed through the server and taken in with `absorb`. */
@@ -270,13 +284,13 @@ function logActivity(data: AppData, studentId: ID, actor: Actor, text: string): 
 }
 
 /** Adds a queued message in memory. save() asks the database to record the approval. */
-function deliver(data: AppData, message: OutgoingMessage): AppData {
+function deliver(data: AppData, message: OutgoingMessage, id: ID = newId()): AppData {
   const approval = message.approval ?? approvalBy(data)
   const now = new Date()
   const row: OutboxMessage = {
     ...message,
     approval,
-    id: newId(),
+    id,
     sentAt: now.toISOString(),
     status: 'queued',
     sendAfter: new Date(now.getTime() + 60_000).toISOString(),
@@ -1129,9 +1143,10 @@ export const useStore = create<State & Actions>()((set, get) => {
       const { account, data } = get()
       if (account.status !== 'ready') throw new Error('Sign in first.')
       const proposal = data.agentProposals.find((p) => p.id === id && p.status === 'pending')
-      if (!proposal) return
+      if (!proposal) return undefined
       const payload = proposal.payload
       const student = data.students.find((s) => s.id === proposal.studentId)
+      let messageId: ID | undefined
 
       if (proposal.kind === 'message' || proposal.kind === 'parent_update') {
         const body = String(payload.body ?? '')
@@ -1148,7 +1163,7 @@ export const useStore = create<State & Actions>()((set, get) => {
           bodyEn: typeof payload.bodyEn === 'string' ? payload.bodyEn : undefined,
           trigger: 'approved',
         }
-        get().sendMessage(message)
+        messageId = get().sendMessage(message)
       } else if (proposal.kind === 'task') {
         get().addTask({
           studentId: proposal.studentId,
@@ -1175,7 +1190,11 @@ export const useStore = create<State & Actions>()((set, get) => {
         )
       }
 
-      await decideAgentProposal(id, 'approved')
+      try {
+        await decideAgentProposal(id, 'approved')
+      } catch (error) {
+        throw messageId ? new ProposalNotDecided(messageId, error) : error
+      }
       change((d) => {
         const next = {
           ...d,
@@ -1185,6 +1204,7 @@ export const useStore = create<State & Actions>()((set, get) => {
         }
         return logActivity(next, proposal.studentId, 'counselor', `Approved assistant draft (${proposal.kind})`)
       })
+      return messageId
     },
 
     discardAgentProposal: async (id) => {
@@ -1388,7 +1408,11 @@ export const useStore = create<State & Actions>()((set, get) => {
         return next
       }),
 
-    sendMessage: (message, usedNote) => change((data) => markNoteUsed(deliver(data, message), usedNote, 'reminder')),
+    sendMessage: (message, usedNote) => {
+      const id = newId()
+      change((data) => markNoteUsed(deliver(data, message, id), usedNote, 'reminder'))
+      return id
+    },
 
     ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
 
