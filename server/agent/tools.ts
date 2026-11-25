@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyAttention, needsAttention } from '../../shared/attention.js'
-import { channelsFor, sendableNames, transportCaps } from './channels.js'
+import { channelsFor, pickSendable, transportCaps } from './channels.js'
 import { prepareMeetingBrief } from './brief.js'
 import { essayBrainstorm } from './essay.js'
 import { insertProposal } from './proposals.js'
@@ -98,7 +98,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_message',
-    description: 'Draft a message for Approvals. Never sends. The loaded record already has the parents, which channels can send, and the overdue tasks. Put the full draft in this call. Do not look anything up first unless a fact is missing; if it is, gather every missing fact in one round, then call this. Language must match the parent record when writing to a parent. WeChat cannot send.',
+    description: 'Draft a message for Approvals. Never sends. Put the full message only in body. Do not write the message, a translation, or a summary in your reply. Channel is optional; omit it and the server picks a channel that can send. Call this once. If the record says no sendable channel, do not call this.',
     input_schema: {
       type: 'object',
       properties: {
@@ -124,13 +124,13 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
           },
         },
       },
-      required: ['recipient', 'channel', 'language', 'body', 'rationale'],
+      required: ['recipient', 'language', 'body', 'rationale'],
       additionalProperties: false,
     },
   },
   {
     name: 'propose_parent_update',
-    description: 'Draft a parent update for Approvals. Never sends. The loaded record already has the parent, language, and which channels can send. Put the full draft in this call. Do not look anything up first unless a fact is missing.',
+    description: 'Draft a parent update for Approvals. Never sends. Put the full message only in body. Do not write a translation. Channel is optional; omit it and the server picks a channel that can send.',
     input_schema: {
       type: 'object',
       properties: {
@@ -139,7 +139,6 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
         channel: { type: 'string', enum: ['email', 'wechat', 'line', 'text'] },
         language: { type: 'string', enum: ['en', 'zh-Hans', 'zh-Hant'] },
         body: { type: 'string' },
-        bodyEn: { type: 'string' },
         rationale: { type: 'string' },
         sources: {
           type: 'array',
@@ -150,7 +149,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
           },
         },
       },
-      required: ['parentId', 'channel', 'language', 'body', 'rationale'],
+      required: ['parentId', 'language', 'body', 'rationale'],
       additionalProperties: false,
     },
   },
@@ -236,7 +235,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'prepare_meeting_brief',
-    description: 'Prepare a pre-meeting brief for an upcoming meeting. Returns information only; not a proposal.',
+    description: 'Prepare a pre-meeting brief. Call this alone, with the meeting id from the record. The tool result is the reply. Not a proposal.',
     input_schema: {
       type: 'object',
       properties: { meetingId: { type: 'string' } },
@@ -246,7 +245,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'essay_brainstorm',
-    description: 'Brainstorm essay angles for the counselor. Never writes essay text. The tool adds the student record activities, interests and majors; do not say those are missing when they come back.',
+    description: 'Brainstorm essay angles. Call this alone. The tool result is the reply. Never writes essay text. The tool adds activities, interests and majors from the record.',
     input_schema: {
       type: 'object',
       properties: { prompt: { type: 'string' }, notes: { type: 'string' } },
@@ -551,7 +550,8 @@ async function listNeedingAttention(ctx: AgentContext): Promise<ToolResult> {
 }
 
 async function resolveStudentId(ctx: AgentContext, input: Record<string, unknown>): Promise<string | ToolResult> {
-  const id = scopeStudent(ctx, input.studentId as string | undefined)
+  // A student thread can only draft for that student. A wrong id must not burn another round.
+  const id = ctx.studentId ?? scopeStudent(ctx, input.studentId as string | undefined)
   const bad = assertStudent(ctx, id)
   if (bad) return bad
   if (!id) return { ok: false, error: 'studentId is required in the general thread.' }
@@ -572,11 +572,13 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
   let language = String(input.language)
   let toName: string
   let person: { email: string | null; phone: string | null; lineId: string | null }
+  let preferred: string | undefined
   if (recipient.kind === 'parent' && recipient.parentId) {
     const { data: parent } = await ctx.user.from('parents').select('*').eq('id', recipient.parentId).maybeSingle()
     if (!parent || parent.student_id !== studentId) return { ok: false, error: 'Parent not found for this student.' }
     language = parent.language
     toName = parent.name
+    preferred = parent.channel
     person = { email: parent.email, phone: parent.phone, lineId: parent.line_id }
   } else {
     const { data: student } = await ctx.user.from('students').select('email, phone').eq('id', studentId).maybeSingle()
@@ -584,9 +586,9 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
     toName = ctx.studentName ?? 'Student'
   }
 
-  const channel = String(input.channel ?? '')
-  const refused = await refuseUnsendable(ctx, person, channel)
-  if (refused) return refused
+  const picked = await resolveChannel(ctx, person, input.channel ? String(input.channel) : undefined, preferred)
+  if ('error' in picked) return { ok: false, error: picked.error }
+  const channel = picked.channel
 
   const { confirmation } = await insertProposal(ctx, {
     kind: 'message',
@@ -603,7 +605,16 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
       outboxKind: 'reminder_upcoming',
     },
   })
-  return { ok: true, data: { confirmation, language, channel, toName } }
+  return {
+    ok: true,
+    data: {
+      confirmation,
+      language,
+      channel,
+      toName,
+      reply: `Reply in one or two sentences: a ${language} ${channel} to ${toName}. End with "Review it in Approvals." Do not repeat the message or translate it.`,
+    },
+  }
 }
 
 async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unknown>): Promise<ToolResult> {
@@ -612,9 +623,14 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
   const parentId = String(input.parentId ?? '')
   const { data: parent } = await ctx.user.from('parents').select('*').eq('id', parentId).maybeSingle()
   if (!parent || parent.student_id !== studentId) return { ok: false, error: 'Parent not found for this student.' }
-  const channel = String(input.channel ?? parent.channel)
-  const refused = await refuseUnsendable(ctx, { email: parent.email, phone: parent.phone, lineId: parent.line_id }, channel)
-  if (refused) return refused
+  const picked = await resolveChannel(
+    ctx,
+    { email: parent.email, phone: parent.phone, lineId: parent.line_id },
+    input.channel ? String(input.channel) : undefined,
+    parent.channel,
+  )
+  if ('error' in picked) return { ok: false, error: picked.error }
+  const channel = picked.channel
   const { confirmation } = await insertProposal(ctx, {
     kind: 'parent_update',
     studentId,
@@ -626,10 +642,18 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
       channel,
       language: parent.language,
       body: signMessage(String(input.body ?? ''), ctx.counselorName, ctx.firmName),
-      bodyEn: input.bodyEn ? String(input.bodyEn) : undefined,
     },
   })
-  return { ok: true, data: { confirmation } }
+  return {
+    ok: true,
+    data: {
+      confirmation,
+      language: parent.language,
+      channel,
+      toName: parent.name,
+      reply: `Reply in one or two sentences: a ${parent.language} ${channel} to ${parent.name}. End with "Review it in Approvals." Do not repeat the message or translate it.`,
+    },
+  }
 }
 
 async function proposeTask(ctx: AgentContext, input: Record<string, unknown>): Promise<ToolResult> {
@@ -685,19 +709,14 @@ async function proposeTimes(ctx: AgentContext, input: Record<string, unknown>): 
   return { ok: true, data: { confirmation } }
 }
 
-async function refuseUnsendable(
+async function resolveChannel(
   ctx: AgentContext,
   person: { email: string | null; phone: string | null; lineId: string | null },
-  channel: string,
-): Promise<ToolResult | undefined> {
+  requested: string | undefined,
+  preferred: string | undefined,
+): Promise<{ channel: string } | { error: string }> {
   const states = channelsFor(person, await transportCaps(ctx.firmId, ctx.counselorId))
-  const state = states.find((item) => item.channel === channel)
-  if (state?.sendable) return undefined
-  const can = sendableNames(states)
-  return {
-    ok: false,
-    error: `${channel || 'That channel'} cannot send (${state?.why ?? 'unknown channel'}). Sendable channels: ${can.join(', ') || 'none'}. If none are sendable, tell the counselor and do not propose. Do not use WeChat.`,
-  }
+  return pickSendable(states, preferred, requested)
 }
 
 function stringList(value: unknown): string[] {

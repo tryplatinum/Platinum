@@ -39,9 +39,11 @@ const SERVER_ENV = [
   'GOOGLE_SYNC_BATCH',
   'AGENT_DAILY_LIMIT',
   'AGENT_MAX_ROUNDS',
+  'AGENT_FAST_MODEL',
+  'ALLOW_LOG_TRANSPORT',
 ]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent', 'phone']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent', 'phone', 'translate']
 
 function devApi(): Plugin {
   return {
