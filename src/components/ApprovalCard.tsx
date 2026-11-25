@@ -5,146 +5,222 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { previewStudentLink } from '../../shared/dispatch'
+import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../shared/dispatch'
 import { outboxStatusLabel } from '../../shared/outbox'
 import { deciding, rememberSend, useApprovalSends } from '../lib/approvalSends'
 import { APPROVAL_TYPE_LABEL, findStudent, fullName, type ApprovalItem } from '../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
-import { reminderQueue } from '../lib/reminders'
+import { WEEKLY_TEXT_MAX, reminderQueue } from '../lib/reminders'
 import { translateProposal } from '../services/agentClient'
 import { ProposalNotDecided, useData, useStore } from '../store/store'
-import type { DraftParentUpdate, DraftTask, ID, ProfileChange, ProfilePatch } from '../types'
-import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextTooLong } from './WeeklyTextSend'
-import { Button, Modal, Pill, cx, inputBase, textareaClass, useToast } from './ui'
+import type { DraftParentUpdate, DraftTask, ID, OwnerType, ProfileChange, ProfilePatch } from '../types'
+import { TimeLeft, useLeaving } from './motion'
+import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from './WeeklyTextSend'
+import { Button, Field, Modal, Pill, SendLabel, cx, inputBase, inputClass, textareaClass, useToast } from './ui'
 
 const reasonOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
+/** Tall enough to read the whole message while editing it. */
+const rowsFor = (text: string) => Math.min(14, Math.max(4, Math.ceil(text.length / 60) + text.split('\n').length - 1))
+
+const TwoSides = () => <p className="text-xs text-muted">The two sides are edited separately. If you change one, change the other to match before you approve.</p>
+
 /**
  * `children` takes the place of the plain preview, for a screen that shows more
- * of the draft. `compact` is the size for the assistant panel. `as` is the
- * element: a row in a list, or a block of its own.
+ * of the draft. `actions` follow the buttons and `note` is a line under them.
+ * `compact` is the size for the assistant panel and for a card inside a card.
  */
-export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, className, children }: { item: ApprovalItem; as?: 'li' | 'div'; compact?: boolean; showStudent?: boolean; className?: string; children?: ReactNode }) {
+export function ApprovalCard({
+  item,
+  compact,
+  showStudent,
+  hideKind,
+  className,
+  children,
+  actions,
+  note,
+}: {
+  item: ApprovalItem
+  compact?: boolean
+  showStudent?: boolean
+  /** The heading around the card already says what it is. */
+  hideKind?: boolean
+  className?: string
+  children?: ReactNode
+  actions?: ReactNode
+  note?: ReactNode
+}) {
   const data = useData()
   const toast = useToast()
+  const leaving = useLeaving()
   const [editing, setEditing] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const [skipping, setSkipping] = useState(false)
+  const [settled, setSettled] = useState<'approved' | 'discarded'>()
+  const [error, setError] = useState<string>()
   const student = findStudent(data, item.studentId)
   const busy = useApprovalSends((s) => Boolean(item.proposalId && s.deciding[item.proposalId]))
   const messageId = useApprovalSends((s) => (item.proposalId ? s.messageOf[item.proposalId] : undefined))
   // A draft whose message is already on its way is not offered for approval again.
   const sending = data.outbox.some((m) => m.id === messageId && m.status !== 'cancelled') ? messageId : undefined
   const weekly = item.kind === 'weekly_text' ? data.weeklyTexts.find((w) => w.id === item.weeklyTextId) : undefined
-  const profile = item.kind === 'profile' && item.meetingId && item.draftId
-    ? data.meetings.find((m) => m.id === item.meetingId)?.ai?.profileChanges.find((c) => c.id === item.draftId)
-    : undefined
+  const meeting = item.meetingId ? data.meetings.find((m) => m.id === item.meetingId) : undefined
+  const profile = item.kind === 'profile' ? meeting?.ai?.profileChanges.find((c) => c.id === item.draftId) : undefined
+  const recap = item.kind === 'recap' ? meeting?.recap : undefined
+  // Nothing to send or save: the database would refuse it.
+  const blank = !item.preview.trim() && (item.isSend || item.kind === 'remember' || item.kind === 'task')
+
+  const run = (work: () => void | Promise<void>, outcome: 'approved' | 'discarded', fallback: string) => {
+    setError(undefined)
+    setSettled(outcome)
+    return Promise.resolve()
+      .then(work)
+      .catch((e: unknown) => {
+        setSettled(undefined)
+        setError(reasonOf(e, fallback))
+        throw e
+      })
+  }
 
   const onApprove = () => {
-    void Promise.resolve(approveItem(item))
+    // Decided at once, in the same press: the card only shows it afterwards.
+    let work: void | Promise<void>
+    try {
+      work = approveItem(item)
+    } catch (e) {
+      setError(reasonOf(e, 'Could not approve.'))
+      return
+    }
+    void run(() => work, 'approved', 'Could not approve.')
       .then(() => toast(item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
-      .catch((error: unknown) => toast(reasonOf(error, 'Could not approve.')))
+      .catch(() => undefined)
   }
 
   const onDiscard = () => {
-    void Promise.resolve(discardItem(item))
-      .then(() => {
-        setDiscarding(false)
-        toast(weekly ? 'Skipped this week.' : 'Discarded.')
-      })
-      .catch((error: unknown) => toast(reasonOf(error, weekly ? 'Could not skip the text.' : 'Could not discard.')))
+    setDiscarding(false)
+    void run(() => discardItem(item), 'discarded', weekly ? 'Could not skip the text.' : 'Could not discard.')
+      .then(() => toast(weekly ? 'Skipped this week.' : 'Discarded.'))
+      .catch(() => undefined)
   }
 
   const onSkip = async (mode: 'once' | 'until_on') => {
     if (!item.reminderKey) return
     const draft = reminderQueue(data).find((r) => r.key === item.reminderKey)
     setSkipping(false)
+    setError(undefined)
     try {
       await useStore.getState().skipReminder(item.reminderKey, mode, item.studentId, draft?.taskTitle ?? 'task')
-    } catch (error) {
-      toast(reasonOf(error, 'Could not skip the reminder.'))
+    } catch (e) {
+      setError(reasonOf(e, 'Could not skip the reminder.'))
     }
   }
 
   return (
-    <Tag className={cx('flex flex-col gap-2', compact ? 'w-full' : 'px-5 py-4', Tag === 'li' && 'border-t border-line', className)}>
-      <div className={cx('flex gap-2', compact ? 'flex-col' : 'flex-wrap items-start justify-between')}>
-        <div className={cx('min-w-0', !compact && 'flex-1 basis-64')}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill>{APPROVAL_TYPE_LABEL[item.kind]}</Pill>
-            {showStudent && student && (
-              <Link to={`/app/students/${student.id}`} className="text-[13px] font-semibold text-accent hover:underline">
-                {fullName(student)}
-              </Link>
-            )}
-            {item.toName && (
-              <span className="text-[13px] text-muted">
-                To {item.toName}
-                {item.channel && ` · ${CHANNEL_LABEL[item.channel]}`}
-                {item.language && item.language !== 'en' && ` · ${LANGUAGE_LABEL[item.language]}`}
-              </span>
-            )}
-          </div>
-          {children ? (
-            <div className="mt-3">{children}</div>
-          ) : profile ? (
-            <div className="mt-1 text-sm leading-relaxed">
-              <p className="font-medium">{profile.label}</p>
-              <p className="mt-0.5">
-                <span className="text-muted line-through">{profile.from}</span> → <span className="font-semibold">{profile.to}</span>
-              </p>
-            </div>
-          ) : (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{previewStudentLink(item.preview)}</p>
+    <div className={cx('flex flex-col gap-3', compact ? 'w-full' : 'px-4 py-3 sm:px-5', className)} data-settled={leaving ? settled : undefined}>
+      <div className={cx('flex gap-x-6 gap-y-3', compact ? 'flex-col' : 'flex-wrap items-start justify-between')}>
+      <div className={cx('min-w-0', !compact && 'max-w-full flex-1 basis-80')}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {!hideKind && <Pill>{APPROVAL_TYPE_LABEL[item.kind]}</Pill>}
+          {showStudent && student && (
+            <Link to={`/app/students/${student.id}`} className="inline-flex min-h-6 items-center text-[13px] font-semibold text-accent hover:underline">
+              {fullName(student)}
+            </Link>
           )}
-          {/* The assistant's source line is its reason, which the panel shows once, below. */}
-          {!children && !(compact && item.rationale) && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
-          {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && (
-            <ShowInEnglish proposalId={item.proposalId} />
+          {item.toName && (
+            <span className="text-[13px] text-muted">
+              To {item.toName}
+              {item.channel && ` · ${CHANNEL_LABEL[item.channel]}`}
+              {item.language && item.language !== 'en' && ` · ${LANGUAGE_LABEL[item.language]}`}
+            </span>
           )}
-          {item.rationale && item.kind.startsWith('agent_') && (
-            <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>
-          )}
-          {item.sourcesLine && (
-            <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>
-          )}
-          {weekly && student && <WeeklyTextSendNote student={student} />}
-          {weekly && weeklyTextTooLong(weekly.body) && <p className="text-[13px] font-semibold text-bad">Too long for one text: shorten it.</p>}
         </div>
-        <span className="flex flex-wrap items-center gap-1.5">
-          {sending ? (
-            <SendState messageId={sending} />
-          ) : weekly ? (
-            student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
-          ) : (
-            <Button variant="primary" onClick={onApprove} disabled={busy}>
-              {item.isSend ? 'Approve and send' : 'Approve'}
-            </Button>
-          )}
-          {canEdit(item) && !sending && (
-            <Button onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
-              {editing ? 'Done' : 'Edit'}
-            </Button>
-          )}
-          {item.kind === 'reminder' && (
-            <Button onClick={() => setSkipping(true)}>Skip</Button>
-          )}
-          {canDiscard(item) && (
-            <Button variant="quiet" onClick={() => setDiscarding(true)} disabled={busy}>
-              {weekly ? 'Skip' : 'Discard'}
-            </Button>
-          )}
-        </span>
+        {children ? (
+          <div className="mt-3">{children}</div>
+        ) : profile ? (
+          <div className="mt-2 text-sm leading-relaxed">
+            <p className="font-medium">{profile.label}</p>
+            <p className="mt-0.5">
+              <span className="text-muted line-through">{profile.from}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{profile.to}</span>
+            </p>
+          </div>
+        ) : (
+          <>
+            <p lang={item.language} className="mt-2 max-w-prose whitespace-pre-wrap break-words text-sm leading-relaxed">
+              {previewStudentLink(item.preview)}
+            </p>
+            {/* What the student will see behind the message, so it can all be read before it is approved. */}
+            {recap && recap.nextSteps.length > 0 && (
+              <ol className="mt-1 max-w-prose list-decimal space-y-1 pl-5 text-sm leading-relaxed" aria-label="Next steps">
+                {recap.nextSteps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
+        {/* The assistant's source line is its reason, which the panel shows once, below. */}
+        {!children && !(compact && item.rationale) && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
+        {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && <ShowInEnglish proposalId={item.proposalId} />}
+        {item.rationale && item.kind.startsWith('agent_') && <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>}
+        {item.sourcesLine && <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>}
+        {weekly && student && !leaving && <WeeklyTextSendNote student={student} />}
+        {weekly && !leaving && weeklyTextTooLong(weekly.body) && <p className="text-[13px] font-semibold text-bad">Too long for one text: shorten it.</p>}
       </div>
-      {editing && !sending && student && <EditPanel item={item} onClose={() => setEditing(false)} />}
+
+      <div className="flex min-h-11 flex-wrap items-center gap-2">
+        {leaving ? (
+          <span className="motion-fade inline-flex min-h-11 items-center">
+            <Pill tone={settled === 'discarded' ? 'neutral' : 'good'}>{settled === 'discarded' ? 'Discarded' : weekly || settled === 'approved' ? 'Approved' : 'Done'}</Pill>
+          </span>
+        ) : sending ? (
+          <SendState messageId={sending} />
+        ) : weekly ? (
+          student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
+        ) : (
+          <Button variant="primary" onClick={onApprove} disabled={blank} busy={busy}>
+            {item.isSend ? <SendLabel>Approve and send</SendLabel> : 'Approve'}
+          </Button>
+        )}
+        {!leaving && (
+          <>
+            {canEdit(item) && !sending && (
+              <Button onClick={() => setEditing(!editing)} aria-expanded={editing} disabled={busy}>
+                {editing ? 'Done' : 'Edit'}
+              </Button>
+            )}
+            {item.kind === 'reminder' && <Button onClick={() => setSkipping(true)}>Skip</Button>}
+            {actions}
+            {canDiscard(item) && (
+              <Button variant="quiet" onClick={() => setDiscarding(true)} disabled={busy}>
+                {weekly ? 'Skip' : 'Discard'}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+      </div>
+      {editing && !sending && !leaving && student && (
+        <div className="motion-rise">
+          <EditPanel item={item} onClose={() => setEditing(false)} />
+        </div>
+      )}
+      {note && !leaving && <p className="text-xs text-muted">{note}</p>}
+      {error && !leaving && (
+        <p role="alert" className="text-[13px] text-bad">
+          {error}
+        </p>
+      )}
+
       {discarding && (
         <Modal title={weekly ? 'Skip this week’s text?' : 'Discard this draft?'} onClose={() => setDiscarding(false)}>
           <p className="text-sm text-ink-soft">{weekly ? 'It will not be sent this week. You can take it back under “Done this week” in Weekly texts.' : 'It leaves the Inbox and will not be sent or saved.'}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="primary" onClick={onDiscard}>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button data-autofocus onClick={() => setDiscarding(false)}>
+              Keep it
+            </Button>
+            <Button variant="danger" onClick={onDiscard}>
               {weekly ? 'Skip this week' : 'Discard'}
             </Button>
-            <Button onClick={() => setDiscarding(false)}>Keep it</Button>
           </div>
         </Modal>
       )}
@@ -162,7 +238,7 @@ export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, class
           </div>
         </Modal>
       )}
-    </Tag>
+    </div>
   )
 }
 
@@ -173,8 +249,8 @@ export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, class
 export function SendState({ messageId }: { messageId: ID }) {
   const message = useData().outbox.find((m) => m.id === messageId)
   const confirmed = useApprovalSends((s) => Boolean(s.confirmed[messageId]))
-  const toast = useToast()
   const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<string>()
   const [now, setNow] = useState(() => Date.now())
   const left = message?.status === 'queued' ? Math.ceil((Date.parse(message.sendAfter) - now) / 1000) : 0
   const counting = left > 0
@@ -187,24 +263,34 @@ export function SendState({ messageId }: { messageId: ID }) {
   if (!message) return <span className="text-[13px] font-semibold text-bad">Not queued. Nothing was sent.</span>
   if (!counting) return <span className="text-[13px] font-semibold text-ink">{message.status === 'queued' ? 'Approved. Sending now.' : outboxStatusLabel(message, now)}</span>
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="nums text-[13px] font-semibold text-ink">
-        Approved. Sending in {left} {left === 1 ? 'second' : 'seconds'}.
+    <span className="motion-fade flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="flex flex-col gap-1">
+        <span className="nums text-[13px] font-semibold text-ink">
+          Approved. Sending in {left} {left === 1 ? 'second' : 'seconds'}.
+        </span>
+        <TimeLeft from={message.approvedAt ?? message.sentAt} until={message.sendAfter} className="text-accent" />
       </span>
       <Button
         // The database has to have queued it before it can be cancelled.
-        disabled={busy || !confirmed}
+        disabled={!confirmed}
+        busy={busy}
         onClick={() => {
           setBusy(true)
+          setFailed(undefined)
           void useStore
             .getState()
             .cancelQueued(messageId)
-            .catch((error: unknown) => toast(reasonOf(error, 'Could not undo the message.')))
+            .catch((error: unknown) => setFailed(reasonOf(error, 'Could not undo the message.')))
             .finally(() => setBusy(false))
         }}
       >
         Undo
       </Button>
+      {failed && (
+        <span role="alert" className="basis-full text-[13px] text-bad">
+          {failed}
+        </span>
+      )}
     </span>
   )
 }
@@ -213,6 +299,7 @@ export function SendState({ messageId }: { messageId: ID }) {
 export function ApproveAll({ items, title = 'Approve all in this group?' }: { items: ApprovalItem[]; title?: string }) {
   const toast = useToast()
   const [confirming, setConfirming] = useState(false)
+  const [working, setWorking] = useState(false)
   // A weekly text is sent by hand, so it cannot be approved along with the rest.
   const approvable = items.filter((i) => i.kind !== 'weekly_text')
   const left = items.length - approvable.length
@@ -222,7 +309,9 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
 
   const approveAll = async () => {
     setConfirming(false)
+    setWorking(true)
     const results = await Promise.allSettled(approvable.map(async (item) => approveItem(item)))
+    setWorking(false)
     const failed = results.filter((r) => r.status === 'rejected')
     const sent = approvable.filter((item, i) => item.isSend && results[i]?.status === 'fulfilled').length
     toast(
@@ -240,7 +329,8 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
 
   return (
     <>
-      <Button variant="primary" onClick={() => setConfirming(true)}>
+      {/* Secondary: the filled button is the decision on one draft. */}
+      <Button onClick={() => setConfirming(true)} busy={working}>
         Approve all
       </Button>
       {confirming && (
@@ -250,11 +340,13 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
             {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send. Each message keeps its own 60-second Undo.` : '. No messages will be queued.'}
             {left > 0 && ` ${leftLine}`}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="primary" onClick={() => void approveAll()}>
-              {sends > 0 ? 'Approve and send' : 'Approve'} {approvable.length}
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button data-autofocus onClick={() => setConfirming(false)}>
+              Cancel
             </Button>
-            <Button onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => void approveAll()}>
+              {sends > 0 ? <SendLabel>Approve and send {approvable.length}</SendLabel> : `Approve ${approvable.length}`}
+            </Button>
           </div>
         </Modal>
       )}
@@ -264,29 +356,37 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
 
 function ShowInEnglish({ proposalId }: { proposalId: string }) {
   const data = useData()
-  const toast = useToast()
   const proposal = data.agentProposals.find((row) => row.id === proposalId)
   const stored = typeof proposal?.payload.bodyEn === 'string' ? proposal.payload.bodyEn.trim() : ''
   const [english, setEnglish] = useState(stored)
   const [busy, setBusy] = useState(false)
-  if (english) return <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{english}</p>
+  const [failed, setFailed] = useState<string>()
+  if (english) return <p className="motion-fade mt-2 max-w-prose whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{english}</p>
   return (
+    <>
     <Button
       className="mt-2 self-start"
-      disabled={busy}
+      busy={busy}
       onClick={() => {
         setBusy(true)
+        setFailed(undefined)
         void translateProposal(proposalId)
           .then((bodyEn) => {
             setEnglish(bodyEn)
             if (proposal) useStore.getState().updateAgentProposal(proposal.id, { ...proposal.payload, bodyEn })
           })
-          .catch((error: unknown) => toast(error instanceof Error ? error.message : 'Could not show the English.'))
+          .catch((error: unknown) => setFailed(reasonOf(error, 'Could not show the English.')))
           .finally(() => setBusy(false))
       }}
     >
       {busy ? 'Translating…' : 'Show in English'}
     </Button>
+      {failed && (
+        <p role="alert" className="mt-1 text-[13px] text-bad">
+          {failed}
+        </p>
+      )}
+    </>
   )
 }
 
@@ -299,110 +399,141 @@ function canDiscard(item: ApprovalItem): boolean {
   return item.kind !== 'reminder'
 }
 
+/** The box every edit form sits in. What is typed is kept as it is typed; Done only closes the box. */
+function EditBox({ onClose, children, row }: { onClose: () => void; children: ReactNode; row?: boolean }) {
+  return (
+    <div className={cx('flex gap-3 rounded-control bg-canvas p-3', row ? 'flex-wrap items-end' : 'flex-col')}>
+      {children}
+      <Button className="self-start" onClick={onClose}>
+        Done
+      </Button>
+    </div>
+  )
+}
+
 function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void }) {
   const data = useData()
   const store = useStore.getState()
+  const student = findStudent(data, item.studentId)
+  const meeting = item.meetingId ? data.meetings.find((m) => m.id === item.meetingId) : undefined
+  const local = item.language && item.language !== 'en' ? LANGUAGE_LABEL[item.language] : 'Their language'
 
-  if (item.kind === 'notes' && item.meetingId) {
-    const ai = data.meetings.find((m) => m.id === item.meetingId)?.ai
+  if (item.kind === 'notes' && meeting) {
+    const ai = meeting.ai
     if (!ai) return null
     const lines = (xs: string[]) => xs.join('\n')
     const parse = (raw: string) => raw.split('\n').map((s) => s.trim()).filter(Boolean)
+    const fields = [
+      ['Decided', 'decided', 3],
+      ['Progress', 'progress', 3],
+      ['Watch', 'watch', 3],
+      ['Full notes · private', 'notes', 4],
+    ] as const
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <label className="block text-[13px] font-semibold text-muted">
-          Decided
-          <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.decided)} onChange={(e) => store.updateMeetingNotes(item.meetingId!, { decided: parse(e.target.value) })} />
-        </label>
-        <label className="block text-[13px] font-semibold text-muted">
-          Progress
-          <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.progress)} onChange={(e) => store.updateMeetingNotes(item.meetingId!, { progress: parse(e.target.value) })} />
-        </label>
-        <label className="block text-[13px] font-semibold text-muted">
-          Watch
-          <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.watch)} onChange={(e) => store.updateMeetingNotes(item.meetingId!, { watch: parse(e.target.value) })} />
-        </label>
-        <label className="block text-[13px] font-semibold text-muted">
-          Full notes (private)
-          <textarea className={cx(textareaClass, 'mt-1')} rows={4} value={lines(ai.notes)} onChange={(e) => store.updateMeetingNotes(item.meetingId!, { notes: parse(e.target.value) })} />
-        </label>
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      <EditBox onClose={onClose}>
+        {fields.map(([label, key, rows]) => (
+          <Field key={key} label={label}>
+            <textarea className={textareaClass} rows={rows} value={lines(ai[key])} onChange={(e) => store.updateMeetingNotes(meeting.id, { [key]: parse(e.target.value) })} />
+          </Field>
+        ))}
+      </EditBox>
     )
   }
 
-  if (item.kind === 'profile' && item.meetingId && item.draftId) {
-    const change = data.meetings.find((m) => m.id === item.meetingId)?.ai?.profileChanges.find((c) => c.id === item.draftId)
+  if (item.kind === 'profile' && meeting) {
+    const change = meeting.ai?.profileChanges.find((c) => c.id === item.draftId)
     if (!change) return null
-    return <ProfileChangeEditor meetingId={item.meetingId} change={change} onClose={onClose} />
+    return <ProfileChangeEditor meetingId={meeting.id} change={change} onClose={onClose} />
   }
 
-  if (item.kind === 'task' && item.meetingId && item.draftId) {
-    const draft = data.meetings.find((m) => m.id === item.meetingId)?.ai?.draftTasks.find((t) => t.id === item.draftId)
+  if (item.kind === 'task' && meeting && item.draftId) {
+    const draft = meeting.ai?.draftTasks.find((t) => t.id === item.draftId)
     if (!draft) return null
-    const patch = (p: Partial<DraftTask>) => store.updateDraftTask(item.meetingId!, item.draftId!, p)
+    const patch = (p: Partial<DraftTask>) => store.updateDraftTask(meeting.id, draft.id, p)
     return (
-      <div className="flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
-        <input className={cx(inputBase, 'min-w-[14rem] flex-1')} value={draft.title} onChange={(e) => patch({ title: e.target.value })} aria-label="Task" />
-        <input className={inputBase} type="date" value={draft.dueDate} onChange={(e) => patch({ dueDate: e.target.value, dueDateBasis: 'stated' })} aria-label="Due date" />
-        <textarea className={cx(textareaClass, 'w-full')} rows={2} value={draft.detail ?? ''} onChange={(e) => patch({ detail: e.target.value })} aria-label="Detail" />
-        <Button onClick={onClose}>Done</Button>
-      </div>
+      <EditBox onClose={onClose} row>
+        <Field label="Task" className="min-w-[14rem] flex-1">
+          <input className={inputClass} value={draft.title} onChange={(e) => patch({ title: e.target.value })} />
+        </Field>
+        <Field label="Owner">
+          <select
+            className={inputBase}
+            value={draft.owner === 'parent' ? `parent:${draft.ownerParentId}` : draft.owner}
+            onChange={(e) => {
+              const v = e.target.value
+              patch(v.startsWith('parent:') ? { owner: 'parent', ownerParentId: v.slice(7) } : { owner: v as OwnerType, ownerParentId: undefined })
+            }}
+          >
+            <option value="student">{student?.firstName ?? 'Student'}</option>
+            {student?.parents.map((p) => (
+              <option key={p.id} value={`parent:${p.id}`}>
+                {p.name} ({p.relationship})
+              </option>
+            ))}
+            <option value="counselor">You</option>
+          </select>
+        </Field>
+        <Field label="Due date">
+          <input className={inputBase} type="date" value={draft.dueDate} onChange={(e) => e.target.value && patch({ dueDate: e.target.value, dueDateBasis: 'stated' })} />
+        </Field>
+        <Field label="Detail" className="w-full">
+          <textarea className={textareaClass} rows={2} value={draft.detail ?? ''} onChange={(e) => patch({ detail: e.target.value })} />
+        </Field>
+      </EditBox>
     )
   }
 
-  if (item.kind === 'parent_update' && item.meetingId && item.draftId) {
-    const draft = data.meetings.find((m) => m.id === item.meetingId)?.ai?.parentUpdates.find((u) => u.id === item.draftId)
+  if (item.kind === 'parent_update' && meeting && item.draftId) {
+    const draft = meeting.ai?.parentUpdates.find((u) => u.id === item.draftId)
     if (!draft) return null
-    const patch = (p: Partial<DraftParentUpdate>) => store.updateParentUpdate(item.meetingId!, item.draftId!, p)
+    const patch = (p: Partial<DraftParentUpdate>) => store.updateParentUpdate(meeting.id, draft.id, p)
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={4} value={draft.bodyEn} onChange={(e) => patch({ bodyEn: e.target.value })} aria-label="English body" />
+      <EditBox onClose={onClose}>
         {draft.bodyLocal !== undefined && (
-          <textarea className={textareaClass} rows={4} value={draft.bodyLocal} onChange={(e) => patch({ bodyLocal: e.target.value })} aria-label="Local body" />
+          <Field label={`${local}, as ${item.toName ?? 'the parent'} will receive it`}>
+            <textarea lang={item.language} className={textareaClass} rows={rowsFor(draft.bodyLocal)} value={draft.bodyLocal} onChange={(e) => patch({ bodyLocal: e.target.value })} />
+          </Field>
         )}
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        <Field label={draft.bodyLocal === undefined ? 'Message' : 'English, for your records'}>
+          <textarea className={textareaClass} rows={rowsFor(draft.bodyEn)} value={draft.bodyEn} onChange={(e) => patch({ bodyEn: e.target.value })} />
+        </Field>
+        {draft.bodyLocal !== undefined && <TwoSides />}
+      </EditBox>
     )
   }
 
-  if (item.kind === 'recap' && item.meetingId) {
-    const recap = data.meetings.find((m) => m.id === item.meetingId)?.recap
-    if (!recap) return null
+  if (item.kind === 'recap' && meeting?.recap) {
+    const recap = meeting.recap
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={4} value={recap.summary} onChange={(e) => store.updateRecap(item.meetingId!, { summary: e.target.value })} aria-label="Recap" />
-        <label className="block text-[13px] font-semibold text-muted">
-          Next steps, one per line
+      <EditBox onClose={onClose}>
+        <Field label="Recap">
+          <textarea className={textareaClass} rows={4} value={recap.summary} onChange={(e) => store.updateRecap(meeting.id, { summary: e.target.value })} />
+        </Field>
+        <Field label="Next steps, one per line">
           <textarea
-            className={cx(textareaClass, 'mt-1')}
+            className={textareaClass}
             rows={Math.max(3, recap.nextSteps.length + 1)}
             value={recap.nextSteps.join('\n')}
-            onChange={(e) => store.updateRecap(item.meetingId!, { nextSteps: e.target.value.split('\n') })}
-            onBlur={() => store.updateRecap(item.meetingId!, { nextSteps: recap.nextSteps.map((s) => s.trim()).filter(Boolean) })}
+            onChange={(e) => store.updateRecap(meeting.id, { nextSteps: e.target.value.split('\n') })}
+            onBlur={() => store.updateRecap(meeting.id, { nextSteps: recap.nextSteps.map((s) => s.trim()).filter(Boolean) })}
           />
-        </label>
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        </Field>
+      </EditBox>
     )
   }
 
-  if (item.kind === 'remember' && item.meetingId && item.draftId) {
-    const note = data.meetings.find((m) => m.id === item.meetingId)?.ai?.personalNotes?.find((n) => n.id === item.draftId)
+  if (item.kind === 'remember' && meeting && item.draftId) {
+    const note = meeting.ai?.personalNotes?.find((n) => n.id === item.draftId)
     if (!note) return null
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={2} value={note.text} onChange={(e) => store.updateDraftNote(item.meetingId!, item.draftId!, { text: e.target.value })} aria-label="Note" />
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      <EditBox onClose={onClose} row>
+        <Field label="Thing to remember" className="min-w-[14rem] flex-1">
+          <input className={inputClass} maxLength={300} value={note.text} onChange={(e) => store.updateDraftNote(meeting.id, note.id, { text: e.target.value })} />
+        </Field>
+        <Field label="Date of the event, if there is one">
+          <input type="date" className={inputBase} value={note.eventDate ?? ''} onChange={(e) => store.updateDraftNote(meeting.id, note.id, { eventDate: e.target.value || undefined, eventDateApprox: undefined })} />
+        </Field>
+      </EditBox>
     )
   }
 
@@ -410,16 +541,20 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     const report = data.reports.find((r) => r.id === item.reportId)
     if (!report) return null
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <input className={inputBase} value={report.subject} onChange={(e) => store.updateReport(report.id, { subject: e.target.value })} aria-label="Subject" />
-        <textarea className={textareaClass} rows={5} value={report.bodyEn} onChange={(e) => store.updateReport(report.id, { bodyEn: e.target.value })} aria-label="English body" />
+      <EditBox onClose={onClose}>
+        <Field label="Subject">
+          <input className={inputClass} value={report.subject} onChange={(e) => store.updateReport(report.id, { subject: e.target.value })} />
+        </Field>
         {report.bodyLocal !== undefined && (
-          <textarea className={textareaClass} rows={5} value={report.bodyLocal} onChange={(e) => store.updateReport(report.id, { bodyLocal: e.target.value })} aria-label="Local body" />
+          <Field label={`${local}, as ${item.toName ?? 'the parent'} will receive it`}>
+            <textarea lang={item.language} className={textareaClass} rows={rowsFor(report.bodyLocal)} value={report.bodyLocal} onChange={(e) => store.updateReport(report.id, { bodyLocal: e.target.value })} />
+          </Field>
         )}
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        <Field label={report.bodyLocal === undefined ? 'Message' : 'English, for your records'}>
+          <textarea className={textareaClass} rows={rowsFor(report.bodyEn)} value={report.bodyEn} onChange={(e) => store.updateReport(report.id, { bodyEn: e.target.value })} />
+        </Field>
+        {report.bodyLocal !== undefined && <TwoSides />}
+      </EditBox>
     )
   }
 
@@ -430,35 +565,34 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     const patchPoint = (i: number, fields: { observation?: string; question?: string }) =>
       store.updateEssayFeedback(doc.id, { points: feedback.points.map((p, j) => (j === i ? { ...p, ...fields } : p)) })
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <label className="block text-[13px] font-semibold text-muted">
-          Overall
-          <textarea className={cx(textareaClass, 'mt-1 font-normal')} rows={4} value={feedback.overall} onChange={(e) => store.updateEssayFeedback(doc.id, { overall: e.target.value })} />
-        </label>
-        <label className="block text-[13px] font-semibold text-muted">
-          What works, one per line
+      <EditBox onClose={onClose}>
+        <Field label="Overall">
+          <textarea className={textareaClass} rows={4} value={feedback.overall} onChange={(e) => store.updateEssayFeedback(doc.id, { overall: e.target.value })} />
+        </Field>
+        <Field label="What works, one per line">
           <textarea
-            className={cx(textareaClass, 'mt-1 font-normal')}
+            className={textareaClass}
             rows={Math.max(2, feedback.strengths.length + 1)}
             value={feedback.strengths.join('\n')}
             onChange={(e) => store.updateEssayFeedback(doc.id, { strengths: e.target.value.split('\n') })}
             onBlur={() => store.updateEssayFeedback(doc.id, { strengths: feedback.strengths.map((s) => s.trim()).filter(Boolean) })}
           />
-        </label>
+        </Field>
         {feedback.points.map((p, i) => (
           <fieldset key={i} className="flex flex-col gap-2">
             <legend className="mb-1 text-[13px] font-semibold text-muted">
               {p.area}
               {p.location && ` · ${p.location}`}
             </legend>
-            <textarea className={textareaClass} rows={2} aria-label={`Question ${i + 1}`} value={p.question} onChange={(e) => patchPoint(i, { question: e.target.value })} />
-            <textarea className={textareaClass} rows={2} aria-label={`Observation ${i + 1}`} value={p.observation} onChange={(e) => patchPoint(i, { observation: e.target.value })} />
+            <Field label={`Question ${i + 1}`}>
+              <textarea className={textareaClass} rows={2} value={p.question} onChange={(e) => patchPoint(i, { question: e.target.value })} />
+            </Field>
+            <Field label={`Observation ${i + 1}`}>
+              <textarea className={textareaClass} rows={2} value={p.observation} onChange={(e) => patchPoint(i, { observation: e.target.value })} />
+            </Field>
           </fieldset>
         ))}
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      </EditBox>
     )
   }
 
@@ -466,12 +600,16 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     const text = data.weeklyTexts.find((w) => w.id === item.weeklyTextId)
     if (!text) return null
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={4} value={text.body} onChange={(e) => store.updateWeeklyText(text.id, e.target.value)} aria-label="Weekly text" />
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      <EditBox onClose={onClose}>
+        <Field label={`Text to ${student?.firstName ?? 'the student'}`} hint={`${weeklyTextLength(text.body)} of ${WEEKLY_TEXT_MAX} characters.`}>
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={previewStudentLink(text.body)}
+            onChange={(e) => store.updateWeeklyText(text.id, e.target.value.split(STUDENT_LINK_PREVIEW).join(STUDENT_LINK_PLACEHOLDER))}
+          />
+        </Field>
+      </EditBox>
     )
   }
 
@@ -480,12 +618,16 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     const copy = text?.parentCopy
     if (!copy) return null
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={4} value={copy.body} onChange={(e) => store.updateWeeklyParentCopy(text.id, { body: e.target.value })} aria-label="Parent copy" />
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      <EditBox onClose={onClose}>
+        <Field label={copy.bodyEn === undefined ? 'Message' : `${local}, as ${item.toName ?? 'the parent'} will receive it`}>
+          <textarea lang={copy.language} className={textareaClass} rows={rowsFor(copy.body)} value={copy.body} onChange={(e) => store.updateWeeklyParentCopy(text.id, { body: e.target.value })} />
+        </Field>
+        {copy.bodyEn !== undefined && (
+          <Field label="English, for your records">
+            <textarea className={textareaClass} rows={rowsFor(copy.bodyEn)} value={copy.bodyEn} onChange={(e) => store.updateWeeklyParentCopy(text.id, { bodyEn: e.target.value })} />
+          </Field>
+        )}
+      </EditBox>
     )
   }
 
@@ -496,46 +638,39 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     const save = (next: Record<string, unknown>) => store.updateAgentProposal(proposal.id, next)
     if (item.kind === 'agent_message' || item.kind === 'agent_parent_update') {
       return (
-        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={String(payload.body ?? '')}
-            onChange={(e) => save({ ...payload, body: e.target.value })}
-            aria-label="Message body"
-          />
+        <EditBox onClose={onClose}>
+          <Field label={typeof payload.bodyEn === 'string' ? `${local}, as ${item.toName ?? 'they'} will receive it` : 'Message'}>
+            <textarea lang={item.language} className={textareaClass} rows={rowsFor(String(payload.body ?? ''))} value={String(payload.body ?? '')} onChange={(e) => save({ ...payload, body: e.target.value })} />
+          </Field>
           {typeof payload.bodyEn === 'string' && (
-            <textarea
-              className={textareaClass}
-              rows={4}
-              value={payload.bodyEn}
-              onChange={(e) => save({ ...payload, bodyEn: e.target.value })}
-              aria-label="English body"
-            />
+            <Field label="English, for your records">
+              <textarea className={textareaClass} rows={rowsFor(payload.bodyEn)} value={payload.bodyEn} onChange={(e) => save({ ...payload, bodyEn: e.target.value })} />
+            </Field>
           )}
-          <Button className="self-start" onClick={onClose}>
-            Done
-          </Button>
-        </div>
+        </EditBox>
       )
     }
     if (item.kind === 'agent_task') {
       return (
-        <div className="flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
-          <input className={cx(inputBase, 'min-w-[14rem] flex-1')} value={String(payload.title ?? '')} onChange={(e) => save({ ...payload, title: e.target.value })} aria-label="Task" />
-          <input className={inputBase} type="date" value={String(payload.dueDate ?? '')} onChange={(e) => save({ ...payload, dueDate: e.target.value })} aria-label="Due date" />
-          <textarea className={cx(textareaClass, 'w-full')} rows={2} value={String(payload.detail ?? '')} onChange={(e) => save({ ...payload, detail: e.target.value })} aria-label="Detail" />
-          <Button onClick={onClose}>Done</Button>
-        </div>
+        <EditBox onClose={onClose} row>
+          <Field label="Task" className="min-w-[14rem] flex-1">
+            <input className={inputClass} value={String(payload.title ?? '')} onChange={(e) => save({ ...payload, title: e.target.value })} />
+          </Field>
+          <Field label="Due date">
+            <input className={inputBase} type="date" value={String(payload.dueDate ?? '')} onChange={(e) => save({ ...payload, dueDate: e.target.value })} />
+          </Field>
+          <Field label="Detail" className="w-full">
+            <textarea className={textareaClass} rows={2} value={String(payload.detail ?? '')} onChange={(e) => save({ ...payload, detail: e.target.value })} />
+          </Field>
+        </EditBox>
       )
     }
     if (item.kind === 'agent_profile_change') {
       return (
-        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-          <label className="text-[13px] font-semibold text-muted">
-            Proposed value (was {String(payload.from ?? '')})
+        <EditBox onClose={onClose}>
+          <Field label={`Proposed value (was ${String(payload.from ?? '')})`}>
             <input
-              className={cx(inputBase, 'mt-1 w-full')}
+              className={inputClass}
               value={String(payload.to ?? '')}
               onChange={(e) => {
                 const to = e.target.value
@@ -553,43 +688,25 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
                 }
               }}
             />
-          </label>
-          <Button className="self-start" onClick={onClose}>
-            Done
-          </Button>
-        </div>
+          </Field>
+        </EditBox>
       )
     }
     if (item.kind === 'agent_meeting_times') {
       const slots = Array.isArray(payload.slots) ? (payload.slots as { when: string; reason: string }[]) : []
       return (
-        <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
+        <EditBox onClose={onClose}>
           {slots.map((slot, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <input
-                className={inputBase}
-                value={slot.when}
-                onChange={(e) => {
-                  const next = slots.map((s, j) => (j === i ? { ...s, when: e.target.value } : s))
-                  save({ ...payload, slots: next })
-                }}
-                aria-label={`Slot ${i + 1} when`}
-              />
-              <input
-                className={inputBase}
-                value={slot.reason}
-                onChange={(e) => {
-                  const next = slots.map((s, j) => (j === i ? { ...s, reason: e.target.value } : s))
-                  save({ ...payload, slots: next })
-                }}
-                aria-label={`Slot ${i + 1} reason`}
-              />
+            <div key={i} className="grid gap-2 sm:grid-cols-2">
+              <Field label={`Time ${i + 1}`}>
+                <input className={inputClass} value={slot.when} onChange={(e) => save({ ...payload, slots: slots.map((s, j) => (j === i ? { ...s, when: e.target.value } : s)) })} />
+              </Field>
+              <Field label="Why this time">
+                <input className={inputClass} value={slot.reason} onChange={(e) => save({ ...payload, slots: slots.map((s, j) => (j === i ? { ...s, reason: e.target.value } : s)) })} />
+              </Field>
             </div>
           ))}
-          <Button className="self-start" onClick={onClose}>
-            Done
-          </Button>
-        </div>
+        </EditBox>
       )
     }
   }
@@ -606,11 +723,10 @@ function ProfileChangeEditor({ meetingId, change, onClose }: { meetingId: string
 
   if (patch.kind === 'score') {
     return (
-      <div className="flex flex-wrap items-end gap-2 rounded-lg bg-canvas p-3">
-        <label className="text-[13px] font-semibold text-muted">
-          {change.label} (was {change.from})
+      <EditBox onClose={onClose} row>
+        <Field label={`${change.label} (was ${change.from})`}>
           <input
-            className={cx(inputBase, 'mt-1 block')}
+            className={inputBase}
             inputMode="decimal"
             value={change.to}
             onChange={(e) => {
@@ -618,89 +734,74 @@ function ProfileChangeEditor({ meetingId, change, onClose }: { meetingId: string
               if (!Number.isFinite(value)) return
               save({ to: e.target.value, patch: { kind: 'score', field: patch.field, value } })
             }}
-            aria-label="Proposed value"
           />
-        </label>
-        <Button onClick={onClose}>Done</Button>
-      </div>
+        </Field>
+      </EditBox>
     )
   }
 
   if (patch.kind === 'setMajors') {
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <label className="text-[13px] font-semibold text-muted">
-          Intended majors (was {change.from})
+      <EditBox onClose={onClose}>
+        <Field label={`Intended majors (was ${change.from})`}>
           <input
-            className={cx(inputBase, 'mt-1 w-full')}
+            className={inputClass}
             value={change.to}
             onChange={(e) => {
               const value = e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
               save({ to: e.target.value, patch: { kind: 'setMajors', value } })
             }}
           />
-        </label>
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        </Field>
+      </EditBox>
     )
   }
 
   if (patch.kind === 'addInterest') {
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <label className="text-[13px] font-semibold text-muted">
-          Interest to add
-          <input
-            className={cx(inputBase, 'mt-1 w-full')}
-            value={change.to}
-            onChange={(e) => save({ to: e.target.value, patch: { kind: 'addInterest', value: e.target.value.trim() } })}
-          />
-        </label>
-        <Button className="self-start" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+      <EditBox onClose={onClose}>
+        <Field label="Interest to add">
+          <input className={inputClass} value={change.to} onChange={(e) => save({ to: e.target.value, patch: { kind: 'addInterest', value: e.target.value.trim() } })} />
+        </Field>
+      </EditBox>
     )
   }
 
   // addActivity
   const activity = patch.activity
   return (
-    <div className="flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
-      <input
-        className={cx(inputBase, 'min-w-[10rem] flex-1')}
-        placeholder="Activity"
-        aria-label="Activity"
-        value={activity.name}
-        onChange={(e) => {
-          const next = { ...activity, name: e.target.value }
-          save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
-        }}
-      />
-      <input
-        className={cx(inputBase, 'min-w-[8rem] flex-1')}
-        placeholder="Role"
-        aria-label="Role"
-        value={activity.role}
-        onChange={(e) => {
-          const next = { ...activity, role: e.target.value }
-          save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
-        }}
-      />
-      <input
-        className={cx(inputBase, 'min-w-[10rem] flex-[2]')}
-        placeholder="Detail (optional)"
-        aria-label="Detail"
-        value={activity.detail ?? ''}
-        onChange={(e) => {
-          const next = { ...activity, detail: e.target.value || undefined }
-          save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
-        }}
-      />
-      <Button onClick={onClose}>Done</Button>
-    </div>
+    <EditBox onClose={onClose} row>
+      <Field label="Activity" className="min-w-[10rem] flex-1">
+        <input
+          className={inputClass}
+          value={activity.name}
+          onChange={(e) => {
+            const next = { ...activity, name: e.target.value }
+            save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
+          }}
+        />
+      </Field>
+      <Field label="Role" className="min-w-[8rem] flex-1">
+        <input
+          className={inputClass}
+          value={activity.role}
+          onChange={(e) => {
+            const next = { ...activity, role: e.target.value }
+            save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
+          }}
+        />
+      </Field>
+      <Field label="Detail (optional)" className="min-w-[10rem] flex-[2]">
+        <input
+          className={inputClass}
+          value={activity.detail ?? ''}
+          onChange={(e) => {
+            const next = { ...activity, detail: e.target.value || undefined }
+            save({ to: `${next.name}${next.role ? ` · ${next.role}` : ''}`, patch: { kind: 'addActivity', activity: next } })
+          }}
+        />
+      </Field>
+    </EditBox>
   )
 }
 

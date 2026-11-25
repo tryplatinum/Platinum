@@ -3,6 +3,9 @@
 // data.agentProposals, so a person can decide it in either place.
 // Open or closed is remembered in this browser. Each student's thread, and the
 // general thread, stay in memory for the session.
+// On a laptop it is a panel beside the page. On anything narrower it lies over
+// the page and is a dialog: the page behind it is out of reach, Escape closes
+// it, and focus goes back to the Assistant button.
 
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -14,7 +17,8 @@ import agentClient, { AgentNetworkError, AgentRequestError } from '../../service
 import { useData, useStore } from '../../store/store'
 import { ApprovalCard, ApproveAll, SendState } from '../ApprovalCard'
 import { Spark } from '../Logo'
-import { Button, Card, Empty, Pill, Thinking, cx, textareaClass } from '../ui'
+import { useIsLaptop } from '../motion'
+import { Button, Card, Empty, Pill, Skeleton, Thinking, cx, textareaClass } from '../ui'
 
 const OPEN_KEY = 'platinum.agentPanel'
 
@@ -199,6 +203,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const [progress, setProgress] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const wasOpen = useRef(false)
 
   // Reload history when the panel opens or the student changes, so a proposal
@@ -304,10 +309,33 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
     // By length: approving a card rewrites its message and must not move the page.
   }, [open, threadKey, thread.messages.length, thread.pending])
 
+  // Opening puts the cursor in the box. Closing gives focus back to the button, unless it has already moved on.
+  const laptop = useIsLaptop()
+  const covers = open && !laptop
   useEffect(() => {
     if (open && !wasOpen.current) inputRef.current?.focus()
+    if (!open && wasOpen.current) {
+      const active = document.activeElement
+      if (!active || active === document.body || panelRef.current?.contains(active)) document.getElementById('assistant-button')?.focus()
+    }
     wasOpen.current = open
   }, [open])
+
+  useEffect(() => {
+    if (!covers) return
+    const onKey = (event: KeyboardEvent) => {
+      // Escape in a window opened from here closes that window only.
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const { overflow } = document.body.style
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = overflow
+    }
+  }, [covers, onClose])
 
   const patch = (key: string, update: (current: ThreadUi) => ThreadUi) => {
     setThreads((prev) => {
@@ -388,14 +416,20 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const thinking = elapsed >= 3 ? `${base.replace(/…$/, '')}… ${elapsed}s` : base
 
   return (
+    <>
+    {covers && <div aria-hidden className="motion-page fixed inset-0 z-30 hidden bg-[var(--backdrop)] sm:block lg:hidden" onClick={onClose} />}
     <aside
       id="agent-panel"
+      ref={panelRef}
+      role={covers ? 'dialog' : undefined}
+      aria-modal={covers || undefined}
       aria-labelledby="agent-panel-title"
+      data-open={open}
       className={cx(
-        'z-30 h-dvh min-h-0 w-full flex-col border-l border-line bg-surface',
+        'motion-panel z-40 h-dvh min-h-0 w-full flex-col border-l border-line bg-surface',
         open ? 'flex' : 'hidden',
         'fixed inset-y-0 right-0 shadow-float sm:w-96',
-        'lg:sticky lg:bottom-auto lg:right-auto lg:top-0 lg:shrink-0 lg:shadow-none',
+        'lg:sticky lg:bottom-auto lg:right-auto lg:top-0 lg:z-10 lg:shrink-0 lg:shadow-none',
       )}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2">
@@ -415,7 +449,13 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
         </button>
       </header>
 
-      <div ref={logRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4">
+      <div ref={logRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-4" role="log" aria-label="Conversation" tabIndex={0}>
+        {!thread.hydrated && !thread.pending && (
+          <div className="flex flex-col gap-3" role="status" aria-label="Opening this conversation">
+            <Skeleton className="ml-auto h-9 w-2/3" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        )}
         {showSuggestions && (
           <Empty title={student ? 'Ask about this student.' : 'Ask about the caseload.'}>
             <div className="flex w-full flex-col gap-2">
@@ -425,7 +465,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
                   type="button"
                   disabled={thread.pending}
                   onClick={() => submit(prompt)}
-                  className="min-h-11 rounded-control border border-line-strong bg-surface px-3 text-left text-sm font-medium text-heading hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-left text-sm font-medium text-heading hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {prompt}
                 </button>
@@ -471,20 +511,23 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
       </form>
     </aside>
+    </>
   )
 }
 
 function BubbleView({ message, studentId, pending, onRetry }: { message: Bubble; /** The thread's student. Null on the general thread, where each card names its student. */ studentId: string | null; pending: boolean; onRetry: (text: string) => void }) {
+  // A bubble made here has just arrived; one from the stored thread was already there.
+  const fresh = message.id.startsWith('agent-')
   if (message.role === 'user') {
     return (
-      <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm leading-relaxed text-on-primary">
+      <div className={cx('ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm leading-relaxed text-on-primary', fresh && 'motion-rise')}>
         {message.text}
       </div>
     )
   }
   if (message.role === 'notice') return <Notice message={message} pending={pending} onRetry={onRetry} />
   return (
-    <div className="flex w-full flex-col items-start gap-2">
+    <div className={cx('flex w-full flex-col items-start gap-2', fresh && 'motion-rise')}>
       <div className="w-full whitespace-pre-wrap break-words rounded-card border border-line bg-canvas px-3 py-2 text-sm leading-relaxed">{message.text}</div>
       {message.sources.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -539,12 +582,12 @@ function ProposalCard({ proposal, showStudent }: { proposal: CardProposal; showS
   if (row && status === 'pending') {
     return (
       <Card className="w-full p-3">
-        <ApprovalCard item={proposalApproval(row)} as="div" compact showStudent={showStudent} />
+        <ApprovalCard item={proposalApproval(row)} compact showStudent={showStudent} />
       </Card>
     )
   }
   return (
-    <Card className="w-full p-3">
+    <Card className="motion-fade w-full p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-semibold text-muted">{KIND_LABEL[proposal.kind]}</p>
         <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>

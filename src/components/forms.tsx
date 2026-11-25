@@ -312,11 +312,17 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
   const [student, setStudent] = useState(studentId ?? students[0]?.id ?? '')
   const scheduled = (() => {
     const b = meetingBuckets(data, student)
-    return [b.upcoming, ...b.later].filter((m): m is Meeting => Boolean(m))
+    const named = data.meetings.find((m) => m.id === meetingId && m.studentId === student)
+    const open = [b.upcoming, ...b.later].filter((m): m is Meeting => Boolean(m))
+    return named && !open.includes(named) ? [named, ...open] : open
   })()
   const [which, setWhich] = useState(meetingId ?? scheduled[0]?.id ?? NEW_MEETING)
   const [title, setTitle] = useState('')
-  const [heldOn, setHeldOn] = useState(todayISO())
+  // A meeting whose day has passed was held on that day.
+  const [heldOn, setHeldOn] = useState(() => {
+    const named = data.meetings.find((m) => m.id === meetingId)
+    return named && named.date < todayISO() ? named.date : todayISO()
+  })
   const [notes, setNotes] = useState('')
   const [mode, setMode] = useState<DraftMode>('full')
   const { busy, error, run } = useAi()

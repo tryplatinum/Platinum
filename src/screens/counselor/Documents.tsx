@@ -10,6 +10,7 @@ import { FileRow } from '../../components/files/FileRow'
 import { FilingRow } from '../../components/files/FilingRow'
 import { UploadWindow, useFileDrop } from '../../components/files/UploadWindow'
 import { DrivePicker } from '../../components/google/DrivePicker'
+import { MotionList } from '../../components/motion'
 import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase } from '../../components/ui'
 import { activeStudents, fullName } from '../../lib/derive'
 import { filesToCheck, folderOf, foldersInOrder, isSorting, newFiles, waitingFiles } from '../../lib/files'
@@ -107,13 +108,11 @@ export default function Documents() {
         {waiting.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">{filtered ? 'Nothing waiting matches these filters.' : 'Nothing is waiting. Uploads you have not filed yet appear here.'}</p>
         ) : (
-          <ul>
+          <MotionList itemClassName="border-t border-line px-5 py-4">
             {waiting.map((d) => (
-              <li key={d.id} className="border-t border-line px-5 py-4">
-                <FilingRow doc={d} />
-              </li>
+              <FilingRow key={d.id} doc={d} />
             ))}
-          </ul>
+          </MotionList>
         )}
       </Card>
 
@@ -122,11 +121,11 @@ export default function Documents() {
         {toCheck.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing to check.</p>
         ) : (
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {toCheck.map((d) => (
               <FileRow key={d.id} doc={d} showStudent />
             ))}
-          </ul>
+          </MotionList>
         )}
       </Card>
 
@@ -135,11 +134,11 @@ export default function Documents() {
         {fresh.length === 0 ? (
           <Empty title={filtered ? 'Nothing new matches these filters.' : 'Nothing new. Files your students add from their links, and files you upload, show here until someone opens them.'} />
         ) : (
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {fresh.map((d) => (
               <FileRow key={d.id} doc={d} showStudent />
             ))}
-          </ul>
+          </MotionList>
         )}
       </Card>
     </div>

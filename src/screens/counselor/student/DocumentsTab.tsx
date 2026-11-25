@@ -11,6 +11,7 @@ import { FileRow } from '../../../components/files/FileRow'
 import { UploadWindow, useFileDrop } from '../../../components/files/UploadWindow'
 import { DriveFolders, goneFromDrive, useLinkedFolders } from '../../../components/google/DriveFolders'
 import { DrivePicker } from '../../../components/google/DrivePicker'
+import { MotionList } from '../../../components/motion'
 import { ReminderComposer } from '../../../components/ReminderComposer'
 import { Button, Card, CardHeader, Empty, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
@@ -165,22 +166,22 @@ export default function DocumentsTab({ student }: { student: Student }) {
       {toCheck.length > 0 && (
         <Card>
           <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed by the AI when it was not sure, or put under a catch-all folder. Move each one, or say it is in the right place." />
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {toCheck.map((d) => (
               <FileRow key={d.id} doc={d} showFolder goneFromDrive={isGone(d)} />
             ))}
-          </ul>
+          </MotionList>
         </Card>
       )}
 
       {sorting.length > 0 && (
         <Card>
           <CardHeader className="px-5 py-4" title={`Just added by ${student.firstName}`} count={sorting.length} />
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {sorting.map((d) => (
               <FileRow key={d.id} doc={d} />
             ))}
-          </ul>
+          </MotionList>
         </Card>
       )}
 
@@ -201,11 +202,11 @@ export default function DocumentsTab({ student }: { student: Student }) {
               count={g.docs.length}
               sub={[g.folder.archivedAt && 'Archived folder: it takes no new files.', g.folder.sensitivity !== 'standard' && 'Only the firm’s owner can open files in this folder.'].filter(Boolean).join(' ') || undefined}
             />
-            <ul>
+            <MotionList itemClassName="border-t border-line">
               {g.docs.map((d) => (
                 <FileRow key={d.id} doc={d} goneFromDrive={isGone(d)} />
               ))}
-            </ul>
+            </MotionList>
           </Card>
         ))
       )}

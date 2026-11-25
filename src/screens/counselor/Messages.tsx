@@ -12,6 +12,7 @@ import { outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
 import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
+import { MotionList } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
 import { formatTimestamp } from '../../lib/dates'
@@ -369,7 +370,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
         {waiting.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is waiting for your approval.</p>
         ) : (
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {reminderApprovals(data, waiting).map((item) => {
               const m = waiting.find((r) => r.key === item.reminderKey)?.message
               return (
@@ -386,7 +387,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
                 </ApprovalCard>
               )
             })}
-          </ul>
+          </MotionList>
         )}
       </Card>
       <Card>

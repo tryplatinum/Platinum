@@ -13,7 +13,7 @@ import { useStore } from '../../store/store'
 const MIN_PASSWORD = 8
 
 /** The page the person asked for before being sent here. */
-const useFrom = () => (useLocation().state as { from?: string } | null)?.from ?? '/app'
+const useFrom = () => (useLocation().state as { from?: string } | null)?.from ?? '/app/today'
 
 function Panel({ title, sub, children, onSubmit }: { title: string; sub?: ReactNode; children: ReactNode; onSubmit: (e: FormEvent) => void }) {
   return (
@@ -188,7 +188,7 @@ export function ResetPassword() {
   const [done, setDone] = useState(false)
   const { busy, error, run } = useSubmit()
 
-  if (done) return <Navigate to="/app" replace />
+  if (done) return <Navigate to="/app/today" replace />
   if (account.status === 'loading') return <Splash>{null}</Splash>
   if (account.status === 'signed_out') {
     return (

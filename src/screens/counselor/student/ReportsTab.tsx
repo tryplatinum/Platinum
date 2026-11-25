@@ -165,7 +165,7 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
         <AiTag source={report.source} />
       </div>
       <PlaceholderNote source={report.source} />
-      <ApprovalCard item={reportApproval(data, report)} as="div" compact>
+      <ApprovalCard item={reportApproval(data, report)} compact>
         <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent.name} />
         {report.facts && report.facts.length > 0 && (
           <details className="mt-4 rounded-lg border border-line">

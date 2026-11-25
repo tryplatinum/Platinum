@@ -137,11 +137,17 @@ export function MotionList({
   stagger?: boolean
   label?: string
 }) {
-  const current = Children.toArray(children).filter((c): c is ReactElement => isValidElement(c))
+  // Not Children.toArray: it copies each element, and rows are told apart by identity below.
+  const current: ReactElement[] = []
+  Children.forEach(children, (c) => {
+    if (isValidElement(c)) current.push(c)
+  })
   const [rows, setRows] = useState<Row[]>(() => current.map((el) => ({ key: String(el.key), el, state: 'first' })))
   const merged = mergeRows(rows, current)
   if (!sameRows(rows, merged)) setRows(merged)
 
+  // A list inside a row that is leaving is leaving too.
+  const outer = useLeaving()
   const list = useRef<HTMLElement>(null)
   const focused = useRef<string>(undefined)
   const leaving = merged
@@ -183,7 +189,7 @@ export function MotionList({
         }}
       >
         <div className="motion-row-body">
-          <LeavingContext.Provider value={gone}>{row.el}</LeavingContext.Provider>
+          <LeavingContext.Provider value={gone || outer}>{row.el}</LeavingContext.Provider>
         </div>
       </Item>
     )

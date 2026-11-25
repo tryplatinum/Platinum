@@ -348,7 +348,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
             <PlaceholderNote source={feedback.source} />
             {stale && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">This feedback was written about draft {feedback.draftN}. The current draft is {draft.n}.</p>}
             {pending ? (
-              <ApprovalCard item={essayApproval(data, doc)} as="div" compact>
+              <ApprovalCard item={essayApproval(data, doc)} compact>
                 <Feedback feedback={feedback} student={student} />
               </ApprovalCard>
             ) : (

@@ -188,6 +188,11 @@ body,
   height: 100%;
 }
 
+/* Clear of the bar at the top on a phone, and of the Inbox's filters, when something is focused or linked to. */
+html {
+  scroll-padding-top: 80px;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
