@@ -35,11 +35,7 @@ const fallbackOn = (model: string) => process.env.AI_REFUSAL_FALLBACK !== 'off' 
 
 let client: Anthropic | undefined
 
-export async function runFeature<F extends Feature>(
-  feature: F,
-  input: FeatureInput<F>,
-  limits?: { maxTokens?: number },
-): Promise<{ draft: FeatureOutput<F>; model: string }> {
+export async function runFeature<F extends Feature>(feature: F, input: FeatureInput<F>): Promise<{ draft: FeatureOutput<F>; model: string }> {
   client ??= new Anthropic()
   const prompt = PROMPTS[feature]
   const model = modelName()
@@ -47,7 +43,7 @@ export async function runFeature<F extends Feature>(
   // Thinking is left at the model's default (adaptive). Effort is set explicitly per feature.
   const request = {
     model,
-    max_tokens: limits?.maxTokens ?? MAX_TOKENS,
+    max_tokens: MAX_TOKENS,
     system: prompt.system,
     messages: [{ role: 'user' as const, content: prompt.user(input) }],
     output_config: { effort: prompt.effort, format: zodOutputFormat(OUTPUTS[feature]) },

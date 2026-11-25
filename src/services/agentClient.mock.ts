@@ -141,10 +141,6 @@ function remember(thread: StoredThread, message: string, response?: AgentRespons
 }
 
 export const mockAgentClient: AgentClient = {
-  async progress() {
-    return null
-  },
-
   async loadThread(studentId) {
     const thread = threads.get(keyOf(studentId))
     if (!thread) return { ok: true, threadId: null, messages: [] }
