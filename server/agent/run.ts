@@ -10,6 +10,7 @@ import type { Json } from '../../src/lib/database.types.js'
 import { clearProgress, setProgress, stepFor } from './progress.js'
 import { dedupeSources, sourcesFromTool } from './sources.js'
 import { buildStudentHeader } from './summary.js'
+import { formatAnswer } from './format.js'
 import { joinAssistantText } from './text.js'
 import { AGENT_TOOLS, runTool } from './tools.js'
 import type { AgentContext, CreatedProposal, Db } from './types.js'
@@ -225,7 +226,9 @@ export async function runAgent(args: {
     try {
       response = await client.messages.create({
         model,
-        max_tokens: 4_000,
+        // After a proposal, the reply is one or two sentences. A long cap is what
+        // made the model restate the message and translate it.
+        max_tokens: ctx.createdProposals.length > 0 ? 200 : 4_000,
         system,
         tools: AGENT_TOOLS,
         messages,
@@ -275,7 +278,7 @@ export async function runAgent(args: {
     const toolResults: Anthropic.ToolResultBlockParam[] = []
     for (const { use, result, ms } of settled) {
       timing.tools.push({ name: use.name, ms })
-      console.debug(`[agent] tool name=${use.name} ms=${ms}`)
+      console.debug(`[agent] tool name=${use.name} ms=${ms}${result.ok ? '' : ` error=${result.error}`}`)
       if (result.ok) turnSources.push(...sourcesFromTool(use.name, result.data))
       const body = result.ok ? result.data : { error: result.error }
       toolResults.push({
@@ -293,6 +296,22 @@ export async function runAgent(args: {
       content: toolResults,
     })
     messages.push({ role: 'user', content: toolResults })
+
+    // A brief or a brainstorm is the reply. Skip the model call that would restate it.
+    if (settled.length === 1 && settled[0].result.ok) {
+      const formatted = formatAnswer(settled[0].use.name, settled[0].result.data)
+      if (formatted) {
+        reply = formatted
+        await saveMessage(args.service, {
+          threadId,
+          firmId: args.firmId,
+          role: 'assistant',
+          content: [{ type: 'text', text: formatted }],
+        })
+        messages.push({ role: 'assistant', content: formatted })
+        break
+      }
+    }
   }
 
   if (hitRoundCap) {

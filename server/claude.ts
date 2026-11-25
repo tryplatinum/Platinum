@@ -11,6 +11,12 @@ export const DEFAULT_MODEL = 'claude-sonnet-5-5'
 /** Set ANTHROPIC_MODEL to change the model for a deployment without a code change. */
 export const modelName = () => process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL
 
+/**
+ * Optional faster model for the brief and the brainstorm only. Empty means those
+ * calls stay on the main model. Parent-facing messages never use this.
+ */
+export const fastModelName = () => process.env.AGENT_FAST_MODEL?.trim() || ''
+
 /** Room for the longest draft (a meeting with two bilingual parent updates) plus the model's thinking. */
 const MAX_TOKENS = 16_000
 
@@ -38,11 +44,11 @@ let client: Anthropic | undefined
 export async function runFeature<F extends Feature>(
   feature: F,
   input: FeatureInput<F>,
-  limits?: { maxTokens?: number },
+  limits?: { maxTokens?: number; model?: string },
 ): Promise<{ draft: FeatureOutput<F>; model: string }> {
   client ??= new Anthropic()
   const prompt = PROMPTS[feature]
-  const model = modelName()
+  const model = limits?.model?.trim() || modelName()
 
   // Thinking is left at the model's default (adaptive). Effort is set explicitly per feature.
   const request = {
