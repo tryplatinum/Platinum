@@ -10,10 +10,11 @@ import { Button, Card, CardHeader, Empty, Pill, Tabs, PageHeader, cx, inputBase,
 import { STUDENT_LINK_PLACEHOLDER, previewStudentLink } from '../../../shared/dispatch'
 import { outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
+import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
 import { callPhone, phoneReason } from '../../services/phone'
 import { formatTimestamp } from '../../lib/dates'
-import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
+import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
@@ -331,13 +332,14 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
 // ── Scheduled reminders ───────────────────────────────────────────────────────────────────
 
 function Queue({ queue }: { queue: ReminderDraft[] }) {
+  const data = useData()
   const sendMessage = useStore((s) => s.sendMessage)
   const toast = useToast()
   const waiting = queue.filter((r) => r.mode === 'needs_approval')
   const automatic = queue.filter((r) => r.mode === 'automatic')
-  const send = (items: ReminderDraft[], trigger: 'approved' | 'automatic') => {
-    items.forEach((r) => sendMessage({ ...r.message, trigger }))
-    toast(trigger === 'approved' ? 'Approved. Sending in 60 seconds.' : `${items.length} ${items.length === 1 ? 'reminder is' : 'reminders are'} queued.`)
+  const runDailySend = () => {
+    automatic.forEach((r) => sendMessage({ ...r.message, trigger: 'automatic' }))
+    toast(`${automatic.length} ${automatic.length === 1 ? 'reminder is' : 'reminders are'} queued.`)
   }
 
   if (queue.length === 0) {
@@ -360,9 +362,22 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is waiting for your approval.</p>
         ) : (
           <ul>
-            {waiting.map((r) => (
-              <QueueRow key={r.key} reminder={r} action={<Button variant="primary" onClick={() => send([r], 'approved')}>Approve and send</Button>} />
-            ))}
+            {reminderApprovals(data, waiting).map((item) => {
+              const m = waiting.find((r) => r.key === item.reminderKey)?.message
+              return (
+                <ApprovalCard key={item.key} item={item} showStudent>
+                  {m && (
+                    <div className="flex flex-col gap-2">
+                      <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
+                      <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+                        <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'warn'}>{KIND_LABEL[m.kind]}</Pill>
+                        {item.sourceLine}
+                      </p>
+                    </div>
+                  )}
+                </ApprovalCard>
+              )
+            })}
           </ul>
         )}
       </Card>
@@ -373,7 +388,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
           title="Automatic"
           count={automatic.length}
           sub="Rules set to “Automatic”. v0 has no scheduler, so the daily send is a button."
-          action={automatic.length > 0 && <Button onClick={() => send(automatic, 'automatic')}>Run the daily send now</Button>}
+          action={automatic.length > 0 && <Button onClick={runDailySend}>Run the daily send now</Button>}
         />
         {automatic.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is scheduled.</p>

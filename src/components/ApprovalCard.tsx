@@ -425,10 +425,36 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
 
   if (item.kind === 'essay' && item.docId) {
     const doc = data.documents.find((d) => d.id === item.docId)
-    if (!doc?.feedback) return null
+    const feedback = doc?.feedback
+    if (!feedback) return null
+    const patchPoint = (i: number, fields: { observation?: string; question?: string }) =>
+      store.updateEssayFeedback(doc.id, { points: feedback.points.map((p, j) => (j === i ? { ...p, ...fields } : p)) })
     return (
       <div className="flex flex-col gap-2 rounded-lg bg-canvas p-3">
-        <textarea className={textareaClass} rows={4} value={doc.feedback.overall} onChange={(e) => store.updateEssayFeedback(doc.id, { overall: e.target.value })} aria-label="Feedback" />
+        <label className="block text-[13px] font-semibold text-muted">
+          Overall
+          <textarea className={cx(textareaClass, 'mt-1 font-normal')} rows={4} value={feedback.overall} onChange={(e) => store.updateEssayFeedback(doc.id, { overall: e.target.value })} />
+        </label>
+        <label className="block text-[13px] font-semibold text-muted">
+          What works, one per line
+          <textarea
+            className={cx(textareaClass, 'mt-1 font-normal')}
+            rows={Math.max(2, feedback.strengths.length + 1)}
+            value={feedback.strengths.join('\n')}
+            onChange={(e) => store.updateEssayFeedback(doc.id, { strengths: e.target.value.split('\n') })}
+            onBlur={() => store.updateEssayFeedback(doc.id, { strengths: feedback.strengths.map((s) => s.trim()).filter(Boolean) })}
+          />
+        </label>
+        {feedback.points.map((p, i) => (
+          <fieldset key={i} className="flex flex-col gap-2">
+            <legend className="mb-1 text-[13px] font-semibold text-muted">
+              {p.area}
+              {p.location && ` · ${p.location}`}
+            </legend>
+            <textarea className={textareaClass} rows={2} aria-label={`Question ${i + 1}`} value={p.question} onChange={(e) => patchPoint(i, { question: e.target.value })} />
+            <textarea className={textareaClass} rows={2} aria-label={`Observation ${i + 1}`} value={p.observation} onChange={(e) => patchPoint(i, { observation: e.target.value })} />
+          </fieldset>
+        ))}
         <Button className="self-start" onClick={onClose}>
           Done
         </Button>

@@ -1,13 +1,12 @@
-// One student. Header with status and the two things a counselor does most
-// (remind, log a meeting), then six tabs kept in the URL.
+// One student. Header with status, the student link and logging a meeting, then
+// six tabs kept in the URL. A reminder starts from the late task itself.
 
 import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { LogMeetingModal } from '../../components/forms'
-import { ReminderComposer } from '../../components/ReminderComposer'
 import { StudentLinkModal } from '../../components/StudentLinkModal'
-import { Button, Modal, PageHeader, StatusPill, Tabs, useTab, type TabItem } from '../../components/ui'
-import { MEETING_APPROVAL_KINDS, essaysFor, findStudent, fullName, sortByUrgency, summarize, tasksFor, isOpen } from '../../lib/derive'
+import { Button, PageHeader, StatusPill, Tabs, useTab, type TabItem } from '../../components/ui'
+import { MEETING_APPROVAL_KINDS, essaysFor, findStudent, fullName, summarize } from '../../lib/derive'
 import { inboxContents, inboxSize } from '../../lib/inbox'
 import { useData } from '../../store/store'
 import DocumentsTab from './student/DocumentsTab'
@@ -23,7 +22,7 @@ export default function StudentPage() {
   const data = useData()
   const { studentId } = useParams()
   const student = findStudent(data, studentId)
-  const [modal, setModal] = useState<'remind' | 'log' | 'link'>()
+  const [modal, setModal] = useState<'log' | 'link'>()
 
   const inbox = inboxContents(data, studentId)
   const approvals = student ? inbox.approvals : []
@@ -41,8 +40,6 @@ export default function StudentPage() {
   const summary = summarize(data, student)
   // What the Inbox shows when it is filtered to this student.
   const waiting = inboxSize(inbox)
-  // The task a reminder would be about: the most overdue one that is not the counselor's own.
-  const remindTask = sortByUrgency(tasksFor(data, student.id).filter((t) => isOpen(t) && t.owner !== 'counselor'))[0]
   const facts = [
     `Class of ${student.gradYear}`,
     student.school,
@@ -86,9 +83,6 @@ export default function StudentPage() {
         actions={
           <>
             <Button onClick={() => setModal('link')}>Student link</Button>
-            <Button variant="remind" onClick={() => setModal('remind')} disabled={!remindTask}>
-              Remind
-            </Button>
             <Button variant="primary" onClick={() => setModal('log')}>
               Log a meeting
             </Button>
@@ -106,11 +100,6 @@ export default function StudentPage() {
 
       {modal === 'link' && <StudentLinkModal student={student} onClose={() => setModal(undefined)} />}
       {modal === 'log' && <LogMeetingModal studentId={student.id} onClose={() => setModal(undefined)} />}
-      {modal === 'remind' && remindTask && (
-        <Modal title={`Remind about “${remindTask.title}”`} onClose={() => setModal(undefined)} wide>
-          <ReminderComposer student={student} task={remindTask} onDone={() => setModal(undefined)} />
-        </Modal>
-      )}
     </>
   )
 }

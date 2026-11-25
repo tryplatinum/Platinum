@@ -45,7 +45,7 @@ export default function MeetingsTab({ student }: { student: Student }) {
                 <Button variant="primary" onClick={() => setModal('log')}>
                   Log a meeting
                 </Button>
-                <Button onClick={() => setModal('schedule')}>Schedule a meeting</Button>
+                {!upcoming && <Button onClick={() => setModal('schedule')}>Schedule a meeting</Button>}
               </div>
             </Empty>
           </Card>
@@ -121,15 +121,11 @@ export default function MeetingsTab({ student }: { student: Student }) {
             </ul>
           </Card>
         )}
-        <Card className="flex flex-col items-start gap-3 p-5">
+        <Card className="flex flex-col items-start gap-2 p-5">
           <h2 className="text-base font-semibold">After a meeting</h2>
           <p className="text-sm text-ink-soft">
-            Paste your notes or a transcript and the AI drafts notes, tasks, a parent update and profile changes for your review. Nothing goes to {student.firstName} or the family until you approve it.
+            Press “Log a meeting” at the top of this page, paste your notes or a transcript, and the AI drafts notes, tasks, a parent update and profile changes for your review. Nothing goes to {student.firstName} or the family until you approve it.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setModal('log')}>Log a meeting</Button>
-            {upcoming && <Button onClick={() => setModal('schedule')}>Schedule another</Button>}
-          </div>
         </Card>
       </div>
 

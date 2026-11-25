@@ -157,7 +157,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-bold">
-              <Link to={`/app/students/${student.id}?tab=meetings`} className="hover:text-accent hover:underline">
+              <Link to={`/app/students/${student.id}`} className="hover:text-accent hover:underline">
                 {fullName(student)}
               </Link>
             </h2>
@@ -199,9 +199,11 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
             <Card>
               <Empty title={`No meetings with ${student.firstName} yet. Schedule one, or log one that already happened.`}>
                 <div className="flex flex-wrap justify-center gap-2">
-                  <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
-                    Schedule a meeting
-                  </Button>
+                  {!upcoming && (
+                    <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
+                      Schedule a meeting
+                    </Button>
+                  )}
                   <Button onClick={() => onModal({ kind: 'log', studentId: student.id })}>Log a meeting</Button>
                 </div>
               </Empty>
