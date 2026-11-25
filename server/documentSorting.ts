@@ -134,7 +134,7 @@ async function foldersOf(db: Db, firmId: string): Promise<Folder[]> {
 function catchAll(folders: Folder[]): Folder {
   const open = folders.filter((f) => !f.archived_at)
   const folder = open.find((f) => f.name === 'Other') ?? open.filter((f) => f.sensitivity === 'standard').at(-1) ?? open.at(-1) ?? folders.at(-1)
-  if (!folder) throw new FileError('This firm has no folders. Add one in Firm settings.', 409)
+  if (!folder) throw new FileError('This firm has no folders. Add one in Settings.', 409)
   return folder
 }
 

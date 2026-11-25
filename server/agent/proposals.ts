@@ -55,7 +55,7 @@ export async function insertProposal(
   }
   ctx.createdProposals.push(proposal)
   return {
-    confirmation: `Proposal saved for the counselor to review in Approvals (${args.kind}). id=${proposal.id}`,
+    confirmation: `Proposal saved for the counselor to review in the Inbox (${args.kind}). id=${proposal.id}`,
     proposal,
   }
 }

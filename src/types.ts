@@ -819,7 +819,7 @@ export interface ReminderSkip {
   skippedBy?: ID
 }
 
-/** A draft from the server assistant waiting in Approvals. */
+/** A draft from the server assistant waiting in the Inbox. */
 export type AgentProposalKind = 'message' | 'parent_update' | 'task' | 'profile_change' | 'meeting_times'
 export type AgentProposalStatus = 'pending' | 'approved' | 'discarded'
 
