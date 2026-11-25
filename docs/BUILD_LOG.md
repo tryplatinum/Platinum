@@ -1,5 +1,26 @@
 # Build log
 
+## M4b-3 (branch `m4b3-agent-speed`)
+
+Agent speed and draft quality. The model is still `claude-sonnet-5-5` (or `ANTHROPIC_MODEL`). No configuration problem found. `max_tokens` was 8,000 on the agent loop and 16,000 on every shared feature, including the brief. The agent loop is now 4,000, the agent’s brief call 4,000, and essay brainstorm 1,500.
+
+Before, from the measured `test:agent` run in the prompt: overdue 5.1s, draft reminder 22.5s, meeting brief 13.7s, essay brainstorm 19.0s.
+
+After, this branch, the final `test:agent` timing summary:
+
+| Case | Wall | Rounds | What dominated |
+|---|---|---|---|
+| Overdue question | 4.5s | 1 | One model call, 2.4s, no tools. Under 6s. |
+| Draft reminder | 21.4s | 3 | First model call 12.7s (1,580 output tokens) plus a rejected WeChat `propose_message` (0ms) and two more model calls (4.1s, 2.0s). Misses 12s. The first call alone is over the budget. |
+| Meeting brief | 11.5s | 2 | `prepare_meeting_brief` 5.1s, outer model calls 2.2s and 2.5s. Misses 10s by the brief’s own Claude call plus the summary round. |
+| Essay brainstorm | 19.7s | 2 | `essay_brainstorm` 11.8s, outer calls 2.6s and 3.2s. Misses 12s because the brainstorm call is already 11.8s. |
+
+Sendability, read from existing config, not from William’s transport code: WeChat never. LINE never (the dispatcher still rejects it, even when a LINE id is stored). Email sends when `TRANSPORT_EMAIL=gmail` and this counselor’s Gmail is connected, otherwise through the log transport. Text sends when `TRANSPORT_TEXT=phone` and a phone is connected, otherwise through the log transport. Either way the person needs an email or a phone on the record.
+
+Progress while waiting is a polled `GET /api/agent?progress=<requestId>`. The step lives in memory for that request. Returning the steps only with the reply would show them after the wait.
+
+Checks: `typecheck`, `lint`, and `test:notes` exit 0. `test:agent` passed all cases, including a sendable channel, no glued sentence, a real activity in the brainstorm, and a dad with no sendable channel. A panel check on a throwaway firm drafted a text to Liu Min, signed Counselor Panel, with no counselor introduction, and the essay brainstorm named FRC Robotics Team 8841. While waiting, the panel showed “Writing a reply…” and then “Brainstorming…”. `test:outbox` passed on a rerun; one phone check (`recent jobs show the recipient’s name`) failed once in the combined run and passed when `test-phone` ran alone.
+
 ## Current milestone
 
 M4a (branch `m4a-agent`): server-side assistant — threads per student, tools, proposals, cost guard. **No panel UI** (M4b).
