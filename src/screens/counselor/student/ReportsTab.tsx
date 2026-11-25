@@ -3,10 +3,11 @@
 // fact lines the draft was built from. Sent reports are listed below.
 
 import { useState } from 'react'
-import { Bilingual, recipientLine } from '../../../components/Bilingual'
-import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi, useToast } from '../../../components/ui'
+import { ApprovalCard } from '../../../components/ApprovalCard'
+import { Bilingual } from '../../../components/Bilingual'
+import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
-import { findParent, nextMeeting } from '../../../lib/derive'
+import { findParent, nextMeeting, reportApproval } from '../../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { parentReport } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
@@ -150,9 +151,7 @@ export default function ReportsTab({ student }: { student: Student }) {
 }
 
 function DraftCard({ report, student, count }: { report: ParentReport; student: Student; count: number }) {
-  const { updateReport, approveReport, discardReport } = useStore.getState()
-  const toast = useToast()
-  const [editing, setEditing] = useState(false)
+  const data = useData()
   const parent = findParent(student, report.parentId)
   if (!parent) return null
   return (
@@ -161,43 +160,24 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
         <div>
           <SectionLabel className="text-accent">Waiting for your approval · {count}</SectionLabel>
           <h2 className="mt-0.5 text-xl font-bold">{report.subject}</h2>
-          <p className="text-[13px] text-muted">{recipientLine(parent)} · drafted from tasks and deadlines</p>
+          <p className="text-[13px] text-muted">Drafted from tasks and deadlines</p>
         </div>
         <AiTag source={report.source} />
       </div>
       <PlaceholderNote source={report.source} />
-      <Bilingual
-        language={report.language}
-        en={report.bodyEn}
-        local={report.bodyLocal}
-        recipient={parent.name}
-        editable={editing}
-        onChangeEn={(bodyEn) => updateReport(report.id, { bodyEn })}
-        onChangeLocal={(bodyLocal) => updateReport(report.id, { bodyLocal })}
-      />
-      {report.facts && report.facts.length > 0 && (
-        <details className="rounded-lg border border-line">
-          <summary className="flex min-h-11 items-center px-3 text-[13px] font-semibold">The {report.facts.length} facts this report was built from · computed by Platinum, not by the AI</summary>
-          <ul className="grid gap-x-6 gap-y-1 border-t border-line p-3 text-[13px] sm:grid-cols-2">
-            {report.facts.map((f) => (
-              <li key={f}>• {f}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
-        <Button onClick={() => discardReport(report.id)}>Discard</Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            approveReport(report.id)
-            toast(`Report to ${parent.name} approved.`)
-          }}
-        >
-          Approve and send
-        </Button>
-      </div>
+      <ApprovalCard item={reportApproval(data, report)} as="div" compact>
+        <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent.name} />
+        {report.facts && report.facts.length > 0 && (
+          <details className="mt-4 rounded-lg border border-line">
+            <summary className="flex min-h-11 items-center px-3 text-[13px] font-semibold">The {report.facts.length} facts this report was built from · computed by Platinum, not by the AI</summary>
+            <ul className="grid gap-x-6 gap-y-1 border-t border-line p-3 text-[13px] sm:grid-cols-2">
+              {report.facts.map((f) => (
+                <li key={f}>• {f}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </ApprovalCard>
     </Card>
   )
 }
@@ -226,7 +206,7 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="mt-3 flex flex-col gap-2">
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
-            <ApprovalStamp approval={report.approval} /> Logged as sent. v0 does not deliver messages.
+            <ApprovalStamp approval={report.approval} /> Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.
           </p>
         </div>
       )}

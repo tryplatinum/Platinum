@@ -1,11 +1,15 @@
-// The Students page: the same table as the command center, with search and
-// "Add student". Archived students are listed below and can be restored.
+// The Students page: a line about the whole caseload, then the student table
+// with search and "Add student". Archived students are listed below and can be
+// restored.
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { StudentFormModal } from '../../components/forms'
 import { StudentTable } from '../../components/StudentTable'
 import { Button, Card, Empty, PageHeader, cx, inputBase } from '../../components/ui'
+import { formatDateLong, todayISO } from '../../lib/dates'
 import { classLabel, fullName, summarizeAll } from '../../lib/derive'
+import { inboxCount } from '../../lib/inbox'
 import { useData, useStore } from '../../store/store'
 
 export default function Students() {
@@ -15,13 +19,25 @@ export default function Students() {
   const [query, setQuery] = useState('')
   const all = summarizeAll(data)
   const rows = all.filter((s) => `${fullName(s.student)} ${s.student.localName ?? ''} ${s.student.school}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const behind = all.filter((s) => s.status === 'behind').length
+  const late = all.reduce((n, s) => n + s.progress.late, 0)
+  const waiting = inboxCount(data)
+  const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
   const archived = data.students.filter((s) => s.archived)
 
   return (
     <>
       <PageHeader
-        above={`${all.length} ${all.length === 1 ? 'student' : 'students'}, most urgent first`}
+        above={
+          <>
+            {formatDateLong(todayISO())} · {plural(all.length, 'student')} · {behind} behind · {plural(late, 'late task')} ·{' '}
+            <Link to="/app" className="font-medium text-accent hover:underline">
+              {waiting} waiting
+            </Link>
+          </>
+        }
         title="Students"
+        sub={all.length > 0 ? 'Most urgent first: behind, then by next deadline.' : undefined}
         actions={
           <>
             <input className={cx(inputBase, 'w-56')} type="search" placeholder="Search by name or school" aria-label="Search students" value={query} onChange={(e) => setQuery(e.target.value)} />

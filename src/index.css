@@ -95,7 +95,7 @@
 /* ── Dark ────────────────────────────────────────────────────────────────────
    The same tokens, set again. Nothing else in the app knows which theme is on.
    src/theme.ts puts data-theme on <html>: it follows the device unless the
-   person has chosen one in "View and settings".
+   person has chosen one in Settings.
 
    Surfaces step up from midnight (page) to navy (cards) so a card still reads
    as a card without a shadow. Filled buttons turn silver with midnight text.

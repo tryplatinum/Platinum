@@ -1,5 +1,22 @@
 # Build log
 
+## UX cleanup (branch `ux-cleanup`)
+
+Front end only. No migration, no server, API, outbox or dispatch change. Every send still goes through `sendMessage`, `queue_message` and the 60-second hold. `src/store/store.ts` is unchanged.
+
+- **One approval card.** `src/components/ApprovalCard.tsx` holds the card, its edit forms, `approveItem`, `discardItem`, `ApproveAll` and `SendState`. The Inbox, the assistant panel, Parent reports, Essays and Scheduled reminders use it. `children` replaces the plain preview; `compact` is the panel size.
+- **Approval in the assistant.** A pending proposal in the panel is that card, built by `proposalApproval` from `data.agentProposals`. `src/lib/approvalSends.ts` remembers, for the session, which message an approved proposal queued: the store adds the outbox row before its first wait, so the row that is new right after the call is the one. The card's Undo waits for the same queue notice the toast listens to. It also blocks a second press while a decision is on its way, and a card whose message is already queued offers no second approval.
+- **Statuses.** The browser loads pending proposals only. The panel copies a decided status onto its cards before the row leaves `data`, and asks the server about a pending card that has no row.
+- **Inbox** (`/app`, still `Approvals.tsx`): approvals, files (`FilingRow`, `FileRow`) and college list drafts, filtered by student (`?student=`) and kind (`?kind=`). `src/lib/inbox.ts` gives the one count used by the page, the sidebar badge, Students and the student page.
+- **Weekly texts.** The Inbox used to mark one as sent by hand with nothing copied. `WeeklyTextSend.tsx` is now the only way to send one, on both screens, and "Approve all" leaves them.
+- **Navigation.** Inbox, Students, Meetings, Messages, Documents; Activity, Settings and Sign out in the footer. `/app/overview` goes to Students, `/app/messages?tab=rules` to Settings, `/app?google=…` to Settings with its toast. `CommandCenter.tsx` is gone. Weekly text day moved to Settings, Reminder rules.
+
+**Not done:** the assistant's server-written replies and some server errors still say "Approvals" and "Firm settings" (`server/agent/format.ts`, `run.ts`, `tools.ts`, `server/prompts.ts`, `server/google/connection.ts`, `server/documentSorting.ts`). `test:agent` case 2 checks for "Review it in Approvals", so change both together. Two comments in `src/types.ts` and `src/data/repo.ts` still name Approvals.
+
+**Found, not changed:** copying a weekly text puts the raw `{{student_link}}` on the clipboard, on both screens. In `approveAgentProposal` the message is queued before the proposal is decided; if the decision fails the message still goes out (the card now shows it with Undo), and if queueing fails the proposal can still end up approved (the card says "Not queued. Nothing was sent.").
+
+Checks: `typecheck`, `lint`, `test:notes` pass. No Supabase settings were on this machine, so the app was run from `preview.html` with the sample caseload and the database calls stubbed at the network. Every changed screen was opened in light and dark at 1280 and 390 wide. Not run against a real database, real Google or a real phone.
+
 ## SEC-FIX-W1 (branch `sec-fix-w1`)
 
 Narrower Drive access, safer phone pairing, and a time limit on student uploads.

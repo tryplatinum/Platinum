@@ -1,5 +1,5 @@
 // Review of everything the AI drafted from one meeting, in numbered sections.
-// Each item is approved, edited or dismissed by the counselor. Approved items
+// Each item is approved, edited or discarded by the counselor. Approved items
 // flow into the real task list, the profile, the parent reports and the
 // student's recap; until then nothing leaves this panel.
 
@@ -9,8 +9,8 @@ import { formatDate, formatDateLong } from '../../lib/dates'
 import { findParent, ownerLabel, pendingInMeeting, reviewSections, type ReviewSection } from '../../lib/derive'
 import { CHANNEL_LABEL } from '../../lib/language'
 import { draftMeeting } from '../../services/workflows'
-import { useData, useStore, type Decision } from '../../store/store'
-import type { Approval, DraftPersonalNote, DraftTask, Meeting, OwnerType, ReminderMode, ReminderRule, Review, Student } from '../../types'
+import { useStore, type Decision } from '../../store/store'
+import type { Approval, DraftPersonalNote, DraftTask, Meeting, OwnerType, Review, Student } from '../../types'
 import { Bilingual, recipientLine } from '../Bilingual'
 import {
   AiErrorNote,
@@ -38,6 +38,8 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
   const settled = sections.filter((s) => s.pending === 0).length
   const pending = pendingInMeeting(meeting)
   const ai = meeting.ai
+  /** Parent updates and the recap are queued as messages when they are approved. */
+  const sends = sections.filter((s) => s.key === 'parents' || s.key === 'recap').reduce((n, s) => n + s.pending, 0)
   const number = (key: ReviewSection['key']) => sections.findIndex((s) => s.key === key) + 1
   const section = (key: ReviewSection['key']) => sections.find((s) => s.key === key)
   // Redrafting replaces every draft, so it is offered only while none has been reviewed.
@@ -92,10 +94,10 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
               variant="primary"
               onClick={() => {
                 approveAll(meeting.id)
-                toast(`Approved everything from this meeting.`)
+                toast(sends > 0 ? `Approved everything from this meeting. ${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.` : 'Approved everything from this meeting.')
               }}
             >
-              Approve everything left
+              {sends > 0 ? 'Approve and send everything left' : 'Approve everything left'}
             </Button>
           )}
         </div>
@@ -110,10 +112,13 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
       {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
       {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
       {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))]">
-        {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
-        <RemindersSection n={sections.length + 1} student={student} />
-      </div>
+      {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
+      <p className="text-[13px] text-muted">
+        Reminders follow the firm’s rules.{' '}
+        <Link to="/app/settings#reminder-rules" className="font-semibold text-accent hover:underline">
+          Settings
+        </Link>
+      </p>
     </div>
   )
 }
@@ -234,11 +239,11 @@ function NotesSection({ n, meeting }: { n: number; meeting: Meeting }) {
       {pending && (
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" onClick={() => reviewNotes(meeting.id, 'approved')}>
-            Approve notes
+            Approve
           </Button>
           <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
           <Button variant="quiet" onClick={() => reviewNotes(meeting.id, 'dismissed')}>
-            Dismiss
+            Discard
           </Button>
           <span className="text-xs text-muted">Approved notes become this meeting’s record. They are never sent to anyone.</span>
         </div>
@@ -262,7 +267,7 @@ function TasksSection({ n, meeting, student }: { n: number; meeting: Meeting; st
           <ReviewTag review={groupReview(tasks)} approvedLabel="Added to tasks" />
           {pending.length > 1 && (
             <Button variant="primary" onClick={() => pending.forEach((t) => reviewDraftTask(meeting.id, t.id, 'approved'))}>
-              Add {pending.length} tasks
+              Approve {pending.length} tasks
             </Button>
           )}
         </>
@@ -305,7 +310,7 @@ function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: 
               {editing ? 'Done' : 'Edit'}
             </Button>
             <Button variant="quiet" onClick={() => reviewDraftTask(meeting.id, draft.id, 'dismissed')}>
-              Dismiss
+              Discard
             </Button>
           </span>
         ) : (
@@ -364,7 +369,7 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
   const pending = update.review === 'pending'
   const decide = (d: Decision) => {
     reviewParentUpdate(meeting.id, update.id, d)
-    if (d === 'approved') toast(`Update to ${parent.name} approved.`)
+    toast(d === 'approved' ? 'Approved. Sending in 60 seconds.' : 'Discarded.')
   }
 
   return (
@@ -398,14 +403,14 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
         <Button
           onClick={() => {
             void navigator.clipboard?.writeText(update.bodyLocal ?? update.bodyEn)
-            toast(`Copied. Paste it into ${CHANNEL_LABEL[parent.channel]} yourself: delivery is not connected in v0.`)
+            toast(`Copied. Paste it into ${CHANNEL_LABEL[parent.channel]} yourself.`)
           }}
         >
           Copy for {CHANNEL_LABEL[parent.channel]}
         </Button>
         {pending && (
           <Button variant="quiet" onClick={() => decide('dismissed')}>
-            Dismiss
+            Discard
           </Button>
         )}
       </div>
@@ -455,14 +460,14 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
             variant="primary"
             onClick={() => {
               reviewRecap(meeting.id, 'approved')
-              toast(`Recap shared with ${student.firstName}.`)
+              toast('Approved. Sending in 60 seconds.')
             }}
           >
-            Approve and share
+            Approve and send
           </Button>
           <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
           <Button variant="quiet" onClick={() => reviewRecap(meeting.id, 'dismissed')}>
-            Dismiss
+            Discard
           </Button>
           <span className="text-xs text-muted">{student.firstName} sees this in the student view only after you approve it.</span>
         </div>
@@ -471,7 +476,7 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
   )
 }
 
-// ── 5. Profile changes ──────────────────────────────────────────────────────
+// ── 6. Profile changes ──────────────────────────────────────────────────────
 
 function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
   const reviewProfileChange = useStore((s) => s.reviewProfileChange)
@@ -490,9 +495,9 @@ function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
             </div>
             {c.review === 'pending' ? (
               <span className="flex gap-1.5">
-                <Button onClick={() => reviewProfileChange(meeting.id, c.id, 'approved')}>Accept</Button>
+                <Button onClick={() => reviewProfileChange(meeting.id, c.id, 'approved')}>Approve</Button>
                 <Button variant="quiet" onClick={() => reviewProfileChange(meeting.id, c.id, 'dismissed')}>
-                  Dismiss
+                  Discard
                 </Button>
               </span>
             ) : (
@@ -507,11 +512,11 @@ function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
   )
 }
 
-// ── 6. Things to remember ───────────────────────────────────────────────────
+// ── 5. Things to remember ───────────────────────────────────────────────────
 
 /**
  * Personal details the student mentioned, picked out by the AI. Reviewed like
- * profile changes: approve, edit or dismiss. Only approved ones are saved, and
+ * profile changes: approve, edit or discard. Only approved ones are saved, and
  * they are used only in texts to the student.
  */
 function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
@@ -554,7 +559,7 @@ function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonal
               {editing ? 'Done' : 'Edit'}
             </Button>
             <Button variant="quiet" onClick={() => reviewDraftNote(meeting.id, note.id, 'dismissed')}>
-              Dismiss
+              Discard
             </Button>
           </span>
         ) : (
@@ -570,54 +575,5 @@ function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonal
         </div>
       )}
     </li>
-  )
-}
-
-// ── 7. Reminders ────────────────────────────────────────────────────────────
-
-/** Toggles for what goes out about tasks. These are the firm-wide rules, shown here because this is where the tasks are created. */
-function RemindersSection({ n, student }: { n: number; student: Student }) {
-  const rules = useData().reminderRules
-  const updateRule = useStore((s) => s.updateRule)
-  const rule = (id: ReminderRule['id']) => rules.find((r) => r.id === id)!
-  const on = (id: ReminderRule['id']) => rule(id).mode !== 'off'
-  const askFirst = rules.filter((r) => r.mode !== 'off').every((r) => r.mode === 'needs_approval')
-  const activeMode: ReminderMode = askFirst ? 'needs_approval' : 'automatic'
-  const toggle = (ids: ReminderRule['id'][], checked: boolean) => ids.forEach((id) => updateRule(id, { mode: checked ? activeMode : 'off' }))
-  const rows: { label: string; ids: ReminderRule['id'][] }[] = [
-    { label: `${student.firstName}: ${rule('student_upcoming').days} days before each due date`, ids: ['student_upcoming'] },
-    { label: `${student.firstName}: when a task becomes late`, ids: ['student_late'] },
-    { label: 'Parents: about tasks that are theirs', ids: ['parent_upcoming', 'parent_late'] },
-    { label: `Parents: when ${student.firstName} is ${rule('parent_escalation').days}+ days late`, ids: ['parent_escalation'] },
-  ]
-  const row = 'flex min-h-11 items-center justify-between gap-3 border-t border-line text-sm first:border-t-0'
-  return (
-    <Section n={n} title="Reminders">
-      <p className="text-[13px] text-muted">What goes out about approved tasks. These rules apply to every student.</p>
-      <div>
-        {rows.map((r) => (
-          <label key={r.label} className={row}>
-            {r.label}
-            <input type="checkbox" className="h-5 w-5" checked={r.ids.every(on)} onChange={(e) => toggle(r.ids, e.target.checked)} />
-          </label>
-        ))}
-        <label className={row}>
-          Ask me before each one goes out
-          <input
-            type="checkbox"
-            className="h-5 w-5"
-            checked={askFirst}
-            onChange={(e) => rules.filter((r) => r.mode !== 'off').forEach((r) => updateRule(r.id, { mode: e.target.checked ? 'needs_approval' : 'automatic' }))}
-          />
-        </label>
-      </div>
-      <p className="text-xs text-muted">
-        v0 has no scheduler and does not deliver messages. Due reminders collect in{' '}
-        <Link to="/app/messages?tab=queue" className="font-semibold text-accent underline">
-          Messages sent, Queue
-        </Link>
-        .
-      </p>
-    </Section>
   )
 }

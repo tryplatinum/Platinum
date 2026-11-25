@@ -1,4 +1,4 @@
-// The "Google account" row in Firm settings: which Google account is
+// Settings, Google: which Google account is
 // connected, Connect, Disconnect, and what the app can do with it. The
 // connection is the signed-in person's own, not the firm's. Shown only when
 // the server has Google settings.
@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { GoogleFailure, callGoogle, loadGoogleStatus, startGoogleConnect, takeGoogleStatus, useGoogleStatus } from '../../services/google'
 import type { GoogleStatus } from '../../../shared/google'
-import { Button, Pill, SectionLabel } from '../ui'
+import { Button, Card, Pill } from '../ui'
 
 const reasonOf = (error: unknown) => (error instanceof GoogleFailure ? error.message : 'Something went wrong. Please try again.')
 
@@ -42,12 +42,10 @@ export function GoogleAccount() {
   }
 
   return (
-    <section aria-labelledby="google-account" className="flex flex-col gap-3 border-t border-line pt-5">
+    <Card className="flex flex-col gap-3 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <SectionLabel>
-            <span id="google-account">Google account</span>
-          </SectionLabel>
+          <h2 className="text-lg font-semibold">Google account</h2>
           {status.connected ? (
             <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
               <span className="break-all font-semibold">{status.address}</span>
@@ -120,7 +118,7 @@ export function GoogleAccount() {
           </button>
         </p>
       )}
-    </section>
+    </Card>
   )
 }
 

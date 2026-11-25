@@ -4,7 +4,7 @@ A workspace for private college counselors: every student in one place, with an 
 
 It is still a v0. Four limits matter before you put real work in it:
 
-1. **Nothing is delivered.** Reminders, parent reports, recaps and feedback are written to a log (Messages sent). Use "Copy" to paste a message into email, text, WeChat or LINE yourself. The weekly text to each student is the same: Platinum writes it, and you send it from your own phone.
+1. **Approved messages go only to an allowlist.** Reminders, parent reports, recaps and feedback wait 60 seconds after you approve them, then go out through the allowlist. You can still copy any of them and send it by hand by email, text, WeChat or LINE. The weekly text to each student is always sent by hand: Platinum writes it, and you send it from your own phone.
 2. **AI requests send data to Anthropic.** When AI is connected, the facts for one student (first name, scores, tasks, deadlines, your pasted notes or essay text) are sent to Anthropic's API to write a draft. Last names, emails, phone numbers and messaging handles are left out. While "Sort files automatically" is on, the first two pages of every uploaded file are sent too. There is no privacy agreement in place, and students are minors: decide whether that is acceptable before entering real students.
 3. **Nothing AI-written reaches a student or parent until you approve it.** Each approval records who approved (name and account) and when.
 4. **A student link is a password.** Anyone holding a student's link can see that student's page and mark their tasks done. Send it only to the student, and revoke it if it leaks.
@@ -67,7 +67,7 @@ To change the database, add a new file under `supabase/migrations/`, run `npm ru
 
 Sign up with an email and password. The first sign-in asks for a firm name and your name and creates the firm with you as its owner. One account belongs to one firm; inviting a second counselor is not built yet.
 
-**View and settings** in the sidebar has **Reset demo** (deletes the firm's data and loads the sample caseload) and **Start empty** (deletes it and loads nothing). Both ask you to type a word first, because they cannot be undone. If this browser still holds data from the version before accounts, the app offers once to import it into your firm.
+**Settings**, under Demo data, has **Reset demo** (deletes the firm's data and loads the sample caseload) and **Start empty** (deletes it and loads nothing). Both ask you to type a word first, because they cannot be undone. If this browser still holds data from the version before accounts, the app offers once to import it into your firm.
 
 ## Deploy
 
@@ -82,10 +82,10 @@ Vercel: it builds the Vite site and deploys `api/ai.ts` and `api/student.ts` as 
 | "Late", progress, next deadline, "waiting on", status, counts | **Real**, computed in `src/lib/derive.ts`. Never produced by the AI |
 | AI drafts (meeting follow-through, tasks from notes, brief, parent report, essay feedback, reminders) | **Real**, via a server function calling Claude, for signed-in members of a firm. Labelled placeholders when the server has no API key |
 | Approvals | **Real.** Drafts become tasks, profile changes, recaps and reports only on approval, with the approver's name, account id and time |
-| Sending (email, text, WeChat, LINE) | **Faked.** Every send writes to Messages sent and the confirmation says "Delivery is not connected in v0" |
+| Sending (email, text, WeChat, LINE) | **Real for email and text, to the allowlist only.** An approved message waits 60 seconds, then the dispatcher sends it through a transport (the default only logs). LINE and WeChat never send; copy those and send them by hand |
 | Weekly text to each student | **Real** drafts and a real record of what was sent or skipped each week. **You** send each text from your own phone ("Copy" or "Open in Messages"); Platinum texts nobody |
 | Things to remember about each student | **Real.** Personal details a student mentioned, suggested by the AI from meeting notes or typed in, saved only on approval, and used for one line in a text to the student |
-| "Also tell parent" | **Real** setting per student and a real, separate draft to the main contact. Like every message, **you** deliver it |
+| "Also tell parent" | **Real** setting per student and a real, separate draft to the main contact. Approved and sent on its own, like any message |
 | Reminder rules and queue | Real rules, real queue, fixed wording. No scheduler: a button stands in for the daily send |
 | Report schedule | A recorded intention. Nothing is drafted on a timer |
 | Meeting recording | None. You paste or type notes or a transcript |
@@ -120,11 +120,11 @@ screen ─▶ src/services/ai.ts ─▶ POST /api/ai ─▶ server/claude.ts ─
 
 Messages → **Weekly texts** lists every included student who has a late task, a task due in the next 7 days, or a meeting in the next 7 days. "Draft all" prepares one short text each (under 480 characters) with a progress count, and carries on past a draft that fails.
 
-- **A week starts on the firm's weekly text day** (default Sunday, set on that tab) and runs for seven days. A student leaves the list when their text is sent or skipped, and comes back when the next week starts. A student can be left out for good with the switch on their profile.
+- **A week starts on the firm's weekly text day** (default Sunday, set in Settings) and runs for seven days. A student leaves the list when their text is sent or skipped, and comes back when the next week starts. A student can be left out for good with the switch on their profile.
 - **The facts are ours.** The meeting time, task titles, due dates, days late, "and N more" and the link are built in `src/lib/reminders.ts` (who gets a text is decided in `src/lib/derive.ts`). At most four tasks are named, late ones first. The model only chooses the words around them. On return, the code checks that every fact string is in the text unchanged and that the text fits; if not, the fixed template is used and labelled. The counselor's private notes are never sent to this feature.
 - **What comes first is the AI's call.** When a text names two or more tasks, the model picks the single most urgent one and puts it first ("Start with ..."). This is the one judgment it makes here. It is given each task's category and status and the student's next application deadlines (from `derive.ts`) to weigh: work a near application deadline depends on comes first, then how late a task is, then whether someone else is waiting on it. It returns which task it chose and a one-sentence reason. The code checks that the text really does lead with that task, and the row shows **"Leads with: ..."** and the reason. The application deadlines are for the choice only and are not written into the text. The fixed template keeps the code's order: most overdue first.
 - **The link is the student's own no-login link.** One is created when a text is drafted if the student has none. Links are now kept so they can be reused each week (see below). When the app is open at an address only your computer can reach (localhost), the link is left out and the screen says so.
-- **You send it.** "Copy" puts the text on the clipboard. "Open in Messages" is an `sms:` link that opens your own messaging app with the number and text filled in; on a computer without one, nothing happens, so Copy is always beside it. Pressing either is your approval: it records who and when, writes the text to Messages sent with the note "Sent from your own phone", and marks that week's text sent. Platinum cannot know whether you then pressed send on your phone.
+- **You send it.** "Copy" puts the text on the clipboard. "Open in Messages" is an `sms:` link that opens your own messaging app with the number and text filled in; on a computer without one, nothing happens, so Copy is always beside it. Pressing either is your approval: it records who and when, writes the text to Messages with the note "Sent from your own phone", and marks that week's text sent. Platinum cannot know whether you then pressed send on your phone.
 - **Students have no language setting yet**, so the text is in English.
 - **One personal line, at most.** See "What the AI knows about each student" below. Your private notes on the Profile tab are still never sent to this feature.
 
@@ -224,7 +224,7 @@ student:    POST /api/student start_upload  ─▶ token, limits, declared size 
 - **A student's upload** is filed automatically: folder and title from the model, `sorted_by auto`, and `needs_check` when the model said it was not sure. The counselor sees "Sorting…" until then.
 - **A counselor's upload** is never filed by the AI. It gets a suggestion and waits under "Waiting for you" on the Documents screen, on no student's page, until a person files it. Choosing a different folder from the suggestion is a correction; the AI's suggestion stays on the row, and that pair is what the next request is shown.
 - **If the model fails or takes over 40 seconds,** the upload still succeeds: the file goes under Other marked to check, and sorting is tried once more in the background. A folder or title a person set is never overwritten (every automatic write applies only while the row is still in the state the AI found it in).
-- **"Sort files automatically"** (Firm settings, owner only, on by default). Off: every upload lands under Other to be checked and nothing is sent to the model. The server reads the setting from the database.
+- **"Sort files automatically"** (Settings, Folders; owner only, on by default). Off: every upload lands under Other to be checked and nothing is sent to the model. The server reads the setting from the database.
 - **Large photos and HEIC photos are sorted from a reduced copy.** An image over about 3.5 MB cannot be sent to the model as it is, and HEIC (an iPhone's own format) cannot be sent at all, so the server makes a smaller JPEG in memory (turned upright, at most 1568 pixels on its longest edge) and sorts from that. The stored file is never changed, and a photo added through a student link is stored exactly as taken. If the copy cannot be made, the file is sorted from its name alone and always lands under "Check these".
 
 **After the response.** A student never waits for the model: `finish_upload` answers as soon as the file is checked and hands the sorting to `waitUntil` (`@vercel/functions`), which keeps the function alive on Vercel; in `npm run dev` the promise simply runs. If that work is cut off anyway, the row stays `sorting`. The next time a counselor's browser loads documents it calls `settle`, which files any row stuck in `sorting` for over three minutes under Other marked to check (a counselor's own upload waits there instead), and removes uploads abandoned for over an hour.
@@ -294,7 +294,7 @@ src/services/colleges.ts  The browser side of the college directory: search, fig
 
 src/components/ui.tsx     Card, Button, Pill, Tabs, SegmentedControl, FilterChips, DateChip,
                           ProgressWithCount, CheckCircle, Toast, Modal, AI tags
-src/components/Layout.tsx Sidebar layout, student preview layout, view and settings menu
+src/components/Layout.tsx Sidebar layout and student preview layout
 src/components/RequireFirm.tsx  The gate: session, firm, data loaded
 src/components/StudentLinkModal.tsx  Create, copy and revoke a student's link
 src/components/forms.tsx  Add student, add/edit parent, schedule meeting, log a meeting
@@ -302,7 +302,7 @@ src/components/StudentTable.tsx, TaskRows.tsx, ReminderComposer.tsx, Bilingual.t
 src/components/meeting/   MeetingReview (numbered sections), MeetingReport, BriefCard
 src/components/colleges.tsx  College type-ahead, and the figures for a linked list row
 
-src/screens/counselor/    CommandCenter, Students, StudentPage (+ student/ tabs),
+src/screens/counselor/    Approvals (the Inbox), Students, Settings, StudentPage (+ student/ tabs),
                           Meetings (by student, calendar), Messages, WeeklyTexts, SignIn (+ firm setup, reset)
 src/screens/student/      The student's phone-width view, and its layout for the secret link
 src/App.tsx               All routes, and redirects from the old URLs
@@ -496,7 +496,7 @@ The review screen groups the draft by band. Each row has the college's name and 
 - **Aliases are split on commas**, so an alias that itself contains a comma is stored as two. Search is unaffected: it reads the whole alias string.
 - **A college is on a list once per link, not once per name.** The same college can be added twice as free text.
 - **File storage, not built yet:** document requests ("please upload your transcript" with a slot to fill), parent links, pulling grades or scores out of a document into the profile, search inside or across files, a file's history on screen (the log is recorded but not shown), linking a file to a college, moving a filed file to another student, virus scanning, and versions of a file.
-- **No single list of everything waiting on the counselor.** `pendingApprovals` in `src/lib/derive.ts` lists AI drafts from meetings and essay feedback, in the browser. Weekly texts not yet sent, uploads with a suggestion, files under "Check these" and draft college lists each have their own screen and are not gathered in one place or behind one server function.
+- **The list of everything waiting on the counselor is computed in the browser.** The Inbox gathers drafts, reminders, files and draft college lists from `src/lib/inbox.ts`. There is no server function behind it.
 - **There is no "delete student" button.** A student can be archived. The server path and the database both handle deleting one (and refuse a counselor who is not the owner while an owner-only file is in the way), for when a screen is built.
 - **Nothing here has been run on Vercel.** Sorting a student's file after the response returns, the recovery of a file whose sorting was cut off, and a list draft finishing inside the function time limit were exercised only on the local dev server.
 - **A file the AI sorted can be in the wrong folder**, including an owner-only one, where a counselor who is not the owner will not see it. The owner sees everything; "Check these" lists only the ones the AI doubted.

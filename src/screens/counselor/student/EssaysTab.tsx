@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { ApprovalCard } from '../../../components/ApprovalCard'
 import {
   AiErrorNote,
   AiTag,
@@ -25,13 +26,12 @@ import {
   inputClass,
   textareaClass,
   useAi,
-  useToast,
 } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
-import { ESSAY_STATUS, currentDraft, essayGroups, wordCount, type EssayGroup } from '../../../lib/derive'
+import { ESSAY_STATUS, currentDraft, essayApproval, essayGroups, wordCount, type EssayGroup } from '../../../lib/derive'
 import { essayFeedback } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
-import type { EssayStatus, Student, StudentDocument } from '../../../types'
+import type { EssayFeedback, EssayStatus, Student, StudentDocument } from '../../../types'
 
 type Filter = 'all' | 'college' | 'summer' | 'feedback'
 
@@ -223,14 +223,13 @@ function AddEssayForm({ student, onDone }: { student: Student; onDone: (id?: str
 // ── The selected essay ──────────────────────────────────────────────────────
 
 function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: Student; onClose: () => void }) {
-  const { saveEssayDraft, updateDocument, removeDocument, setEssayFeedback, updateEssayFeedback, reviewEssayFeedback } = useStore.getState()
-  const toast = useToast()
+  const { saveEssayDraft, updateDocument, removeDocument, setEssayFeedback } = useStore.getState()
+  const data = useData()
   const { busy, error, run } = useAi()
   const draft = currentDraft(doc)
   const [text, setText] = useState(draft?.text ?? '')
   const [showDraft, setShowDraft] = useState(!draft)
   const [showHistory, setShowHistory] = useState(false)
-  const [editingFeedback, setEditingFeedback] = useState(false)
   // Keep the editor in step when the saved draft changes underneath it.
   useEffect(() => setText(draft?.text ?? ''), [draft?.n, draft?.text])
 
@@ -240,8 +239,6 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
   const status = doc.status ?? 'not_started'
   const stale = feedback && draft && feedback.draftN !== undefined && feedback.draftN !== draft.n
   const getFeedback = () => run(async () => setEssayFeedback(doc.id, await essayFeedback(doc, student)))
-  const patchPoint = (i: number, fields: { observation?: string; question?: string }) =>
-    feedback && updateEssayFeedback(doc.id, { points: feedback.points.map((p, j) => (j === i ? { ...p, ...fields } : p)) })
 
   return (
     <aside aria-label="Selected essay" className="flex min-w-0 flex-col gap-4 rounded-xl border border-line bg-surface p-5 xl:sticky xl:top-6">
@@ -337,7 +334,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
       <div className="flex flex-col gap-3 rounded-lg border border-accent-line bg-accent-soft p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-semibold">{feedback?.review === 'approved' ? 'Feedback sent' : 'Feedback draft'}</span>
-          {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Dismissed'}</Pill>)}
+          {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Discarded'}</Pill>)}
         </div>
         <AiErrorNote message={error} />
         {busy && <Thinking label="AI is reading the draft…" />}
@@ -348,79 +345,18 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
           <>
             <PlaceholderNote source={feedback.source} />
             {stale && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">This feedback was written about draft {feedback.draftN}. The current draft is {draft.n}.</p>}
-            {editingFeedback && pending ? (
-              <textarea className={textareaClass} rows={3} value={feedback.overall} aria-label="Overall" onChange={(e) => updateEssayFeedback(doc.id, { overall: e.target.value })} />
+            {pending ? (
+              <ApprovalCard item={essayApproval(data, doc)} as="div" compact>
+                <Feedback feedback={feedback} student={student} />
+              </ApprovalCard>
             ) : (
-              <p className="text-sm leading-relaxed">{feedback.overall}</p>
+              <Feedback feedback={feedback} student={student} />
             )}
-
-            <div>
-              <SectionLabel>What works</SectionLabel>
-              {editingFeedback && pending ? (
-                <textarea
-                  className={`${textareaClass} mt-1`}
-                  rows={Math.max(2, feedback.strengths.length + 1)}
-                  aria-label="What works, one per line"
-                  value={feedback.strengths.join('\n')}
-                  onChange={(e) => updateEssayFeedback(doc.id, { strengths: e.target.value.split('\n') })}
-                  onBlur={() => updateEssayFeedback(doc.id, { strengths: feedback.strengths.map((s) => s.trim()).filter(Boolean) })}
-                />
-              ) : (
-                <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
-                  {feedback.strengths.map((s) => (
-                    <li key={s}>{s}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div>
-              <SectionLabel>Questions for {student.firstName}</SectionLabel>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
-                {feedback.points.map((p, i) => (
-                  <li key={i}>
-                    {editingFeedback && pending ? <textarea className={textareaClass} rows={2} aria-label={`Question ${i + 1}`} value={p.question} onChange={(e) => patchPoint(i, { question: e.target.value })} /> : p.question}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <SectionLabel>To work on</SectionLabel>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
-                {feedback.points.map((p, i) => (
-                  <li key={i}>
-                    <span className="font-semibold">
-                      {p.area}
-                      {p.location && ` · ${p.location}`}:
-                    </span>{' '}
-                    {editingFeedback && pending ? <textarea className={textareaClass} rows={2} aria-label={`Observation ${i + 1}`} value={p.observation} onChange={(e) => patchPoint(i, { observation: e.target.value })} /> : p.observation}
-                  </li>
-                ))}
-              </ul>
-            </div>
             <ApprovalStamp approval={feedback.approval} />
           </>
         )}
 
         <div className="flex flex-wrap gap-2">
-          {pending && (
-            <>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  reviewEssayFeedback(doc.id, 'approved')
-                  toast(`Feedback shared with ${student.firstName}.`)
-                }}
-              >
-                Approve and send to {student.firstName}
-              </Button>
-              <Button onClick={() => setEditingFeedback(!editingFeedback)}>{editingFeedback ? 'Done editing' : 'Edit'}</Button>
-              <Button variant="quiet" onClick={() => reviewEssayFeedback(doc.id, 'dismissed')}>
-                Dismiss
-              </Button>
-            </>
-          )}
           {!busy && (!feedback || !pending || stale) && (
             <Button variant={feedback ? 'secondary' : 'primary'} onClick={getFeedback} disabled={!draft?.text.trim()}>
               {feedback ? 'Get feedback on the current draft' : 'Get AI feedback'}
@@ -446,5 +382,43 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
         Delete essay
       </Button>
     </aside>
+  )
+}
+
+function Feedback({ feedback, student }: { feedback: EssayFeedback; student: Student }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm leading-relaxed">{feedback.overall}</p>
+      <div>
+        <SectionLabel>What works</SectionLabel>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
+          {feedback.strengths.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <SectionLabel>Questions for {student.firstName}</SectionLabel>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
+          {feedback.points.map((p, i) => (
+            <li key={i}>{p.question}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <SectionLabel>To work on</SectionLabel>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed">
+          {feedback.points.map((p, i) => (
+            <li key={i}>
+              <span className="font-semibold">
+                {p.area}
+                {p.location && ` · ${p.location}`}:
+              </span>{' '}
+              {p.observation}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   )
 }

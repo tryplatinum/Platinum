@@ -1,6 +1,6 @@
 // /phone-setup: the page a counselor opens ON THEIR PHONE, by scanning the QR
-// code shown in Firm settings. The address holds no key. The counselor types
-// the one-time code from Firm settings; the page exchanges it at /api/phone for
+// code shown in Settings. The address holds no key. The counselor types
+// the one-time code from Settings; the page exchanges it at /api/phone for
 // a device key and shows that key once, for the shortcut.
 
 import { useState } from 'react'
@@ -65,7 +65,7 @@ export default function PhoneSetup() {
         {key ? (
           <>
             <CopyRow label="Device key" value={key} big />
-            <p className="text-[13px] text-muted">Treat this key like a password. It is shown only here and only now. It expires in 90 days, or as soon as you revoke this phone in Firm settings. Then pair the phone again.</p>
+            <p className="text-[13px] text-muted">Treat this key like a password. It is shown only here and only now. It expires in 90 days, or as soon as you revoke this phone in Settings. Then pair the phone again.</p>
           </>
         ) : (
           <form
@@ -76,7 +76,7 @@ export default function PhoneSetup() {
             }}
           >
             <label className="flex flex-col gap-2">
-              <SectionLabel>Setup code from Firm settings</SectionLabel>
+              <SectionLabel>Setup code from Settings</SectionLabel>
               <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} autoCapitalize="characters" autoComplete="one-time-code" maxLength={16} required />
             </label>
             <Button type="submit" variant="primary" disabled={busy || code.trim().length < 4}>

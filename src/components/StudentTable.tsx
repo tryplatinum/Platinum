@@ -1,5 +1,4 @@
-// The student table used on the command center and the Students page: one row
-// per student with progress, the next deadline, and who things are waiting on.
+// The student table on the Students page: one row per student with progress, the next deadline, and who things are waiting on.
 // A remind button opens a drafted reminder in a row underneath.
 
 import { Fragment, useState } from 'react'

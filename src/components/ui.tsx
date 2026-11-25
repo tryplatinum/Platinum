@@ -223,7 +223,7 @@ export function ReviewTag({ review, approvedLabel = 'Approved' }: { review: Revi
   // Fades in when a draft is approved while it is on screen, not for drafts approved earlier.
   const first = useRef(review)
   if (review === 'approved') return <Pill tone="good" className={first.current !== 'approved' ? 'motion-fade' : undefined}>{approvedLabel}</Pill>
-  if (review === 'dismissed') return <Pill tone="neutral">Dismissed</Pill>
+  if (review === 'dismissed') return <Pill tone="neutral">Discarded</Pill>
   return <Pill tone="accent">Needs approval</Pill>
 }
 
@@ -442,11 +442,16 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
     return () => clearInterval(timer)
   }, [])
   const open = Date.parse(sendAfter) > now
+  // Undone somewhere else, on the approval card.
+  const cancelled = useStore((s) => s.data.outbox.some((m) => m.id === messageId && m.status === 'cancelled'))
   useEffect(() => {
-    if (open || dispatched) return
+    if (cancelled) onClose()
+  }, [cancelled]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (open || dispatched || cancelled) return
     setDispatched(true)
     void runDispatch()
-  }, [open, dispatched])
+  }, [open, dispatched, cancelled])
   const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   return (
     <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">

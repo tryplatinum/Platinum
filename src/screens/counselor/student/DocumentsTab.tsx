@@ -75,7 +75,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
       </div>
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in Firm settings to add from Drive and to sync linked folders. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive and to sync linked folders. Files already imported are not affected.
         </p>
       )}
 

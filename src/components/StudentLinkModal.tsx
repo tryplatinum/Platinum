@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { formatTimestamp } from '../lib/dates'
 import { useStore } from '../store/store'
 import type { Student } from '../types'
-import { Button, Modal, SectionLabel, inputClass, useToast } from './ui'
+import { Button, LinkButton, Modal, SectionLabel, inputClass, useToast } from './ui'
 
 export function StudentLinkModal({ student, onClose }: { student: Student; onClose: () => void }) {
   const links = useStore((s) => s.studentLinks).filter((l) => l.studentId === student.id)
@@ -39,6 +39,10 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
           A private link that opens {student.firstName}’s own page on their phone, with no login. They see their tasks, next meeting, deadlines, and the recap and essay feedback you have approved. They can
           mark tasks done, leave a note, and attach a link. Anyone who has the link can do the same, so send it only to {student.firstName}. The link can be copied only right after it is generated.
         </p>
+
+        <div>
+          <LinkButton to={`/student/${student.id}`}>Preview as student</LinkButton>
+        </div>
 
         {fresh ? (
           <div className="flex flex-col gap-2 rounded-lg border border-accent-line bg-accent-soft p-3">
