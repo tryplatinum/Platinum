@@ -100,9 +100,25 @@ async function loadHistory(service: Db, threadId: string): Promise<Anthropic.Mes
     const content = row.content as Anthropic.MessageParam['content']
     // Tool rows are stored separately. The API expects them as the next user message.
     if (row.role === 'tool') messages.push({ role: 'user', content })
-    else if (row.role === 'user' || row.role === 'assistant') messages.push({ role: row.role, content })
+    else if (row.role === 'user') messages.push({ role: 'user', content })
+    else if (row.role === 'assistant') {
+      const kept = withoutThinking(content)
+      if (typeof kept === 'string' ? kept : kept.length > 0) messages.push({ role: 'assistant', content: kept })
+    }
   }
   return messages
+}
+
+/**
+ * An assistant turn without its thinking blocks. A thinking block is signed
+ * against the system prompt it was made under, and that prompt carries a live
+ * summary of the student, so a finished turn's thinking cannot be replayed
+ * once the record changes. Only the request that made it may send it back,
+ * while its own tool loop continues.
+ */
+function withoutThinking<C extends Anthropic.MessageParam['content'] | Anthropic.ContentBlock[]>(content: C): C {
+  if (!Array.isArray(content)) return content
+  return content.filter((block) => block.type !== 'thinking' && block.type !== 'redacted_thinking') as C
 }
 
 async function saveMessage(
@@ -235,6 +251,11 @@ export async function runAgent(args: {
         // After a proposal, the reply is one or two sentences. A long cap is what
         // made the model restate the message and translate it.
         max_tokens: ctx.createdProposals.length > 0 ? 200 : 4_000,
+        // The loop picks tools and writes short drafts. Thinking made a 50-word
+        // draft cost over 1,000 output tokens and most of the wait. On this model
+        // "between_tools" is thinking off: no thinking before a reply, only short
+        // notes between tool calls, which come back as thinking blocks.
+        thinking: { type: 'between_tools' },
         system,
         tools: AGENT_TOOLS,
         messages,
@@ -252,11 +273,12 @@ export async function runAgent(args: {
     })
     console.debug(`[agent] model round=${round + 1} ms=${modelMs} in=${response.usage.input_tokens} out=${response.usage.output_tokens}`)
 
+    // Thinking is never saved: a later turn could not send it back (see withoutThinking).
     await saveMessage(args.service, {
       threadId,
       firmId: args.firmId,
       role: 'assistant',
-      content: response.content,
+      content: withoutThinking(response.content),
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
     })
@@ -303,7 +325,7 @@ export async function runAgent(args: {
     })
     messages.push({ role: 'user', content: toolResults })
 
-    // A brief or a brainstorm is the reply. Skip the model call that would restate it.
+    // A brief, a brainstorm or a drafted message's confirmation is the reply. Skip the model call that would restate it.
     if (settled.length === 1 && settled[0].result.ok) {
       const formatted = formatAnswer(settled[0].use.name, settled[0].result.data)
       if (formatted) {

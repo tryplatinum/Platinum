@@ -8,96 +8,93 @@ Kevin Zhang, the sample student in `npm run test:agent`. The main model is `clau
 
 **Weekly check-in, 2026-11-27**
 
-Kevin goes into Friday's check-in with two overdue items of his own: UC PIQ 3 and 4: first drafts (8 days late) and Common App personal statement: third draft (5 days late). Nothing is waiting on you and no deadlines fall in the next 14 days, so this meeting can focus on what is holding up his writing.
+Kevin has two overdue items going into Friday: UC PIQ 3 and 4: first drafts (8 days late, marked todo) and Common App personal statement: third draft (5 days late, in progress). No deadlines fall in the next 14 days and nothing is waiting on you, so this meeting can be about getting the writing moving again.
 
 **Agenda**
-1. **UC PIQ 3 and 4 drafts.** UC PIQ 3 and 4: first drafts is the most overdue item at 8 days late and is marked todo, so find out where it stands.
-2. **Personal statement third draft.** Common App personal statement: third draft is 5 days late and marked in progress, so it is worth learning what is left to do on it.
-3. **Plan for the two overdue items.** Both tasks are Kevin's and both are late, so agree on a realistic order and date for each before the meeting ends.
-4. **Balancing writing with robotics.** The record lists him as software lead for FRC Robotics Team 8841, so it may help to see whether that commitment is affecting his writing time; this is a possibility to check, not something the record states.
+1. **UC PIQ 3 and 4: first drafts.** It is the most overdue item at 8 days late, and the record only shows it as todo, so it is unclear whether Kevin has started.
+2. **Common App personal statement: third draft.** It is 5 days late but marked in progress, so there is some momentum to build on and find out what is holding up the finish.
+3. **Workload and sequencing.** Both overdue items are writing tasks assigned to Kevin, so it is worth agreeing on which comes first and what he can realistically finish before the next check-in.
+4. **Next steps and check-in point.** With no deadlines in the next 14 days listed, the meeting is a chance to set a concrete date for both drafts instead of leaving them open.
 
 **Questions**
-- What has made it hard to get started on the PIQ drafts, and what would make it easier?
-- Where are you with the personal statement, and what part of it feels unfinished?
-- How is your week looking, and how much time can you realistically set aside for writing before our next check-in?
+- Where are you with the PIQ 3 and 4 drafts, and what is making them hard to start?
+- What is holding the personal statement back from feeling finished, and what would help you get through it?
+- How is your time split between the writing and everything else you have going on, including robotics?
+- What would a realistic plan for both drafts look like to you before we next talk?
 
 ### claude-haiku-5-5
 
 **Weekly check-in, 2026-11-27**
 
-Kevin's two student-owned tasks are both overdue: the Common App personal statement third draft is 5 days late and in progress, and the UC PIQ 3 and 4 first drafts are 8 days late and have not been reported as started. Both were added since the last meeting, and the record shows no colleges or completed tasks yet. No notes on how Kevin works best are on file, so this agenda is built from the record alone.
+Kevin's UC PIQ 3 and 4 first drafts are the item that needs attention: they were due Nov 17 and are now 8 days late, and the task is still open with the student. The record also shows no colleges, and the notes provided are empty, so there is no note on how Kevin works best. Confirm with Kevin before Nov 27 whether anything else in his plans is missing from the record.
 
 **Agenda**
-1. **Common App personal statement: third draft.** It is 5 days late and marked in progress, so the meeting should establish what state the draft is in and when the next version will be ready.
-2. **UC PIQ 3 and 4: first drafts.** These are 8 days late and not reported as started, so the counselor should find out whether Kevin has begun them or is stuck on where to start.
-3. **Sequencing the two drafts.** Both tasks landed on Kevin at the same time, so agreeing which one comes first and what a realistic order looks like will keep either from stalling the other.
-4. **Colleges list is empty.** The record shows no colleges, so confirming which schools Kevin is targeting would clarify what the UC prompts and the Common App essay need to support.
-5. **Time for robotics leadership.** Kevin leads the programming subgroup on FRC Robotics Team 8841, which may be competing for the hours these drafts need.
+1. **UC PIQ 3 and 4 first drafts.** The task is 8 days late against its Nov 17 due date and is still open with the student, so it is the first thing to address on Nov 27.
+2. **Why the task appeared as new since the last meeting.** The system lists it as a new task since the last meeting, yet its due date of Nov 17 had already passed, so confirm when Kevin was actually given it before deciding how to frame the lateness.
+3. **College list.** The record shows no colleges for Kevin, so ask where he is in choosing schools rather than assuming a list exists.
 
 **Questions**
-- Where did the personal statement third draft stall, and what would make the next version easier to finish?
-- Have you started any of the UC prompts yet, and if not, which one feels the most approachable to begin with?
-- How many hours a week can you realistically give to applications while you are running the programming subgroup?
-- Which schools are you most seriously considering, since that affects how you should approach these essays?
+- What is getting in the way of starting the UC PIQ 3 and 4 drafts?
+- When did you first understand these prompts were due, and what would make them easier to start?
+- Which colleges are you currently considering, if any?
 
 ## Essay brainstorm
 
 ### Main model
 
 **Questions to ask**
-- Kevin, what moment as Software lead on FRC Team 8841 made you most proud or most frustrated, and why?
-- How did you first get drawn to robotics, and what has kept you committed?
-- When code failed at a competition or build session, what did you do and what did you learn about yourself?
-- How do you lead teammates who have less programming experience than you?
-- What made Computer Science feel like the right path rather than just a good fit with robotics?
+- Kevin, what moment on FRC Robotics Team 8841 made you realize you cared about software, not just robots?
+- Describe a bug or failure you owned as Software lead. What did you do next?
+- How do you lead teammates who know less code, or more, than you?
+- What do you do when you're not robotics-related, and does any of it connect?
+- What would your teammates say you're like under competition pressure?
 
 **Angles to explore**
-- Explore how being Software lead changed how Kevin thinks about responsibility, not just technical skill.
-- Look at a specific problem on Team 8841 and what it reveals about how Kevin approaches uncertainty.
-- Consider the tension between building things that work and building things that serve people.
-- Examine how Kevin mentors or teaches others and what that shows about his values.
-- Ask whether a small, ordinary team moment says more about Kevin than a competition result.
+- Software lead role as a lens on responsibility, trust, and handing off knowledge
+- A specific failure or breakdown and what it changed in how Kevin works
+- Tension between building perfectly and shipping before a deadline
+- How Kevin's interest in robotics shifted toward wanting to study Computer Science
+- A small, ordinary team ritual that reveals character more than trophies
 
 **Gaps in the story**
-- The record lists Software lead but not what Kevin actually did in that role day to day.
-- Unclear what personal stakes or motivations sit behind Kevin's interest in robotics.
-- No information yet about setbacks, conflicts, or failures within Team 8841.
-- Unclear who Kevin is outside robotics, which matters for a Common App personal statement.
-- Not yet clear how Kevin's Computer Science goal connects to his values beyond the team.
+- No clear sense yet of who Kevin is outside Team 8841 and robotics
+- Unknown why Computer Science appeals beyond robotics
+- No specific moment, scene, or person has been identified yet
+- Unclear what Kevin has learned about himself versus about technical skills
 
 **Materials to gather**
-- Kevin's brain-dump list of 5 to 10 specific memories from FRC Team 8841 seasons.
-- Team notes, code commit history, or build logs that jog details of key moments.
-- Any feedback from teammates, mentors, or coaches about Kevin's leadership.
-- Kevin's full activities list and résumé to spot themes beyond robotics.
-- Two or three past school writing samples to hear Kevin's natural voice.
+- Kevin's notes or journal entries from build season and competitions
+- Team 8841 code repository history or commit messages showing key decisions
+- Competition results, match feedback, or scouting notes tied to software issues
+- Messages or comments from teammates or mentors about Kevin's leadership
+- Kevin's brain-dump list of 10 small memories from the robotics team
 
 ### claude-haiku-5-5
 
 **Questions to ask**
-- What did you do as software lead on FRC Robotics Team 8841 that you are most proud of?
-- When did robotics first capture your interest, and what moment made it stick?
-- Describe a time the team's code or robot failed at a competition. What did you do next?
-- How did leading the software work change how you work with teammates who disagree with you?
-- Why Computer Science, and how does your work on Team 8841 connect to that choice?
+- What did you do as Software lead for FRC Robotics Team 8841 that you'd want an admissions reader to understand?
+- Describe a specific moment on Team 8841 when your code or plan failed. What did you do next?
+- How did you decide to pursue Computer Science, and when did robotics start pulling you toward it?
+- What did you learn from working with teammates who had different skills than yours?
+- What is something about robotics that most people outside the team would never guess?
 
 **Angles to explore**
-- Leading software on FRC Robotics Team 8841 as a story about responsibility under deadline pressure
-- A specific debugging failure on Team 8841 and what it taught you about persistence
-- Moving from building robots to deciding what the software should do, and why that shift mattered
-- How robotics pushed you toward Computer Science rather than a general interest in engineering
-- Teaching or mentoring newer members as a way of showing growth beyond your own code
+- Leading the software side of FRC Robotics Team 8841 and how you made decisions under competition deadlines
+- Turning a robot bug or failed match into a lesson about how you think and debug
+- Bridging robotics and Computer Science: how hands-on building shaped your curiosity about software
+- Leadership as a software lead: how you handled disagreements or delegated work
+- A small, concrete moment that reveals your character rather than a broad summary of achievements
 
 **Gaps in the story**
-- No detail on what the software lead role actually required day to day
-- No sense of how long you have been involved with robotics or how it started
-- No account of a challenge or setback and how you responded
-- No explanation of what you want to study in Computer Science beyond the label
-- No information on what you learned about yourself or others through the team
+- No details on how you became Software lead or what responsibilities that role involves day to day
+- No sense yet of what you personally built or changed in the team's code
+- Unclear when your interest in robotics began and what first sparked it
+- No information on challenges, setbacks, or how you responded to them
+- Missing reflection on how your Computer Science interest connects to your robotics experience
 
 **Materials to gather**
-- Team 8841 season recap or competition results showing your role
-- Code repository or commit history from the software work, if shareable
-- Notes or messages from team meetings where you made software decisions
-- Any feedback from your mentor, coach, or teammates about your leadership
-- A list of moments from build season you remember vividly, with dates
+- Team 8841 competition results, awards, or season summaries
+- Code repositories, commit history, or documentation you contributed to
+- Notes, design logs, or engineering notebook entries from the season
+- Any feedback from team mentors or coaches about your leadership
+- A list of concrete moments or decisions you remember from your time as Software lead

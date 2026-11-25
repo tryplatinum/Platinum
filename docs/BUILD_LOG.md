@@ -47,6 +47,27 @@ Checked: `typecheck`, `lint`, `test:notes`, `test:outbox` pass. The full migrati
 
 After the push: `npm run db:types`, then `npm run test:agent` and `npm run test:isolation`. On the dev server, open a student link dialog (list, create, rotate), approve and discard an assistant draft, draft a meeting and check the Activity screen shows the AI line after a reload.
 
+### Follow-up on `sec-fix-a1`: thinking in replayed history, thinking budget
+
+- **Replay.** The system prompt carries a live student summary, so it changes whenever the record does. A thinking block is signed against the prompt it was made under, and replaying one after a change made Claude refuse the request (a 502). `withoutThinking` in `server/agent/run.ts` drops `thinking` and `redacted_thinking` blocks from every assistant row loaded from `agent_messages`, and they are no longer saved: nothing but replay ever read them (history and sources use text and tool blocks only). Within one request the tool loop still sends the full response back, as the API requires. No beta header.
+- **Agent loop thinking: off.** `thinking: { type: 'between_tools' }` on the agent's `messages.create`. On `claude-sonnet-5-5` that is the off switch (`disabled` is rejected with a 400 that says so): no thinking before a reply, only short notes between tool calls. Brief and brainstorm (`runFeature`) unchanged: adaptive thinking with each feature's effort; they already met their targets.
+- **Draft confirmation from the server.** When the only tool in a round is a successful `propose_message` or `propose_parent_update`, the reply is written by `formatDraftConfirmation` (`server/agent/format.ts`): "I drafted an email to Liu Min in Simplified Chinese. Review it in Approvals." That drops the second model call.
+- **Tests.** `test:agent` case 13: no saved assistant row has a thinking block; a first turn; an older turn planted with a thinking block whose signature the API would reject; a task marked done; a follow-up in the same thread returns 200 and names only the remaining overdue task. Case 12 now passes (one 200, one 429).
+- **Joined words** like "twooverdue" and "hasno" were the terminal capture dropping the space at a soft line wrap. The same reply showed the join in different places in two lines, and the run's log file has no joined words.
+
+Timing, `test:agent` wall time (model time in brackets):
+
+| Case | M4b-4 | Now |
+|---|---|---|
+| Overdue | 3.1s (1.3s) | 5.6s (2.0s); 2.7s (1.3s) in case 13 |
+| Draft reminder | 13.4s (9.2s + 0.9s, 1,183 out) | 9.6s (6.6s, 634 out, one call) |
+| Meeting brief | 7.7s | 9.3s (brief tool 5.1s) |
+| Essay brainstorm | 10.6s | 10.4s (brainstorm tool 6.1s) |
+
+The draft is under 12s but not at 5s. What is left is the model writing the email itself (a Chinese email, 634 output tokens) and about 2.5s of database work per request before the first model call (counselor, firm, student summary, history, the budget reservation). The brief and brainstorm vary by a second or two between runs with no change to them.
+
+Checks: `typecheck`, `lint`, `test:notes`, `test:outbox`, `test:agent` (all cases) pass.
+
 ## M4b-4 (branch `m4b4-agent-speed`)
 
 Agent speed, second pass. The main model is still `claude-sonnet-5-5`. `AGENT_FAST_MODEL` is empty. When set, only the meeting brief and the essay brainstorm use it. Parent messages stay on the main model.

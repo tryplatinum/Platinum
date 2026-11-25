@@ -412,6 +412,35 @@ try {
     check('12 the budget never goes past the limit', used.data?.calls === 10, `calls=${used.data?.calls}`)
   }
 
+  // The student record changes between two turns of one thread, so the system
+  // prompt's live summary changes too. An older turn saved with a thinking block
+  // (planted here with a signature the API would reject) must not be replayed.
+  {
+    const stored = await admin.from('agent_messages').select('content').eq('firm_id', firmId).eq('role', 'assistant')
+    const thinking = (stored.data ?? []).filter((row) => JSON.stringify(row.content).includes('"type":"thinking"'))
+    check('13 no assistant row is saved with a thinking block', !stored.error && thinking.length === 0, `rows with thinking=${thinking.length}`)
+    const first = await ask("What's overdue for this student?")
+    check('13 first turn returns ok', first.status === 200 && Boolean(first.body.threadId))
+    const planted = await admin.from('agent_messages').insert([
+      { thread_id: first.body.threadId!, firm_id: firmId, role: 'user', content: [{ type: 'text', text: 'Thanks.' }] },
+      {
+        thread_id: first.body.threadId!,
+        firm_id: firmId,
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'An earlier turn made under another system prompt.', signature: 'c2lnbmVkLWZvci1hbm90aGVyLXByb21wdA==' },
+          { type: 'text', text: 'You are welcome.' },
+        ],
+      },
+    ])
+    if (planted.error) throw new Error(`could not plant the older turn: ${planted.error.message}`)
+    const done = await admin.from('tasks').update({ status: 'done', completed_by: 'student' }).eq('firm_id', firmId).ilike('title', 'Common App personal statement%').select('id')
+    check('13 the record changed between the turns', (done.data ?? []).length === 1)
+    const followUp = await ask('I just marked one done. What is still overdue?')
+    check('13 follow-up after the change returns ok, not 502', followUp.status === 200 && followUp.body.ok === true, `HTTP ${followUp.status}`)
+    check('13 follow-up reflects the change', /piq/i.test(followUp.body.reply ?? ''), (followUp.body.reply ?? '').slice(0, 160))
+  }
+
   await admin.from('agent_messages').delete().eq('firm_id', firmId)
   const fastModel = 'claude-haiku-5-5'
   process.env.AGENT_FAST_MODEL = fastModel
