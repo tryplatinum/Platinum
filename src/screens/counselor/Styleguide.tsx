@@ -417,7 +417,7 @@ export default function Styleguide() {
             }}
           >
             <Field label="Name" hint="Radius 16, the larger shadow, and a close button with a label for screen readers.">
-              <input className={inputClass} autoFocus defaultValue="Kevin Zhang" />
+              <input className={inputClass} data-autofocus defaultValue="Kevin Zhang" />
             </Field>
             <div className="flex justify-end gap-2">
               <Button onClick={() => setModal(false)}>Cancel</Button>

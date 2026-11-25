@@ -10,7 +10,7 @@ import { fullName } from '../../lib/derive'
 import { canPreview, fileKind, fileTitle, folderById, folderOf, isNewFile, isSorting, isStoredFile, needsCheck, openFolders, uploadedBy } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { ID, StudentDocument } from '../../types'
-import { Button, Modal, Pill, Thinking, cx, inputBase, useToast } from '../ui'
+import { Button, Modal, Pill, Thinking, cx, inputBase, useConfirm, useToast } from '../ui'
 import { hiddenNote } from './FilingRow'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong. Please try again.')
@@ -108,6 +108,7 @@ export function FromDrive({ doc }: { doc: StudentDocument }) {
 export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDrive }: { doc: StudentDocument; showStudent?: boolean; showFolder?: boolean; /** The Drive file this was copied from is no longer in its linked folder. */ goneFromDrive?: boolean }) {
   const data = useData()
   const toast = useToast()
+  const confirm = useConfirm()
   const me = useStore((s) => (s.account.status === 'ready' ? s.account.userId : undefined))
   const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
   const { fileDocument, renameFile, deleteFile, openFile, updateDocument, removeDocument } = useStore.getState()
@@ -161,8 +162,9 @@ export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDr
     else updateDocument(doc.id, { name: next })
   }
 
-  const remove = () => {
-    if (!window.confirm(stored ? `Delete “${title}”? The file is removed for good.` : `Remove “${title}”?`)) return
+  const remove = async () => {
+    const yes = await confirm(stored ? { title: 'Delete file', body: `Delete “${title}”? The file is removed for good.`, action: 'Delete file' } : { title: 'Remove from the list', body: `Remove “${title}”?`, action: 'Remove' })
+    if (!yes) return
     if (stored) void run(() => deleteFile(doc.id))
     else removeDocument(doc.id)
   }
@@ -274,7 +276,7 @@ export function FileRow({ doc, showStudent, showFolder = showStudent, goneFromDr
         <Button variant="quiet" disabled={busy} onClick={() => setRenaming(title)}>
           Rename
         </Button>
-        <Button variant="quiet" disabled={busy} aria-label={`Delete ${title}`} onClick={remove}>
+        <Button variant="quiet" disabled={busy} aria-label={`Delete ${title}`} onClick={() => void remove()}>
           Delete
         </Button>
       </div>

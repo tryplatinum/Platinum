@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { PHONE_NOTICE, jobsCsv, secondsBetween, type JobStatus, type PhoneStatus } from '../../../shared/phoneGateway'
 import { callPhone, phoneReason } from '../../services/phone'
-import { Button, Card, Field, Pill, SectionLabel, inputClass, useToast, type Tone } from '../ui'
+import { Button, Card, Field, Pill, SectionLabel, inputClass, useConfirm, useToast, type Tone } from '../ui'
 
 const JOB_LABEL: Record<JobStatus, string> = {
   pending: 'Waiting for your phone',
@@ -47,6 +47,7 @@ const seconds = (value: number | undefined) => (value === undefined ? '—' : `$
 
 export function YourPhone() {
   const toast = useToast()
+  const confirm = useConfirm()
   const [status, setStatus] = useState<PhoneStatus>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -95,8 +96,13 @@ export function YourPhone() {
       return callPhone('status')
     })
 
-  const disconnect = () => {
-    if (!window.confirm('Revoke this phone? The shortcut stops working immediately. Texts you approve go back to “Open in Messages” until you pair a phone again.')) return
+  const disconnect = async () => {
+    const yes = await confirm({
+      title: 'Revoke this phone',
+      body: 'Revoke this phone? The shortcut stops working immediately. Texts you approve go back to “Open in Messages” until you pair a phone again.',
+      action: 'Revoke this phone',
+    })
+    if (!yes) return
     setSetup(undefined)
     void run(() => callPhone('disconnect'), 'Phone revoked.')
   }
@@ -223,7 +229,7 @@ export function YourPhone() {
             <Button disabled={busy} onClick={() => void run(() => callPhone('status'))}>
               Refresh
             </Button>
-            <Button disabled={busy} onClick={disconnect}>
+            <Button disabled={busy} onClick={() => void disconnect()}>
               Revoke this phone
             </Button>
           </div>

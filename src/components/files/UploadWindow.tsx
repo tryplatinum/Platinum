@@ -14,7 +14,7 @@ import { duplicateOf, fileTitle, folderById, isWaiting } from '../../lib/files'
 import { checkFile, hashFile } from '../../services/files'
 import { useData, useStore } from '../../store/store'
 import type { ID } from '../../types'
-import { Button, Modal, cx } from '../ui'
+import { Button, Modal, ProgressBar, cx } from '../ui'
 import { FilingRow } from './FilingRow'
 
 interface Item {
@@ -175,9 +175,7 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
                       {item.stage === 'checking' && <p className="text-[13px] text-muted">Checking…</p>}
                       {item.stage === 'uploading' && (
                         <div>
-                          <div role="progressbar" aria-label={`Uploading ${item.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.progress * 100)} className="h-2 overflow-hidden rounded-full bg-track">
-                            <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round(item.progress * 100)}%` }} />
-                          </div>
+                          <ProgressBar label={`Uploading ${item.file.name}`} done={item.progress} />
                           <p className="mt-1 text-[13px] text-muted">{item.progress >= 1 ? 'Checking the file…' : `Uploading… ${Math.round(item.progress * 100)}%`}</p>
                         </div>
                       )}

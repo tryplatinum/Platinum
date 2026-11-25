@@ -14,7 +14,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { CONTROLS, CONTROL_LABEL, REGIONS, yearOf, type CollegeSummary } from '../../../shared/colleges'
 import { CollegeFigures, CollegePicker, DirectorySourceNote, collegePlace } from '../../components/colleges'
-import { AiTag, Button, Card, CardHeader, LinkButton, PageHeader, Pill, SectionLabel, Thinking, cx, inputBase, useToast } from '../../components/ui'
+import { AiTag, Button, Card, CardHeader, LinkButton, PageHeader, Pill, SectionLabel, Thinking, cx, inputBase, useConfirm, useToast } from '../../components/ui'
 import { BAND_RULES, FITS, MAX_PER_BAND, SIZES, SIZE_BANDS, formatRate } from '../../lib/collegeBands'
 import { STOCK_REASON, defaultPreferences, draftItems, draftRun, matchMajors, normalMix, normalizePreferences, openListDraft, regeneratePreferences, searchPrograms } from '../../lib/collegeListDraft'
 import { formatTimestamp } from '../../lib/dates'
@@ -352,6 +352,7 @@ function admissionsYears(items: CollegeListDraftItem[], directory: DirectoryFigu
 function Review({ student, draft, items, directory, onRegenerate }: { student: Student; draft: CollegeListDraft; items: CollegeListDraftItem[]; directory: DirectoryFigures; onRegenerate: () => void }) {
   const { addDraftToList, addCollegeToDraft, discardListDraft, keepDraftItem } = useStore.getState()
   const toast = useToast()
+  const confirm = useConfirm()
   const navigate = useNavigate()
   const [adding, setAdding] = useState('')
   const [busy, setBusy] = useState<'add' | 'college'>()
@@ -501,8 +502,8 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
           <Button
             variant="quiet"
             disabled={busy !== undefined}
-            onClick={() => {
-              if (!window.confirm('Discard this draft? Nothing is added to the list.')) return
+            onClick={async () => {
+              if (!(await confirm({ title: 'Discard draft', body: 'Discard this draft? Nothing is added to the list.', action: 'Discard draft' }))) return
               discardListDraft(draft.id)
               toast('The draft was discarded. Nothing was added to the list.')
             }}

@@ -6,12 +6,13 @@
 import { useEffect, useState } from 'react'
 import { GoogleFailure, callGoogle, loadGoogleStatus, startGoogleConnect, takeGoogleStatus, useGoogleStatus } from '../../services/google'
 import type { GoogleStatus } from '../../../shared/google'
-import { Button, Card, Pill } from '../ui'
+import { Button, Card, Pill, useConfirm } from '../ui'
 
 const reasonOf = (error: unknown) => (error instanceof GoogleFailure ? error.message : 'Something went wrong. Please try again.')
 
 export function GoogleAccount() {
   const status = useGoogleStatus()
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   // Settings shows the connection as it is now, not as it was when the app loaded.
@@ -33,8 +34,9 @@ export function GoogleAccount() {
   // Reconnecting asks again for everything this connection had, so sending from Gmail is not lost.
   const connect = () => run(() => startGoogleConnect({ gmail: status.gmail }))
   const turnOnGmail = () => run(() => startGoogleConnect({ gmail: true }))
-  const disconnect = () => {
-    if (!window.confirm('Disconnect Google? Files already imported stay. Linked Drive folders stop syncing until you connect again.')) return
+  const disconnect = async () => {
+    const yes = await confirm({ title: 'Disconnect Google', body: 'Disconnect Google? Files already imported stay. Linked Drive folders stop syncing until you connect again.', action: 'Disconnect Google' })
+    if (!yes) return
     void run(async () => {
       takeGoogleStatus(await callGoogle<GoogleStatus>('disconnect'))
       setBusy(false)
@@ -67,7 +69,7 @@ export function GoogleAccount() {
             </Button>
           )}
           {status.connected ? (
-            <Button disabled={busy} onClick={disconnect}>
+            <Button disabled={busy} onClick={() => void disconnect()}>
               Disconnect
             </Button>
           ) : (

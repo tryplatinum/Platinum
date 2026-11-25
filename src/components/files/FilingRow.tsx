@@ -12,7 +12,7 @@ import { activeStudents, fullName } from '../../lib/derive'
 import { catchAllFolder, duplicateOf, fileKind, fileTitle, folderById, openFolders, suggestionLine } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { ID, StudentDocument } from '../../types'
-import { Button, Pill, Thinking, cx, inputBase, useToast } from '../ui'
+import { Button, Pill, Thinking, cx, inputBase, useConfirm, useToast } from '../ui'
 
 /** What the owner-only folders mean for someone who is not the owner. */
 export const hiddenNote = (folderName: string) => `Filed under ${folderName}. Only the firm’s owner can open files in that folder, so it has left your lists.`
@@ -60,6 +60,7 @@ export function StudentPicker({ value, onChange, disabled, label = 'Student' }: 
 export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: StudentDocument; lockStudent?: boolean; suggesting?: boolean; onFiled?: (note: string) => void }) {
   const data = useData()
   const toast = useToast()
+  const confirm = useConfirm()
   const { fileDocument, deleteFile } = useStore.getState()
   const suggestion = doc.aiSuggestion && folderById(data, doc.aiSuggestion.typeId) ? doc.aiSuggestion : undefined
   const [studentId, setStudentId] = useState<ID | undefined>(doc.studentId || undefined)
@@ -96,7 +97,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
     }
   }
   const remove = async () => {
-    if (!window.confirm(`Delete “${fileTitle(doc)}”? The file is removed for good.`)) return
+    if (!(await confirm({ title: 'Delete file', body: `Delete “${fileTitle(doc)}”? The file is removed for good.`, action: 'Delete file' }))) return
     setBusy(true)
     try {
       await deleteFile(doc.id)

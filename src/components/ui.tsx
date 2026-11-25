@@ -4,7 +4,7 @@
 // Every click target is at least 44px high. Status is always shown with words,
 // never by colour alone. /app/styleguide renders everything here in each state.
 
-import { Inbox, X, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Inbox, LoaderCircle, Send, X, type LucideIcon } from 'lucide-react'
 import { notify, onNotify, type Notice } from '../lib/notify'
 import { outboxStatusLabel } from '../../shared/outbox'
 import { runDispatch } from '../services/dispatch'
@@ -15,6 +15,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -26,7 +27,9 @@ import { Link, useSearchParams, type LinkProps } from 'react-router-dom'
 import { formatTimestamp, parseISODate, type ISODate } from '../lib/dates'
 import type { StudentStatus, TaskProgress } from '../lib/derive'
 import type { AiSource, Approval, OwnerType, Review } from '../types'
+import { PRODUCT_NAME } from '../brand'
 import { Spark } from './Logo'
+import { Count, Reveal, TimeLeft, focusNear, ghostOf, reducedMotion, useMarker, useReveal } from './motion'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -81,18 +84,28 @@ export function CardHeader({
   )
 }
 
+/** Names the browser tab: "Inbox · Platinum". */
+export function usePageTitle(name: string): void {
+  useEffect(() => {
+    document.title = `${name} · ${PRODUCT_NAME}`
+  }, [name])
+}
+
 export function PageHeader({ title, above, sub, pill, actions }: { title: ReactNode; above?: ReactNode; sub?: ReactNode; pill?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {above && <p className="mb-1 text-[13px] text-muted">{above}</p>}
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
+          {/* Focus lands here when the page changes, so a screen reader says where it is. */}
+          <h1 tabIndex={-1} className="text-[28px] font-semibold leading-tight tracking-tight focus:outline-none">
+            {title}
+          </h1>
           {pill}
         </div>
         {sub && <p className="mt-1 text-sm text-muted">{sub}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex min-w-0 flex-wrap gap-2">{actions}</div>}
     </header>
   )
 }
@@ -113,11 +126,31 @@ export function Empty({ title, children, icon: Icon = Inbox }: { title: ReactNod
   )
 }
 
+/** A quiet shape where content is on its way. Give it the size of what will arrive, so nothing moves. */
+export function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden className={cx('motion-skeleton block rounded-control bg-chip', className)} />
+}
+
+/** A short notice inside a card or above a list. */
+export function Note({ tone = 'neutral', role, className, children }: { tone?: 'neutral' | 'accent' | 'warn' | 'bad'; role?: 'alert' | 'status' | 'note'; className?: string; children: ReactNode }) {
+  const look = {
+    neutral: 'bg-canvas text-ink-soft',
+    accent: 'border border-accent-line bg-accent-soft text-ink-soft',
+    warn: 'bg-warn-soft text-warn',
+    bad: 'border border-bad-line bg-bad-tint text-bad',
+  }[tone]
+  return (
+    <div role={role} className={cx('rounded-control px-3 py-2 text-[13px]', look, className)}>
+      {children}
+    </div>
+  )
+}
+
 // ── Buttons and form controls ───────────────────────────────────────────────
 
 type Variant = 'primary' | 'secondary' | 'remind' | 'quiet' | 'danger'
 
-const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const BUTTON_BASE = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-semibold transition-[color,background-color,border-color,opacity,transform] disabled:cursor-not-allowed disabled:opacity-50'
 const BUTTON_VARIANT: Record<Variant, string> = {
   primary: 'bg-primary text-on-primary hover:bg-primary-hover',
   secondary: 'border border-line-strong bg-surface text-heading hover:bg-surface-2',
@@ -126,13 +159,32 @@ const BUTTON_VARIANT: Record<Variant, string> = {
   danger: 'border border-bad bg-surface text-bad hover:bg-bad-tint',
 }
 
-export function Button({ variant = 'secondary', className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  return <button type="button" {...rest} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)} />
+/**
+ * `busy` is for a button waiting on the server: it turns a small ring beside
+ * the label and cannot be pressed again. The button keeps its place and focus.
+ */
+export function Button({ variant = 'secondary', className, busy, disabled, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean }) {
+  return (
+    <button type="button" {...rest} disabled={disabled || busy} aria-busy={busy || undefined} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)}>
+      {busy && <LoaderCircle size={16} strokeWidth={1.75} className="motion-spin shrink-0" aria-hidden />}
+      {children}
+    </button>
+  )
+}
+
+/** The label of a button that sends something: never shown on one that does not. */
+export function SendLabel({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <Send size={20} strokeWidth={1.75} className="shrink-0" aria-hidden />
+      <span>{children}</span>
+    </>
+  )
 }
 
 /** A link that looks like a button. */
 export function LinkButton({ variant = 'secondary', className, ...rest }: LinkProps & { variant?: Variant }) {
-  return <Link {...rest} className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)} />
+  return <Link {...rest} data-press className={cx(BUTTON_BASE, BUTTON_VARIANT[variant], className)} />
 }
 
 /** Input styling without a width. Focus shows a 2px accent ring and the border changes with it. */
@@ -150,6 +202,50 @@ export function Field({ label, children, hint, className }: { label: string; chi
       {children}
       {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
     </label>
+  )
+}
+
+/** A checkbox whose whole row can be pressed: at least 44px tall, with the box at 20. */
+export function CheckRow({
+  checked,
+  onChange,
+  disabled,
+  children,
+  hint,
+  className,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+  children: ReactNode
+  hint?: ReactNode
+  className?: string
+}) {
+  return (
+    <label className={cx('check-row text-sm', className)}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="min-w-0">
+        {children}
+        {hint && <span className="block text-[13px] text-muted">{hint}</span>}
+      </span>
+    </label>
+  )
+}
+
+/** A heading that opens and closes what is under it. Everything in it is a real button. */
+export function Disclosure({ label, children, start = false, className, count }: { label: ReactNode; children: ReactNode; start?: boolean; className?: string; count?: number }) {
+  const reveal = useReveal(start)
+  return (
+    <div className={className}>
+      <button type="button" {...reveal.button} className="flex min-h-11 items-center gap-1.5 rounded-control text-[13px] font-semibold text-accent">
+        <ChevronRight size={16} strokeWidth={1.75} className="motion-chevron shrink-0" aria-hidden />
+        {label}
+        {count !== undefined && ` · ${count}`}
+      </button>
+      <Reveal open={reveal.open} id={reveal.id}>
+        {children}
+      </Reveal>
+    </div>
   )
 }
 
@@ -254,17 +350,31 @@ export function DateChip({ date, tone = 'neutral' }: { date: ISODate; tone?: Ton
   const d = parseISODate(date)
   return (
     <div className={cx('nums min-w-[60px] shrink-0 rounded-control px-2 py-1.5 text-center', TONE[tone])}>
-      <div className="text-[11px] font-semibold uppercase">{d.toLocaleDateString('en-US', { month: 'short' })}</div>
+      <div className="text-xs font-semibold uppercase">{d.toLocaleDateString('en-US', { month: 'short' })}</div>
       <div className="text-xl font-semibold leading-none">{d.getDate()}</div>
     </div>
   )
 }
 
+/** The moving part of a progress bar. `value` is 0 to 1. */
+function Fill({ value, className }: { value: number; className: string }) {
+  return <div className={cx('motion-progress h-2 w-full', className)} style={{ transform: `scaleX(${Math.min(1, Math.max(0, value))})` }} />
+}
+
+/** How far something that takes a while has got. `done` of `total`, or 0 to 1 when `total` is left out. */
+export function ProgressBar({ label, done, total = 1, className }: { label: string; done: number; total?: number; className?: string }) {
+  const value = total ? done / total : 0
+  return (
+    <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value * 100)} className={cx('h-2 overflow-hidden rounded-full bg-track', className)}>
+      <Fill value={value} className="bg-accent" />
+    </div>
+  )
+}
+
 function Bar({ progress, status }: { progress: TaskProgress; status: StudentStatus }) {
-  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
   return (
     <div role="img" aria-label={`${progress.done} of ${progress.total} tasks done`} className="h-2 overflow-hidden rounded-full bg-track">
-      <div className={cx('motion-progress h-2', STATUS_BAR[status])} style={{ width: `${pct}%` }} />
+      <Fill value={progress.total ? progress.done / progress.total : 0} className={STATUS_BAR[status]} />
     </div>
   )
 }
@@ -357,8 +467,17 @@ export function Tabs<T extends string>({ tabs, param = 'tab', label }: { tabs: T
     else next.set(param, key)
     setParams(next, { replace: true })
   }
+  const list = useRef<HTMLDivElement>(null)
+  const marker = useMarker(list, '[aria-selected="true"]', current)
+  // On a phone the chosen tab can be past the edge: bring it into the row, without moving the page.
+  useEffect(() => {
+    const el = list.current?.querySelector<HTMLElement>('[aria-selected="true"]')
+    const box = list.current
+    if (el && box && (el.offsetLeft < box.scrollLeft || el.offsetLeft + el.offsetWidth > box.scrollLeft + box.clientWidth)) box.scrollLeft = el.offsetLeft - 16
+  }, [current])
   return (
-    <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto border-b border-line" onKeyDown={(e) => arrowNav(e, tabs.map((t) => t.key), current, select)}>
+    <div ref={list} role="tablist" aria-label={label} className="relative flex gap-1 overflow-x-auto border-b border-line" onKeyDown={(e) => arrowNav(e, tabs.map((t) => t.key), current, select)}>
+      {marker && <span aria-hidden className="motion-marker absolute bottom-0 left-0 h-0.5 w-px bg-accent" style={{ transform: `translateX(${marker.x}px) scaleX(${marker.width})` }} />}
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -369,14 +488,23 @@ export function Tabs<T extends string>({ tabs, param = 'tab', label }: { tabs: T
           tabIndex={current === t.key ? 0 : -1}
           onClick={() => select(t.key)}
           className={cx(
-            '-mb-px min-h-11 whitespace-nowrap border-b-2 px-3 text-sm',
-            current === t.key ? 'border-accent font-semibold text-accent' : 'border-transparent font-medium text-muted hover:text-heading',
+            'min-h-11 shrink-0 whitespace-nowrap px-3 text-sm',
+            current === t.key ? 'font-semibold text-accent' : 'font-medium text-muted hover:text-heading',
           )}
         >
           {t.label}
-          {t.count !== undefined && t.count > 0 && <span className="nums ml-1.5 rounded-full bg-accent-soft-2 px-1.5 text-xs font-semibold text-accent-hover">{t.count}</span>}
+          {t.count !== undefined && t.count > 0 && <Count value={t.count} className="ml-1.5 inline-block rounded-full bg-accent-soft-2 px-1.5 text-xs font-semibold text-accent-hover" />}
         </button>
       ))}
+    </div>
+  )
+}
+
+/** What a tab shows. It cross-fades when the tab changes. */
+export function TabPanel({ tab, label, children }: { tab: string; label: string; children: ReactNode }) {
+  return (
+    <div key={tab} role="tabpanel" aria-label={label} className="motion-page flex min-w-0 flex-col gap-6">
+      {children}
     </div>
   )
 }
@@ -433,8 +561,11 @@ const ToastContext = createContext<(message: string) => void>(() => {})
 /** Call with a message to confirm what just happened. */
 export const useToast = () => useContext(ToastContext)
 
+const TOAST = 'pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float'
+
 function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; sendAfter: string; onClose: () => void }) {
   const [now, setNow] = useState(Date.now())
+  const [opened] = useState(() => new Date().toISOString())
   const [busy, setBusy] = useState(false)
   const [dispatched, setDispatched] = useState(false)
   useEffect(() => {
@@ -454,8 +585,11 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
   }, [open, dispatched, cancelled])
   const label = outboxStatusLabel({ status: 'queued', sendAfter }, now)
   return (
-    <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
-      <span>{label}</span>
+    <>
+      <span className="flex flex-col gap-1">
+        <span className="nums">{label}</span>
+        {open && <TimeLeft from={opened} until={sendAfter} className="opacity-60" />}
+      </span>
       {open && (
         <button
           type="button"
@@ -476,17 +610,27 @@ function QueueToast({ messageId, sendAfter, onClose }: { messageId: string; send
           Undo
         </button>
       )}
-    </div>
+    </>
   )
 }
 
+/** How long a closed toast is kept to be seen leaving. */
+const TOAST_LEAVE_MS = 120
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<({ id: number } & Notice)[]>([])
-  const show = useCallback((message: string) => {
-    const id = Date.now() + Math.random()
-    setToasts((t) => [...t, { id, kind: 'text', message }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
+  const [toasts, setToasts] = useState<({ id: number; leaving?: boolean } & Notice)[]>([])
+  const close = useCallback((id: number) => {
+    setToasts((all) => all.map((t) => (t.id === id ? { ...t, leaving: true } : t)))
+    setTimeout(() => setToasts((all) => all.filter((t) => t.id !== id)), reducedMotion() ? 0 : TOAST_LEAVE_MS)
   }, [])
+  const show = useCallback(
+    (message: string) => {
+      const id = Date.now() + Math.random()
+      setToasts((t) => [...t, { id, kind: 'text', message }])
+      setTimeout(() => close(id), 6000)
+    },
+    [close],
+  )
   const push = useCallback(
     (notice: Notice) => {
       if (notice.kind === 'text') {
@@ -495,32 +639,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       const id = Date.now() + Math.random()
       setToasts((t) => [...t, { id, ...notice }])
-      if (notice.kind === 'queue') {
-        const life = Math.max(1000, Date.parse(notice.sendAfter) - Date.now() + 1500)
-        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), life)
-      } else {
-        setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 10_000)
-      }
+      setTimeout(() => close(id), notice.kind === 'queue' ? Math.max(1000, Date.parse(notice.sendAfter) - Date.now() + 1500) : 10_000)
     },
-    [show],
+    [show, close],
   )
   // The store reports failed saves and queued messages through lib/notify.
   useEffect(() => onNotify(push), [push])
   return (
     <ToastContext.Provider value={show}>
-      {children}
-      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
-        {toasts.map((t) =>
-          t.kind === 'text' ? (
-            <div key={t.id} className="motion-toast pointer-events-auto max-w-md rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
-              {t.message}
-            </div>
-          ) : t.kind === 'skip_undo' ? (
-            <SkipUndoToast key={t.id} skipId={t.skipId} message={t.message} onClose={() => setToasts((all) => all.filter((x) => x.id !== t.id))} />
-          ) : (
-            <QueueToast key={t.id} messageId={t.messageId} sendAfter={t.sendAfter} onClose={() => setToasts((all) => all.filter((x) => x.id !== t.id))} />
-          ),
-        )}
+      <ConfirmProvider>{children}</ConfirmProvider>
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 pb-[env(safe-area-inset-bottom)]">
+        {toasts.map((t) => (
+          <div key={t.id} inert={t.leaving} className={cx(TOAST, t.leaving ? 'motion-toast-out' : 'motion-toast')}>
+            {t.kind === 'text' ? (
+              t.message
+            ) : t.kind === 'skip_undo' ? (
+              <SkipUndoToast skipId={t.skipId} message={t.message} onClose={() => close(t.id)} />
+            ) : (
+              <QueueToast messageId={t.messageId} sendAfter={t.sendAfter} onClose={() => close(t.id)} />
+            )}
+          </div>
+        ))}
       </div>
     </ToastContext.Provider>
   )
@@ -529,7 +668,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 function SkipUndoToast({ skipId, message, onClose }: { skipId: string; message: string; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   return (
-    <div className="motion-toast pointer-events-auto flex max-w-md items-center gap-3 rounded-control bg-primary px-4 py-3 text-sm font-medium text-on-primary shadow-float">
+    <>
       <span>{message}</span>
       <button
         type="button"
@@ -550,34 +689,159 @@ function SkipUndoToast({ skipId, message, onClose }: { skipId: string; message: 
       >
         Undo skip
       </button>
-    </div>
+    </>
   )
 }
 
 // ── Modal ───────────────────────────────────────────────────────────────────
 
-/** A dialog for a form. Uses the native <dialog>, so focus is trapped and Escape closes it. */
-export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+/**
+ * A dialog for a form. Uses the native <dialog>, so focus is trapped and Escape
+ * closes it. Focus starts on the element marked `data-autofocus`, and goes back
+ * to what opened the dialog, or near it if that is gone. With `typed`, a press
+ * outside does not close it, so what has been typed is not lost by a slip.
+ */
+export function Modal({ title, onClose, children, wide, typed, describedBy }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; typed?: boolean; describedBy?: string }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  const opener = useRef<Element>(null)
   useEffect(() => {
     const dialog = ref.current
-    if (dialog && !dialog.open) dialog.showModal()
+    if (!dialog || dialog.open) return
+    opener.current ??= document.activeElement
+    dialog.showModal()
+    dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+  }, [])
+  useLayoutEffect(() => {
+    const dialog = ref.current
+    return () => {
+      if (!dialog?.open) return
+      const leave = reducedMotion() ? undefined : ghostOf(dialog)
+      // After the dialog is really gone. In development React runs this once more while it is still there.
+      queueMicrotask(() => {
+        if (dialog.isConnected) return
+        leave?.()
+        if (!document.activeElement || document.activeElement === document.body) focusNear(opener.current)
+      })
+    }
   }, [])
   return (
     <dialog
       ref={ref}
       onClose={onClose}
-      onClick={(e) => e.target === ref.current && onClose()}
+      // Closed by whoever opened it, like every other way out.
+      onCancel={(e) => {
+        if (e.target !== ref.current) return
+        e.preventDefault()
+        onClose()
+      }}
+      onClick={(e) => e.target === ref.current && !typed && onClose()}
+      aria-labelledby={titleId}
+      aria-describedby={describedBy}
       className={cx('m-auto w-[calc(100%-2rem)] rounded-modal border border-line bg-surface p-0 text-ink shadow-float', wide ? 'max-w-2xl' : 'max-w-lg')}
     >
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-        <h2 className="min-w-0 text-lg font-semibold">{title}</h2>
+        <h2 id={titleId} className="min-w-0 text-lg font-semibold">
+          {title}
+        </h2>
         <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading">
           <X size={20} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
       <div className="p-5">{children}</div>
     </dialog>
+  )
+}
+
+// ── Asking before something is lost ─────────────────────────────────────────
+
+export interface ConfirmRequest {
+  title: string
+  /** What is lost, in words. */
+  body: string
+  /** The button: the action itself, such as "Delete file". */
+  action: string
+  /** A word that has to be typed first, and what is said when it is not right. */
+  word?: string
+  wrongWord?: string
+}
+
+/** Cancel has the focus, so pressing Enter by habit changes nothing. */
+export function ConfirmDialog({ title, body, action, word, wrongWord, onAnswer }: ConfirmRequest & { onAnswer: (yes: boolean) => void }) {
+  const [typed, setTyped] = useState('')
+  const [wrong, setWrong] = useState(false)
+  const bodyId = useId()
+  const ready = !word || typed.trim() === word
+  return (
+    <Modal title={title} describedBy={bodyId} onClose={() => onAnswer(false)}>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (ready) onAnswer(true)
+        }}
+      >
+        <p id={bodyId} className="text-sm leading-relaxed text-ink-soft">
+          {body}
+        </p>
+        {word && (
+          <Field label={`Type ${word} to confirm.`}>
+            <input
+              className={inputClass}
+              value={typed}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-invalid={wrong && !ready}
+              onChange={(e) => {
+                setTyped(e.target.value)
+                setWrong(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !ready) setWrong(true)
+              }}
+            />
+          </Field>
+        )}
+        {wrong && !ready && (
+          <p role="alert" className="text-[13px] text-bad">
+            {wrongWord}
+          </p>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button data-autofocus onClick={() => onAnswer(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="danger" disabled={!ready}>
+            {action}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+const ConfirmContext = createContext<(request: ConfirmRequest) => Promise<boolean>>(() => Promise.resolve(false))
+
+/** Asks, and resolves to true when the person says yes: `if (!(await confirm({ … }))) return`. */
+export const useConfirm = () => useContext(ConfirmContext)
+
+function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [asking, setAsking] = useState<ConfirmRequest & { answer: (yes: boolean) => void }>()
+  const confirm = useCallback((request: ConfirmRequest) => new Promise<boolean>((answer) => setAsking({ ...request, answer })), [])
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      {asking && (
+        <ConfirmDialog
+          {...asking}
+          onAnswer={(yes) => {
+            asking.answer(yes)
+            setAsking(undefined)
+          }}
+        />
+      )}
+    </ConfirmContext.Provider>
   )
 }
 

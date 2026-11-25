@@ -8,7 +8,7 @@ import { DOC_CATEGORIES, daysLate, isLate, isOpen, ownerLabel } from '../lib/der
 import { useData, useStore } from '../store/store'
 import type { Actor, DocCategory, Student, Task } from '../types'
 import { ReminderComposer, reminderRecipient } from './ReminderComposer'
-import { Button, CheckCircle, Pill, SectionLabel, cx, inputBase, inputClass } from './ui'
+import { Button, CheckCircle, Pill, SectionLabel, cx, inputBase, inputClass, useConfirm } from './ui'
 
 type Viewer = Extract<Actor, 'student' | 'counselor'>
 
@@ -95,6 +95,7 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
 
 function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student: Student; viewer: Viewer; onDeleted: () => void }) {
   const { updateTaskProgress, updateTask, attachToTask, deleteTask } = useStore.getState()
+  const confirm = useConfirm()
   // A student on their secret link can attach a link, not a file.
   const onLink = useStore((s) => s.mode === 'student_link')
   const [note, setNote] = useState(task.progressNote ?? '')
@@ -198,11 +199,10 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           </label>
           <Button
             variant="danger"
-            onClick={() => {
-              if (window.confirm(`Delete “${task.title}”?`)) {
-                deleteTask(task.id)
-                onDeleted()
-              }
+            onClick={async () => {
+              if (!(await confirm({ title: 'Delete task', body: `Delete “${task.title}”?`, action: 'Delete task' }))) return
+              deleteTask(task.id)
+              onDeleted()
             }}
           >
             Delete task

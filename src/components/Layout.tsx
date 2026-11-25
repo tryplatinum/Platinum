@@ -14,7 +14,7 @@ import { AiConnection } from './AiConnection'
 import { GOOGLE_RETURN } from './google/GoogleAccount'
 import { AgentPanel, useAgentPanel } from './agent/AgentPanel'
 import { Logo, Spark } from './Logo'
-import { Button, Card, cx, useToast } from './ui'
+import { Button, Card, cx, useConfirm, useToast } from './ui'
 
 /** Navigation and button icons: 20px, stroke 1.75. Always beside a text label. */
 const ICON = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const
@@ -171,6 +171,7 @@ function useGoogleReturn() {
 function LegacyImport() {
   const { hasLegacyData, importLegacyData, dismissLegacyData } = useStore.getState()
   const toast = useToast()
+  const confirm = useConfirm()
   const [show, setShow] = useState(hasLegacyData)
   if (!show) return null
   return (
@@ -189,8 +190,9 @@ function LegacyImport() {
           Import the data saved in this browser
         </Button>
         <Button
-          onClick={() => {
-            if (!window.confirm('Leave that data behind? It will be removed from this browser and cannot be imported later.')) return
+          onClick={async () => {
+            const yes = await confirm({ title: 'Leave that data behind', body: 'Leave that data behind? It will be removed from this browser and cannot be imported later.', action: 'Leave it behind' })
+            if (!yes) return
             dismissLegacyData()
             setShow(false)
           }}

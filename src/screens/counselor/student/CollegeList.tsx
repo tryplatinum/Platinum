@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import type { CollegeSummary } from '../../../../shared/colleges'
 import { CollegeFigures, CollegePicker, DirectorySourceNote, collegePlace } from '../../../components/colleges'
-import { Button, Card, CardHeader, Empty, LinkButton, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { Button, Card, CardHeader, Empty, LinkButton, SectionLabel, cx, inputBase, useConfirm } from '../../../components/ui'
 import { openListDraft } from '../../../lib/collegeListDraft'
 import { collegeIsPending, collegesFor, dueText } from '../../../lib/derive'
 import { dismissMatch, matchDismissed, useDirectoryColleges, useSuggestedMatches, type DirectoryFigures } from '../../../services/colleges'
@@ -203,6 +203,7 @@ export function CollegeList({ student }: { student: Student }) {
 /** One college: its row, and under it either the directory's figures or the offer to link it. */
 function CollegeRows({ college: c, directory, suggestion }: { college: CollegeApp; directory: DirectoryFigures; suggestion?: CollegeSummary }) {
   const { updateCollege, removeCollege } = useStore.getState()
+  const confirm = useConfirm()
   const [finding, setFinding] = useState<string>()
   const linked = c.directoryUnitid === undefined ? undefined : directory.college(c.directoryUnitid)
   const offer = suggestion && !matchDismissed(c.id, suggestion.unitid) ? suggestion : undefined
@@ -251,7 +252,13 @@ function CollegeRows({ college: c, directory, suggestion }: { college: CollegeAp
           </select>
         </td>
         <td className="py-2.5 pl-3 pr-5 text-right">
-          <Button variant="quiet" aria-label={`Remove ${c.name}`} onClick={() => window.confirm(`Remove ${c.name} from the list?`) && removeCollege(c.id)}>
+          <Button
+            variant="quiet"
+            aria-label={`Remove ${c.name}`}
+            onClick={async () => {
+              if (await confirm({ title: 'Remove college', body: `Remove ${c.name} from the list?`, action: 'Remove college' })) removeCollege(c.id)
+            }}
+          >
             Remove
           </Button>
         </td>

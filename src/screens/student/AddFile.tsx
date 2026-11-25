@@ -8,7 +8,7 @@ import { Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { FILE_ACCEPT, FILE_TYPES_LABEL } from '../../../shared/files'
 import { useFileDrop } from '../../components/files/UploadWindow'
-import { Button, Card, cx } from '../../components/ui'
+import { Button, Card, ProgressBar, cx } from '../../components/ui'
 import { studentLinkUpload } from '../../services/files'
 import { useStore } from '../../store/store'
 
@@ -101,9 +101,7 @@ export function AddFile({ counselorName }: { counselorName: string }) {
                 <span className="break-all text-sm font-medium">{item.file.name}</span>
                 {item.stage === 'sending' ? (
                   <>
-                    <div role="progressbar" aria-label={`Sending ${item.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.progress * 100)} className="h-2 overflow-hidden rounded-full bg-track">
-                      <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round(item.progress * 100)}%` }} />
-                    </div>
+                    <ProgressBar label={`Sending ${item.file.name}`} done={item.progress} />
                     <span className="text-[13px] text-muted">{item.progress >= 1 ? 'Almost done…' : `Sending… ${Math.round(item.progress * 100)}%`}</span>
                   </>
                 ) : (

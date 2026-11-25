@@ -11,7 +11,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { draftMeeting, type DraftMode } from '../services/workflows'
 import { useData, useStore } from '../store/store'
 import type { Channel, ID, Language, Meeting, Parent } from '../types'
-import { AiErrorNote, Button, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useToast } from './ui'
+import { AiErrorNote, Button, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useConfirm, useToast } from './ui'
 
 const CHANNELS = Object.entries(CHANNEL_LABEL) as [Channel, string][]
 const LANGUAGES = Object.entries(LANGUAGE_LABEL) as [Language, string][]
@@ -69,7 +69,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="First name">
-            <input className={inputClass} required autoFocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} />
+            <input className={inputClass} required data-autofocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} />
           </Field>
           <Field label="Last name">
             <input className={inputClass} required value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} />
@@ -113,6 +113,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
 
 export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID; parent?: Parent; onClose: () => void }) {
   const { addParent, updateParent, removeParent } = useStore.getState()
+  const confirm = useConfirm()
   const [f, setF] = useState({
     name: parent?.name ?? '',
     localName: parent?.localName ?? '',
@@ -143,7 +144,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name">
-            <input className={inputClass} required autoFocus value={f.name} onChange={(e) => set({ name: e.target.value })} />
+            <input className={inputClass} required data-autofocus value={f.name} onChange={(e) => set({ name: e.target.value })} />
           </Field>
           <Field label="Name in their language (optional)" hint="Used to greet them, e.g. 张伟.">
             <input className={inputClass} value={f.localName} onChange={(e) => set({ localName: e.target.value })} />
@@ -199,11 +200,10 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
           deleteLabel="Remove"
           onDelete={
             parent
-              ? () => {
-                  if (window.confirm(`Remove ${parent.name}? Their open tasks move to you.`)) {
-                    removeParent(studentId, parent.id)
-                    onClose()
-                  }
+              ? async () => {
+                  if (!(await confirm({ title: 'Remove parent', body: `Remove ${parent.name}? Their open tasks move to you.`, action: 'Remove parent' }))) return
+                  removeParent(studentId, parent.id)
+                  onClose()
                 }
               : undefined
           }
@@ -218,6 +218,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
 export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: ID; meeting?: Meeting; onClose: () => void }) {
   const data = useData()
   const { addMeeting, updateMeeting, deleteMeeting } = useStore.getState()
+  const confirm = useConfirm()
   const students = activeStudents(data)
   const [f, setF] = useState({
     studentId: meeting?.studentId ?? studentId ?? students[0]?.id ?? '',
@@ -256,7 +257,7 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
             </Field>
           )}
           <Field label="What the meeting is about">
-            <input className={inputClass} autoFocus value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. UC essays and campus list" />
+            <input className={inputClass} data-autofocus value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. UC essays and campus list" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Date">
@@ -279,11 +280,10 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
             deleteLabel="Cancel this meeting"
             onDelete={
               meeting
-                ? () => {
-                    if (window.confirm('Cancel this meeting and remove it from the schedule?')) {
-                      deleteMeeting(meeting.id)
-                      onClose()
-                    }
+                ? async () => {
+                    if (!(await confirm({ title: 'Cancel this meeting', body: 'Cancel this meeting and remove it from the schedule?', action: 'Cancel this meeting' }))) return
+                    deleteMeeting(meeting.id)
+                    onClose()
                   }
                 : undefined
             }

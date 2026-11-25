@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { FolderSettings } from '../../components/files/FolderSettings'
 import { GoogleAccount } from '../../components/google/GoogleAccount'
 import { YourPhone } from '../../components/phone/YourPhone'
-import { Button, Card, CardHeader, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useToast } from '../../components/ui'
+import { Button, Card, CardHeader, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useConfirm, useToast } from '../../components/ui'
 import { WEEKDAYS } from '../../lib/derive'
 import { useData, useStore } from '../../store/store'
 import { setAppearance, useAppearance } from '../../theme'
@@ -186,39 +186,57 @@ function AppearanceSetting() {
 function DemoData() {
   const navigate = useNavigate()
   const toast = useToast()
+  const confirm = useConfirm()
   const { resetDemo, startEmpty } = useStore.getState()
+  const [busy, setBusy] = useState<'reset' | 'empty'>()
   return (
     <Card className="flex flex-col gap-4 p-5">
       <CardHeader size="section" title="Demo data" sub="Both delete every student, task, meeting and message in your firm. Each asks you to type a word first." />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="danger"
-          onClick={() => {
+          busy={busy === 'reset'}
+          disabled={Boolean(busy)}
+          onClick={async () => {
             // Deleting a firm's data cannot be undone, so it takes a typed word, not a click.
-            const typed = window.prompt('Reset to the sample caseload? This permanently deletes every student, task, meeting and message in your firm and loads the invented demo students.\n\nType RESET to confirm.')
-            if (typed === null) return
-            if (typed.trim() !== 'RESET') return toast('Nothing was changed. Type RESET exactly to confirm.')
-            // Said only once it has happened: a counselor who is not the owner can be refused.
-            void resetDemo().then((done) => {
-              if (!done) return
-              navigate('/app')
-              toast('Sample caseload loaded.')
+            const yes = await confirm({
+              title: 'Reset demo',
+              body: 'Reset to the sample caseload? This permanently deletes every student, task, meeting and message in your firm and loads the invented demo students.',
+              action: 'Reset demo',
+              word: 'RESET',
+              wrongWord: 'Nothing was changed. Type RESET exactly to confirm.',
             })
+            if (!yes) return
+            setBusy('reset')
+            // Said only once it has happened: a counselor who is not the owner can be refused.
+            const done = await resetDemo()
+            setBusy(undefined)
+            if (!done) return
+            navigate('/app/today')
+            toast('Sample caseload loaded.')
           }}
         >
           Reset demo
         </Button>
         <Button
           variant="danger"
-          onClick={() => {
-            const typed = window.prompt('Start with an empty firm? This permanently deletes every student, task, meeting and message in your firm.\n\nType DELETE to confirm.')
-            if (typed === null) return
-            if (typed.trim() !== 'DELETE') return toast('Nothing was changed. Type DELETE exactly to confirm.')
-            void startEmpty().then((done) => {
-              if (!done) return
-              navigate('/app/students')
-              toast('Empty firm ready. Add your first student.')
+          busy={busy === 'empty'}
+          disabled={Boolean(busy)}
+          onClick={async () => {
+            const yes = await confirm({
+              title: 'Start empty',
+              body: 'Start with an empty firm? This permanently deletes every student, task, meeting and message in your firm.',
+              action: 'Start empty',
+              word: 'DELETE',
+              wrongWord: 'Nothing was changed. Type DELETE exactly to confirm.',
             })
+            if (!yes) return
+            setBusy('empty')
+            const done = await startEmpty()
+            setBusy(undefined)
+            if (!done) return
+            navigate('/app/students')
+            toast('Empty firm ready. Add your first student.')
           }}
         >
           Start empty

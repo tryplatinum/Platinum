@@ -26,6 +26,7 @@ import {
   inputClass,
   textareaClass,
   useAi,
+  useConfirm,
 } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { ESSAY_STATUS, currentDraft, essayApproval, essayGroups, wordCount, type EssayGroup } from '../../../lib/derive'
@@ -225,6 +226,7 @@ function AddEssayForm({ student, onDone }: { student: Student; onDone: (id?: str
 function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: Student; onClose: () => void }) {
   const { saveEssayDraft, updateDocument, removeDocument, setEssayFeedback } = useStore.getState()
   const data = useData()
+  const confirm = useConfirm()
   const { busy, error, run } = useAi()
   const draft = currentDraft(doc)
   const [text, setText] = useState(draft?.text ?? '')
@@ -372,11 +374,10 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
       <Button
         variant="danger"
         className="self-start"
-        onClick={() => {
-          if (window.confirm(`Delete “${doc.name}” and its drafts?`)) {
-            removeDocument(doc.id)
-            onClose()
-          }
+        onClick={async () => {
+          if (!(await confirm({ title: 'Delete essay', body: `Delete “${doc.name}” and its drafts?`, action: 'Delete essay' }))) return
+          removeDocument(doc.id)
+          onClose()
         }}
       >
         Delete essay
