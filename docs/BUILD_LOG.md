@@ -1,5 +1,14 @@
 # Build log
 
+## UI and UX fixes (branch `ui-ux-fixes`)
+
+Four fixes. No migration, no API route, no outbox or dispatch change.
+
+- **Assistant wording.** A drafted message ends with "You can approve it below." (`server/agent/format.ts`, the `reply:` instructions in `tools.ts`, the rule in `server/prompts.ts`). "Approvals" is "the Inbox" and "Firm settings" is "Settings" in the other server text. `test:agent` case 2 checks the new sentence; it needs an API key and was not run. Threads already stored keep the old sentence.
+- **Remind on any open task** with someone to remind, filled style when late and plain otherwise. `ReminderComposer` already worded a task that is not due yet.
+- **Weekly text link.** `src/lib/studentLinks.ts` fills `{{student_link}}` when a counselor copies a text or opens Messages, with one link per student kept in memory for the session and forgotten when it is replaced, revoked or the session ends. The stored text, the outbox row and the log keep the placeholder. Copy hands Safari a promised `ClipboardItem`. Nothing is marked sent unless the copy or the link worked. `OpenInMessages` is a button that follows the `sms:` address, because the address may have to be made first. The character count, the facts and the limit given to the AI allow for the real address (`linkRoom` in `src/lib/reminders.ts`). Messages, Sent uses the same helper.
+- **Undo id.** `sendMessage` returns the queued message's id and `approveAgentProposal` resolves to it. If the message was queued but the decision was not saved, it rejects with `ProposalNotDecided`, which carries the id so the card still offers Undo. The order of queueing and deciding is unchanged.
+
 ## UX cleanup (branch `ux-cleanup`)
 
 Front end only. No migration, no server, API, outbox or dispatch change. Every send still goes through `sendMessage`, `queue_message` and the 60-second hold. `src/store/store.ts` is unchanged.
