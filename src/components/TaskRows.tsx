@@ -72,8 +72,8 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
           </span>
         </button>
         <DueChip task={task} />
-        {viewer === 'counselor' && late && reminderRecipient(student, task) && (
-          <Button variant="remind" onClick={() => setReminding(!reminding)} aria-expanded={reminding}>
+        {viewer === 'counselor' && reminderRecipient(student, task) && (
+          <Button variant={late ? 'remind' : 'secondary'} onClick={() => setReminding(!reminding)} aria-expanded={reminding}>
             Remind
           </Button>
         )}
