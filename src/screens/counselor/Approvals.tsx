@@ -122,8 +122,8 @@ export default function Inbox() {
         item = rowAfter(next.keys, item, keys)
       } else if (next.keys.length > 0 || keys.length > 0) item = undefined
     } else if (gone && keys.includes(gone) && !next.keys.includes(gone)) {
-      // Undo put it back.
-      item = gone
+      // Undo put it back. It is opened again, unless the counselor has gone back to the list on a phone.
+      if (two || item) item = gone
       gone = undefined
     }
     next = { ...next, keys, item, gone }
@@ -157,7 +157,13 @@ export default function Inbox() {
 
   // Where there is one column, opening a row starts it at the top, and going back finds the list where it was.
   const alone = !two && Boolean(selected)
+  const arrived = useRef(false)
   useLayoutEffect(() => {
+    // Not on arrival: the page starts where the browser puts it.
+    if (!arrived.current) {
+      arrived.current = true
+      return
+    }
     if (two) return
     window.scrollTo(0, alone ? 0 : listScroll.current)
   }, [alone, two])
