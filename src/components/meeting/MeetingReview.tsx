@@ -65,7 +65,7 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
               <Thinking label="AI is reading the notes and drafting follow-ups…" />
             ) : (
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => run(() => draftMeeting(meeting.id, 'full'))}>
+                <Button onClick={() => run(() => draftMeeting(meeting.id, 'full'))}>
                   Draft notes, tasks and parent update
                 </Button>
                 <Button onClick={() => run(() => draftMeeting(meeting.id, 'tasks'))}>Draft tasks only</Button>

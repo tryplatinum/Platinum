@@ -69,7 +69,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
               <Button onClick={() => setDrive('files')}>Add from Google Drive</Button>
             </>
           )}
-          <Button variant="primary" onClick={() => setUploading([])}>
+          <Button onClick={() => setUploading([])}>
             Upload files
           </Button>
         </div>
@@ -188,7 +188,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
       {docs.length === 0 ? (
         <Card>
           <Empty title={`No documents for ${student.firstName} yet. Upload a transcript or a score report, or add a link. Files ${student.firstName} adds from their own link are sorted into folders here.`}>
-            <Button variant="primary" onClick={() => setUploading([])}>
+            <Button onClick={() => setUploading([])}>
               Upload files
             </Button>
           </Empty>

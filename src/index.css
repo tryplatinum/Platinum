@@ -104,7 +104,7 @@
    person has chosen one in Settings.
 
    Surfaces step up from midnight (page) to navy (cards) so a card still reads
-   as a card without a shadow. Filled buttons turn silver with midnight text.
+   as a card without a shadow. Filled buttons turn porcelain with midnight text.
    The logo keeps its porcelain background, so in the dark it shows as a small
    light tile; it is never recoloured. */
 :root[data-theme='dark'] {
@@ -122,9 +122,10 @@
   --color-ink-soft: #d7e2ef;
   --color-muted: #adb7c7;
 
-  --color-primary: #adb7c7;
-  --color-primary-hover: #d7e2ef;
-  --color-on-primary: #09182f;
+  /* Porcelain, the lightest thing on a dark page, so a filled button is the strongest element on it. */
+  --color-primary: var(--color-heading);
+  --color-primary-hover: var(--color-accent-hover);
+  --color-on-primary: var(--color-canvas);
 
   --color-accent: #b6d0f2;
   --color-accent-hover: #d7e2ef;

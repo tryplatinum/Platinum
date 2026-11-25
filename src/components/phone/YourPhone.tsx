@@ -220,7 +220,7 @@ export function YourPhone() {
             </Button>
           </form>
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" disabled={busy || !status.on || !device.ownPhone} onClick={() => void run(() => callPhone('test'), 'Test queued. Your phone should text you within a minute.')}>
+            <Button disabled={busy || !status.on || !device.ownPhone} onClick={() => void run(() => callPhone('test'), 'Test queued. Your phone should text you within a minute.')}>
               Send a test to my own number
             </Button>
             <Button disabled={busy || !status.on} onClick={() => void run(() => callPhone('wake'), 'Wake email sent.')}>

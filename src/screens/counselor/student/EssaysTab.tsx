@@ -128,7 +128,7 @@ export default function EssaysTab({ student }: { student: Student }) {
             { value: 'feedback', label: 'Needs your feedback', count: counts.needsFeedback },
           ]}
         />
-        <Button variant="primary" onClick={() => setAdding(true)}>
+        <Button onClick={() => setAdding(true)}>
           Add essay
         </Button>
       </div>
@@ -140,7 +140,7 @@ export default function EssaysTab({ student }: { student: Student }) {
           {counts.all === 0 && !adding ? (
             <Card>
               <Empty title={`No essays for ${student.firstName} yet. Add the essays this student has to write, then paste drafts in as they arrive.`}>
-                <Button variant="primary" onClick={() => setAdding(true)}>
+                <Button onClick={() => setAdding(true)}>
                   Add essay
                 </Button>
               </Empty>
@@ -372,7 +372,7 @@ function EssayPanel({ doc, student, pressed, onClose }: { doc: StudentDocument; 
 
         <div className="flex flex-wrap gap-2">
           {!busy && (!feedback || !pending || stale) && (
-            <Button variant={feedback ? 'secondary' : 'primary'} onClick={getFeedback} disabled={!draft?.text.trim()}>
+            <Button onClick={getFeedback} disabled={!draft?.text.trim()}>
               {feedback ? 'Get feedback on the current draft' : 'Get AI feedback'}
             </Button>
           )}

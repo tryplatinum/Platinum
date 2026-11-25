@@ -215,7 +215,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => onModal({ kind: 'log', studentId: student.id })}>Log a meeting</Button>
           {!upcoming && (
-            <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
+            <Button onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
               Schedule
             </Button>
           )}
@@ -243,7 +243,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
               <Empty title={`No meetings with ${student.firstName} yet. Schedule one, or log one that already happened.`}>
                 <div className="flex flex-wrap justify-center gap-2">
                   {!upcoming && (
-                    <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
+                    <Button onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
                       Schedule a meeting
                     </Button>
                   )}

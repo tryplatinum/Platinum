@@ -58,7 +58,7 @@ export default function ReportsTab({ student }: { student: Student }) {
             <div className="border-t border-line">
               <Empty title={student.parents.length ? 'No reports have gone out for this family yet.' : 'Add a parent on the Overview tab first. Reports are drafted in their language for their preferred channel.'}>
                 {parent && (
-                  <Button variant="primary" onClick={draft} busy={busy}>
+                  <Button onClick={draft} busy={busy}>
                     Draft a report now
                   </Button>
                 )}

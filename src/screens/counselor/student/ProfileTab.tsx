@@ -156,7 +156,7 @@ export default function ProfileTab({ student }: { student: Student }) {
             <input className={inputClass} value={f.interests} onChange={(e) => set({ interests: e.target.value })} />
           </Field>
           <div className="flex items-center gap-3">
-            <Button type="submit" variant="primary" disabled={!dirty}>
+            <Button type="submit" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty}>
               Save profile
             </Button>
             {dirty && <span className="text-[13px] text-warn">You have unsaved changes.</span>}

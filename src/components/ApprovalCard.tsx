@@ -219,13 +219,13 @@ export function ApprovalCard({
           ) : sending ? (
             <SendState messageId={sending} />
           ) : weekly ? (
-            student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} />
+            student && <WeeklyTextSend draft={weekly} student={student} text={weekly.body} primary={primary} />
           ) : byHand && item.channel ? (
-            <Button variant={primary === false ? 'secondary' : 'primary'} data-action="approve" onClick={() => void onCopy()} disabled={blank} busy={busy || copying}>
+            <Button variant={primary ? 'primary' : 'secondary'} data-action="approve" onClick={() => void onCopy()} disabled={blank} busy={busy || copying}>
               Copy for {CHANNEL_LABEL[item.channel]}
             </Button>
           ) : (
-            <Button variant={primary === false ? 'secondary' : 'primary'} data-action="approve" onClick={() => onApprove()} disabled={blank} busy={busy}>
+            <Button variant={primary ? 'primary' : 'secondary'} data-action="approve" onClick={() => onApprove()} disabled={blank} busy={busy}>
               {item.isSend ? <SendLabel>Approve and send</SendLabel> : 'Approve'}
             </Button>
           )}

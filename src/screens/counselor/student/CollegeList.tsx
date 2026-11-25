@@ -168,7 +168,7 @@ export function CollegeList({ student }: { student: Student }) {
       {colleges.length === 0 ? (
         !adding && (
           <Empty title="No colleges on the list yet. Add one by name, or have a list drafted from the directory.">
-            <Button variant="primary" onClick={() => setAdding(true)}>
+            <Button onClick={() => setAdding(true)}>
               Add college
             </Button>
           </Empty>

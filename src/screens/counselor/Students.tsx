@@ -53,7 +53,7 @@ export default function Students() {
         {all.length === 0 ? (
           <Empty title="No students yet. Add your first student to start, or load the invented sample caseload to look around.">
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="primary" onClick={() => setAdding(true)}>
+              <Button onClick={() => setAdding(true)}>
                 Add student
               </Button>
               <Button onClick={loadSample}>Load the sample caseload</Button>

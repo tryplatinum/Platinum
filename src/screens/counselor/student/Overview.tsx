@@ -31,7 +31,7 @@ export default function Overview({ student }: { student: Student }) {
           <Card tone="accent" className="flex flex-col items-start gap-3 p-5">
             <h2 className="text-base font-semibold">No meeting scheduled</h2>
             <p className="text-sm text-ink-soft">Schedule the next meeting and a brief will be ready here before it.</p>
-            <Button variant="primary" onClick={() => setScheduling(true)}>
+            <Button onClick={() => setScheduling(true)}>
               Schedule a meeting
             </Button>
           </Card>
@@ -62,7 +62,7 @@ function TasksCard({ student }: { student: Student }) {
       {tasks.length === 0 ? (
         !adding && (
           <Empty title={`No tasks for ${student.firstName} yet. Add one, or log a meeting and let the AI draft them from your notes.`}>
-            <Button variant="primary" onClick={() => setAdding(true)}>
+            <Button onClick={() => setAdding(true)}>
               Add task
             </Button>
           </Empty>

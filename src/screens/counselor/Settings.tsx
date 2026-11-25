@@ -88,7 +88,7 @@ function FirmForm() {
         <Field label="Your name" hint="Used to sign messages and to record who approved each draft.">
           <input className={inputClass} value={counselor} onChange={(e) => setCounselor(e.target.value)} />
         </Field>
-        <Button type="submit" variant="primary" className="self-start" disabled={unchanged}>
+        <Button type="submit" variant={unchanged ? 'secondary' : 'primary'} className="self-start" disabled={unchanged}>
           Save
         </Button>
       </form>

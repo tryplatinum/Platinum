@@ -43,7 +43,7 @@ export default function MeetingsTab({ student }: { student: Student }) {
           <Card>
             <Empty title={`No meetings with ${student.firstName} yet. Log one that happened, or schedule the first.`}>
               <div className="flex flex-wrap justify-center gap-2">
-                <Button variant="primary" onClick={() => setModal('log')}>
+                <Button onClick={() => setModal('log')}>
                   Log a meeting
                 </Button>
                 {!upcoming && <Button onClick={() => setModal('schedule')}>Schedule a meeting</Button>}
@@ -108,7 +108,7 @@ export default function MeetingsTab({ student }: { student: Student }) {
           <Card tone="accent" className="flex flex-col items-start gap-3 p-5">
             <h2 className="text-base font-semibold">Nothing scheduled</h2>
             <p className="text-sm text-ink-soft">Schedule the next meeting to get a brief before it.</p>
-            <Button variant="primary" onClick={() => setModal('schedule')}>
+            <Button onClick={() => setModal('schedule')}>
               Schedule a meeting
             </Button>
           </Card>

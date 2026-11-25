@@ -57,7 +57,7 @@ export function StudentPicker({ value, onChange, disabled, label = 'Student' }: 
   )
 }
 
-export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: StudentDocument; lockStudent?: boolean; suggesting?: boolean; onFiled?: (note: string) => void }) {
+export function FilingRow({ doc, lockStudent, suggesting, onFiled, primary }: { doc: StudentDocument; lockStudent?: boolean; suggesting?: boolean; onFiled?: (note: string) => void; /** The one filled button of its view. */ primary?: boolean }) {
   const data = useData()
   const toast = useToast()
   const confirm = useConfirm()
@@ -131,7 +131,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
             {!suggestion.sure && <span className="block text-[13px] text-warn">The AI was not sure about this one.</span>}
             {!doc.studentId && !studentId && <span className="block text-[13px] text-muted">Choose a student below first: the AI never picks one.</span>}
           </p>
-          <Button variant="primary" busy={busy === 'suggestion'} disabled={Boolean(busy) || !(doc.studentId || studentId)} onClick={() => void file({ typeId: suggestion.typeId, title: suggestion.title, studentId: doc.studentId || studentId }, 'suggestion')}>
+          <Button variant={primary ? 'primary' : 'secondary'} data-action="approve" busy={busy === 'suggestion'} disabled={Boolean(busy) || !(doc.studentId || studentId)} onClick={() => void file({ typeId: suggestion.typeId, title: suggestion.title, studentId: doc.studentId || studentId }, 'suggestion')}>
             Yes, put it there
           </Button>
         </div>
@@ -182,7 +182,7 @@ export function FilingRow({ doc, lockStudent, suggesting, onFiled }: { doc: Stud
             }}
           />
         </label>
-        <Button variant={line ? 'secondary' : 'primary'} busy={busy === 'save'} disabled={Boolean(busy) || !studentId || !folder || !title.trim()} onClick={() => folder && void file({ typeId: folder.id, title: title.trim(), studentId }, 'save')}>
+        <Button variant={line || !primary ? 'secondary' : 'primary'} data-action={line ? undefined : 'approve'} busy={busy === 'save'} disabled={Boolean(busy) || !studentId || !folder || !title.trim()} onClick={() => folder && void file({ typeId: folder.id, title: title.trim(), studentId }, 'save')}>
           Save
         </Button>
         <Button variant="quiet" busy={busy === 'delete'} disabled={Boolean(busy)} onClick={() => void remove()} aria-label={`Delete ${fileTitle(doc)}`}>

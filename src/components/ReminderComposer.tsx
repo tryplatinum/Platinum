@@ -159,13 +159,13 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
                 </span>
               ) : !canDeliver(d.channel) ? (
                 <>
-                  <Button variant="primary" aria-label={`Copy for ${CHANNEL_LABEL[d.channel]}, to ${d.toName}`} onClick={() => copyThenSend(i)} disabled={loading > 0 || !d.body.trim()}>
+                  <Button variant="remind" aria-label={`Copy for ${CHANNEL_LABEL[d.channel]}, to ${d.toName}`} onClick={() => copyThenSend(i)} disabled={loading > 0 || !d.body.trim()}>
                     Copy for {CHANNEL_LABEL[d.channel]}
                   </Button>
                   <span className="text-[13px] font-medium text-warn">{notConnectedLine(d.channel)}</span>
                 </>
               ) : (
-                <Button variant="primary" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
+                <Button variant="remind" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
                   <SendLabel>Approve and send</SendLabel>
                 </Button>
               )}

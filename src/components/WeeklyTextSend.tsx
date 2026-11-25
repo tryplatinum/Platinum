@@ -22,7 +22,7 @@ export const weeklyTextLength = (text: string) => text.length + linkRoom(text)
 export const weeklyTextTooLong = (text: string) => weeklyTextLength(text) > WEEKLY_TEXT_MAX
 
 /** `text` is what is on screen, which may not be saved yet. `children` follow the two buttons. */
-export function WeeklyTextSend({ draft, student, text, children }: { draft: WeeklyText; student: Student; text: string; children?: ReactNode }) {
+export function WeeklyTextSend({ draft, student, text, children, primary }: { draft: WeeklyText; student: Student; text: string; children?: ReactNode; /** The one filled button of its view. */ primary?: boolean }) {
   const { updateWeeklyText, sendWeeklyText } = useStore.getState()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -50,7 +50,7 @@ export function WeeklyTextSend({ draft, student, text, children }: { draft: Week
   }
   return (
     <>
-      <Button variant="primary" disabled={disabled} aria-busy={busy} onClick={() => void copy()}>
+      <Button variant={primary ? 'primary' : 'secondary'} data-action="approve" disabled={disabled} aria-busy={busy} onClick={() => void copy()}>
         Copy
       </Button>
       <OpenInMessages
