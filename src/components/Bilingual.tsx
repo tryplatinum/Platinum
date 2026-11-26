@@ -70,7 +70,7 @@ export function Bilingual({
       {editable && (
         <p className="text-xs text-muted">
           {/* TODO: re-translate the other side when one side is edited. */}
-          The two sides are edited separately in v0. If you change one, change the other to match before you approve.
+          The two sides are edited separately. If you change one, change the other to match before you approve.
         </p>
       )}
     </div>

@@ -9,7 +9,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { CONTROL_LABEL, SCORECARD_SOURCE, yearOf, type CollegeSummary, type Figure } from '../../shared/colleges'
 import { searchDirectory } from '../services/colleges'
-import { cx, inputBase } from './ui'
+import { Skeleton, cx, inputBase } from './ui'
 
 const DASH = '—'
 const RESULTS = 8
@@ -84,6 +84,7 @@ export function CollegePicker({
         aria-label={label}
         aria-expanded={Boolean(results?.length)}
         aria-controls={listId}
+        aria-activedescendant={active >= 0 && results?.length ? `${listId}-${active}` : undefined}
         aria-autocomplete="list"
         autoComplete="off"
         autoFocus={autoFocus}
@@ -102,10 +103,10 @@ export function CollegePicker({
         }}
       />
       {results && results.length > 0 && (
-        <ul id={listId} role="listbox" aria-label="Colleges in the directory" className="mt-1 overflow-hidden rounded-lg border border-line bg-surface">
+        <ul id={listId} role="listbox" aria-label="Colleges in the directory" className="motion-rise mt-1 overflow-hidden rounded-lg border border-line bg-surface">
           {results.map((c, i) => (
-            <li key={c.unitid} role="option" aria-selected={i === active} className="border-t border-line first:border-t-0">
-              <button type="button" className={cx('flex min-h-11 w-full flex-col items-start justify-center px-3 py-1.5 text-left text-sm hover:bg-surface-2', i === active && 'bg-surface-2')} onClick={() => onPick(c)}>
+            <li key={c.unitid} id={`${listId}-${i}`} role="option" aria-selected={i === active} className="border-t border-line first:border-t-0">
+              <button type="button" tabIndex={-1} className={cx('flex min-h-11 w-full flex-col items-start justify-center px-3 py-1.5 text-left text-sm hover:bg-surface-2', i === active && 'bg-surface-2')} onClick={() => onPick(c)}>
                 <span className="font-semibold">{c.name}</span>
                 <span className="text-xs text-muted">
                   {[collegePlace(c), c.control && CONTROL_LABEL[c.control], c.undergradSize !== undefined && `${c.undergradSize.toLocaleString('en-US')} undergraduates`].filter(Boolean).join(' · ')}
@@ -139,7 +140,7 @@ function FigureCell({ label, value, year }: { label: string; value?: string; yea
           </span>
         ) : (
           <>
-            <span className="font-semibold">{value}</span> <span className="whitespace-nowrap text-[11px] text-muted">{year ?? 'year not recorded'}</span>
+            <span className="font-semibold">{value}</span> <span className="whitespace-nowrap text-xs text-muted">{year ?? 'year not recorded'}</span>
           </>
         )}
       </dd>
@@ -160,6 +161,17 @@ export function CollegeFigures({ college }: { college: CollegeSummary }) {
       <FigureCell label="ACT, middle half" value={range(college.act25, college.act75)} year={year('act')} />
       <FigureCell label="Average net price" value={college.avgNetPrice === undefined ? undefined : formatDollars(college.avgNetPrice)} year={year('avgNetPrice')} />
     </dl>
+  )
+}
+
+/** The figures' place while they load, at the height they will have. */
+export function FiguresLoading() {
+  return (
+    <div role="status" aria-label="Loading figures…" className="flex flex-wrap gap-x-6 gap-y-2">
+      {['w-20', 'w-48', 'w-24', 'w-28'].map((w) => (
+        <Skeleton key={w} className={cx('h-9', w)} />
+      ))}
+    </div>
   )
 }
 

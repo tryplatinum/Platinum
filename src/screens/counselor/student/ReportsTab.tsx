@@ -5,9 +5,11 @@
 import { useState } from 'react'
 import { ApprovalCard } from '../../../components/ApprovalCard'
 import { Bilingual } from '../../../components/Bilingual'
-import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi } from '../../../components/ui'
+import { MotionList } from '../../../components/motion'
+import { AiErrorNote, AiTag, ApprovalStamp, Button, Card, CardHeader, CheckRow, Disclosure, Empty, Pill, PlaceholderNote, SectionLabel, Thinking, inputClass, useAi } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { findParent, nextMeeting, reportApproval } from '../../../lib/derive'
+import { canDeliver } from '../../../lib/delivery'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { parentReport } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
@@ -45,9 +47,11 @@ export default function ReportsTab({ student }: { student: Student }) {
   return (
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-w-0 flex-col gap-6">
-        {drafts.map((r) => (
-          <DraftCard key={r.id} report={r} student={student} count={drafts.length} />
-        ))}
+        <MotionList as="div" itemClassName="pb-6 last:pb-0" className="empty:hidden">
+          {drafts.map((r) => (
+            <DraftCard key={r.id} report={r} student={student} count={drafts.length} />
+          ))}
+        </MotionList>
 
         <Card>
           <CardHeader size="section" className="px-5 py-4" title="Sent" action={sent.length > 0 && <span className="text-[13px] text-muted">{sent.length} logged</span>} />
@@ -55,7 +59,7 @@ export default function ReportsTab({ student }: { student: Student }) {
             <div className="border-t border-line">
               <Empty title={student.parents.length ? 'No reports have gone out for this family yet.' : 'Add a parent on the Overview tab first. Reports are drafted in their language for their preferred channel.'}>
                 {parent && (
-                  <Button variant="primary" onClick={draft} disabled={busy}>
+                  <Button onClick={draft} busy={busy}>
                     Draft a report now
                   </Button>
                 )}
@@ -95,27 +99,17 @@ export default function ReportsTab({ student }: { student: Student }) {
             <SectionLabel>Goes to</SectionLabel>
             {student.parents.length === 0 && <p className="mt-1 text-sm text-muted">No parents on record.</p>}
             {student.parents.map((p) => (
-              <label key={p.id} className="flex min-h-11 items-center gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5"
-                  checked={settings.recipientIds.includes(p.id)}
-                  onChange={(e) =>
-                    updateStudent(student.id, {
-                      reportSettings: { ...settings, recipientIds: e.target.checked ? [...settings.recipientIds, p.id] : settings.recipientIds.filter((x) => x !== p.id) },
-                    })
-                  }
-                />
-                <span>
-                  {p.name}
-                  <span className="block text-[13px] text-muted">
-                    {CHANNEL_LABEL[p.channel]} · {LANGUAGE_LABEL[p.language]}
-                  </span>
-                </span>
-              </label>
+              <CheckRow
+                key={p.id}
+                checked={settings.recipientIds.includes(p.id)}
+                onChange={(on) => updateStudent(student.id, { reportSettings: { ...settings, recipientIds: on ? [...settings.recipientIds, p.id] : settings.recipientIds.filter((x) => x !== p.id) } })}
+                hint={`${CHANNEL_LABEL[p.channel]} · ${LANGUAGE_LABEL[p.language]}`}
+              >
+                {p.name}
+              </CheckRow>
             ))}
           </div>
-          <p className="text-xs text-muted">v0 has no scheduler: the schedule records your intention, and updates after a meeting are drafted when you log it. Language and channel are set on each parent in the Overview tab.</p>
+          <p className="text-xs text-muted">The schedule is a note to yourself: nothing is drafted on a timer. An update after a meeting is drafted when you log it. Language and channel are set on each parent in the Overview tab.</p>
         </Card>
 
         <Card className="flex flex-col gap-3 p-5">
@@ -159,24 +153,23 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
     <Card className="flex flex-col gap-4 border-accent-line p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <SectionLabel className="text-accent">Waiting for your approval · {count}</SectionLabel>
-          <h2 className="mt-0.5 text-xl font-bold">{report.subject}</h2>
+          <SectionLabel className="text-accent">To review · {count}</SectionLabel>
+          <h2 className="mt-0.5 text-lg font-semibold">{report.subject}</h2>
           <p className="text-[13px] text-muted">Drafted from tasks and deadlines</p>
         </div>
         <AiTag source={report.source} />
       </div>
       <PlaceholderNote source={report.source} />
-      <ApprovalCard item={reportApproval(data, report)} as="div" compact>
+      <ApprovalCard item={reportApproval(data, report)} compact>
         <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent.name} />
         {report.facts && report.facts.length > 0 && (
-          <details className="mt-4 rounded-lg border border-line">
-            <summary className="flex min-h-11 items-center px-3 text-[13px] font-semibold">The {report.facts.length} facts this report was built from · computed by Platinum, not by the AI</summary>
-            <ul className="grid gap-x-6 gap-y-1 border-t border-line p-3 text-[13px] sm:grid-cols-2">
+          <Disclosure className="mt-2" label={`The ${report.facts.length} facts this report was built from · computed by Platinum, not by the AI`}>
+            <ul className="grid list-disc gap-x-6 gap-y-1 rounded-control border border-line p-3 pl-7 text-[13px] sm:grid-cols-2">
               {report.facts.map((f) => (
-                <li key={f}>• {f}</li>
+                <li key={f}>{f}</li>
               ))}
             </ul>
-          </details>
+          </Disclosure>
         )}
       </ApprovalCard>
     </Card>
@@ -198,16 +191,17 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="text-[13px] text-muted">
           {parent?.name ?? 'Parent'} · {CHANNEL_LABEL[report.channel]} · {LANGUAGE_LABEL[report.language]}
         </div>
-        <Pill tone="good">Sent</Pill>
+        <Pill tone="good">{canDeliver(report.channel) ? 'Sent' : 'Approved, sent by hand'}</Pill>
         <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? 'Hide' : 'View'}
         </Button>
       </div>
       {open && (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="motion-rise mt-3 flex flex-col gap-2">
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
-            <ApprovalStamp approval={report.approval} /> Approved messages wait {UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand.
+            <ApprovalStamp approval={report.approval} />{' '}
+            {canDeliver(report.channel) ? `Approved messages wait ${UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand.` : `${CHANNEL_LABEL[report.channel]} is not connected, so Platinum did not send this. It was copied to send by hand.`}
           </p>
         </div>
       )}

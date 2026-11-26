@@ -4,18 +4,20 @@
 // Approved messages wait 10 seconds, then go out through the allowlist, and can
 // still be copied and sent by hand; the page says so at the top.
 
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { Button, Card, CardHeader, Empty, Pill, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
+import { Button, Card, CardHeader, Empty, LinkButton, Pill, TabPanel, Tabs, PageHeader, cx, inputBase, usePageTitle, useTab, useToast, type TabItem } from '../../components/ui'
 import { previewStudentLink } from '../../../shared/dispatch'
-import { UNDO_SECONDS, outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
-import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
+import { Reveal, useReveal } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
+import { UNDO_SECONDS } from '../../../shared/outbox'
 import { formatTimestamp } from '../../lib/dates'
-import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
+import { canDeliver, messageStatusLabel, notConnectedLine } from '../../lib/delivery'
+import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
@@ -44,19 +46,33 @@ export default function Messages() {
     { key: 'queue', label: 'Scheduled reminders', count: queue.length },
   ]
   const tab = useTab(tabs)
+  const how = useReveal()
+  usePageTitle('Messages')
   // The rules moved to Settings.
   if (params.get('tab') === 'rules') return <Navigate to="/app/settings#reminder-rules" replace />
 
   return (
     <>
-      <PageHeader title="Messages" />
-      <p className="rounded-lg border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-        <strong className="text-ink">Approved messages wait {UNDO_SECONDS} seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
-      </p>
+      <PageHeader
+        title="Messages"
+        pill={
+          <button type="button" {...how.button} className="flex min-h-11 items-center gap-1 rounded-control text-[13px] font-semibold text-accent">
+            <ChevronRight size={16} strokeWidth={1.75} className="motion-chevron shrink-0" aria-hidden />
+            How sending works
+          </button>
+        }
+      />
+      <Reveal open={how.open} id={how.id} className="-mt-3">
+        <p className="rounded-card border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
+          <strong className="text-ink">Approved messages wait {UNDO_SECONDS} seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
+        </p>
+      </Reveal>
       <Tabs tabs={tabs} label="Messages" />
-      {tab === 'sent' && <Sent />}
-      {tab === 'weekly' && <WeeklyTexts />}
-      {tab === 'queue' && <Queue queue={queue} />}
+      <TabPanel tab={tab} label={tabs.find((t) => t.key === tab)?.label ?? ''}>
+        {tab === 'sent' && <Sent />}
+        {tab === 'weekly' && <WeeklyTexts />}
+        {tab === 'queue' && <Queue queue={queue} />}
+      </TabPanel>
     </>
   )
 }
@@ -100,7 +116,7 @@ function Sent() {
         count={rows.length}
         action={
           <>
-            <select aria-label="Filter by student" className={inputBase} value={student} onChange={(e) => setFilter('student', e.target.value)}>
+            <select aria-label="Filter by student" className={cx(inputBase, 'min-w-0 max-w-full')} value={student} onChange={(e) => setFilter('student', e.target.value)}>
               <option value="">All students</option>
               {activeStudents(data).map((s) => (
                 <option key={s.id} value={s.id}>
@@ -150,9 +166,9 @@ function Recipient({ m }: { m: Pick<OutboxMessage, 'toName' | 'toKind' | 'channe
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="text-sm font-semibold">{m.toName}</span>
       <span className="text-[13px] text-muted">
-        {m.toKind === 'parent' ? 'parent of ' : 'student'}
+        {m.toKind === 'parent' ? 'Parent of ' : 'Student'}
         {m.toKind === 'parent' && student && (
-          <Link to={`/app/students/${student.id}`} className="font-medium text-accent hover:underline">
+          <Link to={`/app/students/${student.id}`} className="tap-link font-medium text-accent hover:underline">
             {student.firstName}
           </Link>
         )}
@@ -189,7 +205,7 @@ function OutboxStatus({ message }: { message: OutboxMessage }) {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [counting])
-  return <span className="text-[13px] font-semibold text-ink">{outboxStatusLabel(message, now)}</span>
+  return <span className="text-[13px] font-semibold text-ink">{messageStatusLabel(message, now)}</span>
 }
 
 function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; startOpen?: boolean }) {
@@ -236,11 +252,12 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
   const handText = () => (m.toKind === 'student' ? textWithStudentLink(m.studentId, m.body) : m.body)
   const askPhone = async (action: string, body: Record<string, unknown>): Promise<boolean> => {
     setBusy(true)
+    setHandError(undefined)
     try {
       await callPhone(action, body)
       return true
     } catch (e) {
-      toast(phoneReason(e))
+      setHandError(phoneReason(e))
       return false
     } finally {
       await reload(true)
@@ -253,26 +270,26 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
     toast('Queued again. Undo is on the toast.')
   }
   return (
-    <li className="border-t border-line px-5 py-3">
+    <li className="border-t border-line px-4 py-3 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Recipient m={m} />
         <span className="flex flex-wrap items-center gap-2">
           <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'neutral'}>{KIND_LABEL[m.kind]}</Pill>
-          <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Automatic rule'}</Pill>
-          {m.note && <Pill>{m.note}</Pill>}
+          <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Sent by a reminder rule'}</Pill>
+          {m.note && <Pill>{m.note.replace('Legacy simulated send.', 'Sample message, not sent.')}</Pill>}
           <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
-          {m.status === 'failed' && !sentByHand && (
+          {m.status === 'failed' && !sentByHand && canDeliver(m.channel) && (
             <Button variant="quiet" onClick={retry}>
               Retry
             </Button>
           )}
           {waitingForPhone && (
-            <Button variant="quiet" disabled={busy} onClick={() => void askPhone('cancel', { outboxId: m.id })}>
+            <Button variant="quiet" busy={busy} onClick={() => void askPhone('cancel', { outboxId: m.id })}>
               Cancel
             </Button>
           )}
-          <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <Button variant="quiet" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`${open ? 'Hide' : 'View'} the message to ${m.toName}`}>
             {open ? 'Hide' : 'View'}
           </Button>
         </span>
@@ -281,7 +298,7 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
         <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg bg-warn-soft px-3 py-2">
           <p className="text-[13px] text-warn">{NOT_CONFIRMED}</p>
           <div className="flex flex-wrap gap-2">
-            <Button disabled={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: true })}>
+            <Button busy={busy} onClick={() => void askPhone('resolve', { outboxId: m.id, sent: true })}>
               It was sent
             </Button>
             <Button disabled={busy} onClick={() => void sendAgain()}>
@@ -315,9 +332,9 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
         </p>
       )}
       {open ? (
-        <div className="mt-2 flex flex-col gap-2">
+        <div className="motion-rise mt-2 flex flex-col gap-2">
           <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
-          {m.status === 'failed' && m.error && <p className="text-[13px] text-ink-soft">Error: {m.error}</p>}
+          {m.status === 'failed' && m.error && canDeliver(m.channel) && <p className="text-[13px] text-ink-soft">Error: {m.error}</p>}
           <Button
             className="self-start"
             onClick={() => {
@@ -340,21 +357,30 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
 // ── Scheduled reminders ───────────────────────────────────────────────────────────────────
 
 function Queue({ queue }: { queue: ReminderDraft[] }) {
-  const data = useData()
   const sendMessage = useStore((s) => s.sendMessage)
   const toast = useToast()
   const waiting = queue.filter((r) => r.mode === 'needs_approval')
   const automatic = queue.filter((r) => r.mode === 'automatic')
+  // Only what Platinum can send itself is queued. The rest stays here to be copied.
+  const sendable = automatic.filter((r) => canDeliver(r.message.channel))
+  const byHand = automatic.length - sendable.length
   const runDailySend = () => {
-    automatic.forEach((r) => sendMessage({ ...r.message, trigger: 'automatic' }))
-    toast(`${automatic.length} ${automatic.length === 1 ? 'reminder is' : 'reminders are'} queued.`)
+    sendable.forEach((r) => sendMessage({ ...r.message, trigger: 'automatic' }))
+    toast(`${sendable.length} ${sendable.length === 1 ? 'reminder is' : 'reminders are'} queued.${byHand > 0 ? ` ${byHand} ${byHand === 1 ? 'is' : 'are'} left for you to copy and send by hand.` : ''}`)
   }
+  const copy = (r: ReminderDraft) =>
+    void copyText(r.message.toKind === 'student' ? textWithStudentLink(r.studentId, r.message.body) : r.message.body)
+      .then(() => {
+        sendMessage({ ...r.message, trigger: 'approved' })
+        toast(`Copied. Paste it into ${CHANNEL_LABEL[r.message.channel]} to ${r.message.toName}.`)
+      })
+      .catch((e: unknown) => toast(`${e instanceof Error ? e.message : 'Nothing was copied.'} This reminder is not marked approved.`))
 
   if (queue.length === 0) {
     return (
       <Card>
         <Empty title="No reminders are due. They appear here when a task is close to its due date or late, according to your rules.">
-          <Link to="/app/settings#reminder-rules" className="font-semibold text-accent underline">
+          <Link to="/app/settings#reminder-rules" className="tap-link font-semibold text-accent underline">
             See the rules
           </Link>
         </Empty>
@@ -364,30 +390,26 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
 
   return (
     <>
+      {/* Approval lives in the Inbox. Here it is a count and the way there. */}
       <Card>
-        <CardHeader size="section" className="px-5 py-4" title="Waiting for you" count={waiting.length} sub="Rules set to “Ask me first”. Fixed wording, in each person’s language." />
-        {waiting.length === 0 ? (
-          <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is waiting for your approval.</p>
-        ) : (
-          <ul>
-            {reminderApprovals(data, waiting).map((item) => {
-              const m = waiting.find((r) => r.key === item.reminderKey)?.message
-              return (
-                <ApprovalCard key={item.key} item={item} showStudent>
-                  {m && (
-                    <div className="flex flex-col gap-2">
-                      <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
-                      <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-                        <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'warn'}>{KIND_LABEL[m.kind]}</Pill>
-                        {item.sourceLine}
-                      </p>
-                    </div>
-                  )}
-                </ApprovalCard>
-              )
-            })}
-          </ul>
-        )}
+        <CardHeader
+          size="section"
+          className="px-5 py-4"
+          title="To review"
+          count={waiting.length}
+          sub={
+            waiting.length === 0
+              ? 'No reminder is waiting for your approval. Rules set to “Ask me first” put theirs in the Inbox.'
+              : `${waiting.length} ${waiting.length === 1 ? 'reminder is' : 'reminders are'} in the Inbox for you to approve, from rules set to “Ask me first”.`
+          }
+          action={
+            waiting.length > 0 && (
+              <LinkButton to="/app?kind=reminder" aria-label="Review reminders in the Inbox">
+                Review in the Inbox
+              </LinkButton>
+            )
+          }
+        />
       </Card>
       <Card>
         <CardHeader
@@ -395,15 +417,20 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
           className="px-5 py-4"
           title="Automatic"
           count={automatic.length}
-          sub="Rules set to “Automatic”. v0 has no scheduler, so the daily send is a button."
-          action={automatic.length > 0 && <Button onClick={runDailySend}>Run the daily send now</Button>}
+          sub="Rules set to “Automatic”. They are queued when you press the button; nothing goes out on a timer."
+          action={sendable.length > 0 && <Button onClick={runDailySend}>{byHand > 0 ? `Run the daily send now · ${sendable.length} of ${automatic.length}` : 'Run the daily send now'}</Button>}
         />
         {automatic.length === 0 ? (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is scheduled.</p>
         ) : (
           <ul>
             {automatic.map((r) => (
-              <QueueRow key={r.key} reminder={r} action={<Pill tone="accent">Next daily send</Pill>} />
+              <QueueRow
+                key={r.key}
+                reminder={r}
+                action={canDeliver(r.message.channel) ? <Pill tone="accent">Next daily send</Pill> : <Button onClick={() => copy(r)}>Copy for {CHANNEL_LABEL[r.message.channel]}</Button>}
+                note={canDeliver(r.message.channel) ? undefined : notConnectedLine(r.message.channel)}
+              />
             ))}
           </ul>
         )}
@@ -412,7 +439,7 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
   )
 }
 
-function QueueRow({ reminder, action }: { reminder: ReminderDraft; action: React.ReactNode }) {
+function QueueRow({ reminder, action, note }: { reminder: ReminderDraft; action: React.ReactNode; note?: string }) {
   const m = reminder.message
   return (
     <li className="flex flex-col gap-2 border-t border-line px-5 py-3">
@@ -423,6 +450,7 @@ function QueueRow({ reminder, action }: { reminder: ReminderDraft; action: React
           {action}
         </span>
       </div>
+      {note && <p className="text-[13px] font-medium text-warn">{note}</p>}
       <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
     </li>
   )

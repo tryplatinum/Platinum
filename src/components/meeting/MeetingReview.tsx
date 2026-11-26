@@ -1,16 +1,21 @@
 // Review of everything the AI drafted from one meeting, in numbered sections.
-// Each item is approved, edited or discarded by the counselor. Approved items
-// flow into the real task list, the profile, the parent reports and the
-// student's recap; until then nothing leaves this panel.
+// Each item is approved, edited or discarded on the same card the Inbox uses,
+// with more around it: the evidence, the other language, the full notes.
+// Approved items flow into the real task list, the profile, the parent reports
+// and the student's recap; until then nothing leaves this panel.
 
-import { useState, type ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { createContext, useContext, useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, formatDateLong } from '../../lib/dates'
-import { findParent, ownerLabel, pendingInMeeting, reviewSections, type ReviewSection } from '../../lib/derive'
+import { findParent, meetingApprovals, ownerLabel, pendingInMeeting, reviewSections, type ApprovalItem, type ReviewSection } from '../../lib/derive'
 import { CHANNEL_LABEL } from '../../lib/language'
 import { draftMeeting } from '../../services/workflows'
-import { useStore, type Decision } from '../../store/store'
-import type { Approval, DraftPersonalNote, DraftTask, Meeting, OwnerType, Review, Student } from '../../types'
+import { useData, useStore } from '../../store/store'
+import type { Approval, DraftPersonalNote, DraftTask, Meeting, ProfileChange, Review, Student } from '../../types'
+import { sentByHand } from '../../lib/delivery'
+import { ApprovalCard, approveItem } from '../ApprovalCard'
+import { Reveal } from '../motion'
 import { Bilingual, recipientLine } from '../Bilingual'
 import {
   AiErrorNote,
@@ -18,33 +23,44 @@ import {
   ApprovalStamp,
   Button,
   Card,
+  Disclosure,
   OwnerChip,
   PlaceholderNote,
   ReviewTag,
   SectionLabel,
+  SendLabel,
   Thinking,
   cx,
-  inputBase,
-  textareaClass,
   useAi,
   useToast,
 } from '../ui'
-import { UNDO_SECONDS } from '../../../shared/outbox'
 
 export function MeetingReview({ meeting, student }: { meeting: Meeting; student: Student }) {
   const approveAll = useStore((s) => s.approveAllInMeeting)
   const toast = useToast()
+  const data = useData()
   const { busy, error, run } = useAi()
   const sections = reviewSections(meeting)
   const settled = sections.filter((s) => s.pending === 0).length
   const pending = pendingInMeeting(meeting)
   const ai = meeting.ai
   /** Parent updates and the recap are queued as messages when they are approved. */
-  const sends = sections.filter((s) => s.key === 'parents' || s.key === 'recap').reduce((n, s) => n + s.pending, 0)
+  const waiting = meetingApprovals(data, meeting)
+  // A message on a channel that is not connected is copied and sent by hand, so it is left out of "everything".
+  const byHand = waiting.filter(sentByHand)
+  const sends = waiting.filter((i) => i.isSend && !sentByHand(i)).length
   const number = (key: ReviewSection['key']) => sections.findIndex((s) => s.key === key) + 1
   const section = (key: ReviewSection['key']) => sections.find((s) => s.key === key)
   // Redrafting replaces every draft, so it is offered only while none has been reviewed.
   const untouched = Boolean(ai) && sections.every((s) => s.pending === s.total)
+  // One section open by default: the first with something waiting. Deciding it opens the next.
+  const [chosen, setChosen] = useState<Partial<Record<SectionKey, boolean>>>({})
+  const firstWaiting = sections.find((s) => s.pending > 0)?.key
+  const openSections = {
+    isOpen: (key: SectionKey) => chosen[key] ?? key === firstWaiting,
+    toggle: (key: SectionKey) => setChosen((c) => ({ ...c, [key]: !(c[key] ?? key === firstWaiting) })),
+    waiting: (key: SectionKey) => section(key)?.pending ?? 0,
+  }
 
   if (!ai && !meeting.recap) {
     return (
@@ -59,7 +75,7 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
               <Thinking label="AI is reading the notes and drafting follow-ups…" />
             ) : (
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => run(() => draftMeeting(meeting.id, 'full'))}>
+                <Button onClick={() => run(() => draftMeeting(meeting.id, 'full'))}>
                   Draft notes, tasks and parent update
                 </Button>
                 <Button onClick={() => run(() => draftMeeting(meeting.id, 'tasks'))}>Draft tasks only</Button>
@@ -86,19 +102,27 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
         </div>
         <div className="flex flex-wrap gap-2">
           {untouched && meeting.transcript && (
-            <Button onClick={() => run(() => draftMeeting(meeting.id, 'full'))} disabled={busy}>
+            <Button onClick={() => run(() => draftMeeting(meeting.id, 'full'))} busy={busy}>
               Redraft with AI
             </Button>
           )}
-          {pending > 0 && (
+          {waiting.length > byHand.length && (
             <Button
-              variant="primary"
               onClick={() => {
-                approveAll(meeting.id)
-                toast(sends > 0 ? `Approved everything from this meeting. ${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.` : 'Approved everything from this meeting.')
+                if (byHand.length === 0) approveAll(meeting.id)
+                else for (const item of waiting) if (!sentByHand(item)) void approveItem(item)
+                toast(
+                  [
+                    byHand.length === 0 ? 'Approved everything from this meeting.' : 'Approved the rest from this meeting.',
+                    sends > 0 && `${sends} ${sends === 1 ? 'message is' : 'messages are'} queued.`,
+                    byHand.length > 0 && `${byHand.length} ${byHand.length === 1 ? 'is' : 'are'} left for you to copy and send by hand.`,
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
+                )
               }}
             >
-              {sends > 0 ? 'Approve and send everything left' : 'Approve everything left'}
+              {sends > 0 ? <SendLabel>{byHand.length > 0 ? 'Approve and send the rest' : 'Approve and send everything left'}</SendLabel> : byHand.length > 0 ? 'Approve the rest' : 'Approve everything left'}
             </Button>
           )}
         </div>
@@ -108,15 +132,17 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
       <AiErrorNote message={error} />
       {busy && <Thinking label="AI is reading the notes and drafting follow-ups…" />}
 
-      {ai && <NotesSection n={number('notes')} meeting={meeting} />}
-      {ai && section('tasks') && <TasksSection n={number('tasks')} meeting={meeting} student={student} />}
-      {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
-      {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
-      {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
-      {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
+      <OpenSections.Provider value={openSections}>
+        {ai && <NotesSection n={number('notes')} meeting={meeting} />}
+        {ai && section('tasks') && <TasksSection n={number('tasks')} meeting={meeting} student={student} />}
+        {ai && section('parents') && <ParentsSection n={number('parents')} meeting={meeting} student={student} />}
+        {meeting.recap && <RecapSection n={number('recap')} meeting={meeting} student={student} />}
+        {ai && section('remember') && <RememberSection n={number('remember')} meeting={meeting} student={student} />}
+        {ai && section('profile') && <ProfileSection n={number('profile')} meeting={meeting} />}
+      </OpenSections.Provider>
       <p className="text-[13px] text-muted">
         Reminders follow the firm’s rules.{' '}
-        <Link to="/app/settings#reminder-rules" className="font-semibold text-accent hover:underline">
+        <Link to="/app/settings#reminder-rules" className="tap-link font-semibold text-accent hover:underline">
           Settings
         </Link>
       </p>
@@ -126,16 +152,33 @@ export function MeetingReview({ meeting, student }: { meeting: Meeting; student:
 
 // ── Shared bits ─────────────────────────────────────────────────────────────
 
-function Section({ n, title, right, children }: { n: number; title: string; right?: ReactNode; children: ReactNode }) {
+type SectionKey = ReviewSection['key']
+
+/** Which sections of the review are open. The first one with something waiting is; the rest open in place. */
+const OpenSections = createContext<{ isOpen: (key: SectionKey) => boolean; toggle: (key: SectionKey) => void; waiting: (key: SectionKey) => number }>({ isOpen: () => true, toggle: () => undefined, waiting: () => 0 })
+
+function Section({ k, n, title, right, children }: { k: SectionKey; n: number; title: string; right?: ReactNode; children: ReactNode }) {
+  const { isOpen, toggle, waiting } = useContext(OpenSections)
+  const open = isOpen(k)
+  const id = useId()
+  const left = waiting(k)
   return (
-    <Card className="flex flex-col gap-3 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">
-          {n}. {title}
+    <Card className="flex flex-col px-3 py-2 sm:px-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <h3 className="min-w-0 flex-1 basis-56 text-base font-semibold">
+          <button type="button" aria-expanded={open} aria-controls={id} onClick={() => toggle(k)} className="flex min-h-11 w-full items-center gap-1.5 rounded-control px-1 text-left hover:bg-surface-2">
+            <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
+            <span>
+              {n}. {title}
+              {!open && left > 0 && <span className="nums font-sans text-sm font-medium text-muted"> · {left} to review</span>}
+            </span>
+          </button>
         </h3>
-        <div className="flex flex-wrap items-center gap-2">{right}</div>
+        <div className="flex flex-wrap items-center gap-2 px-1">{right}</div>
       </div>
-      {children}
+      <Reveal open={open} id={id}>
+        <div className="flex flex-col gap-3 px-1 pb-2 pt-2">{children}</div>
+      </Reveal>
     </Card>
   )
 }
@@ -156,10 +199,9 @@ const groupReview = (items: { review: Review }[]): Review =>
 function SourceNotes({ meeting }: { meeting: Meeting }) {
   if (!meeting.transcript) return null
   return (
-    <details className="w-full text-[13px]">
-      <summary className="flex min-h-11 items-center font-semibold text-accent">What the AI read</summary>
-      <p className="whitespace-pre-wrap rounded-lg bg-canvas p-3 font-mono text-[13px] leading-relaxed text-ink-soft">{meeting.transcript}</p>
-    </details>
+    <Disclosure label="What the AI read" className="w-full">
+      <p className="whitespace-pre-wrap break-words rounded-control bg-canvas p-3 font-mono text-[13px] leading-relaxed text-ink-soft">{meeting.transcript}</p>
+    </Disclosure>
   )
 }
 
@@ -190,65 +232,62 @@ export function SummaryCards({ ai }: { ai: Pick<NonNullable<Meeting['ai']>, 'dec
   )
 }
 
+/** What was decided, and by whom, once a draft is no longer waiting. Fades in when it was decided on this screen. */
+function Settled({ here, review, approval, approvedLabel }: { here: boolean; review: Review; approval?: Approval; approvedLabel?: string }) {
+  return (
+    <span className={cx('flex min-h-11 flex-wrap items-center gap-2', here && 'motion-fade')}>
+      <SectionState review={review} approval={approval} approvedLabel={approvedLabel} />
+    </span>
+  )
+}
+
+/** Whether a draft was waiting when this row first appeared. */
+function useStartedPending(pending: boolean): boolean {
+  const [first] = useState(pending)
+  return first
+}
+
+/** Focus comes here when the buttons inside are gone. */
+const HOME = { tabIndex: -1, 'data-focus-home': true } as const
+const ROW = 'border-t border-line py-3 first:border-t-0 first:pt-0 last:pb-0 focus:outline-none'
+
+/** The approval for one draft of a meeting, or undefined once it is decided. */
+function useApproval(meeting: Meeting, kind: ApprovalItem['kind'], draftId?: string): ApprovalItem | undefined {
+  const data = useData()
+  return meetingApprovals(data, meeting).find((i) => i.kind === kind && i.draftId === draftId)
+}
+
 // ── 1. Notes ────────────────────────────────────────────────────────────────
 
 function NotesSection({ n, meeting }: { n: number; meeting: Meeting }) {
-  const reviewNotes = useStore((s) => s.reviewNotes)
-  const updateMeetingNotes = useStore((s) => s.updateMeetingNotes)
-  const [editing, setEditing] = useState(false)
   const ai = meeting.ai!
-  const pending = ai.notesReview === 'pending'
-  const lines = (xs: string[]) => xs.join('\n')
-  const parse = (raw: string) => raw.split('\n').map((s) => s.trim()).filter(Boolean)
-  return (
-    <Section n={n} title="Meeting notes" right={<SectionState review={ai.notesReview} approval={ai.notesApproval} />}>
-      {editing && pending ? (
-        <div className="flex flex-col gap-2">
-          <label className="block text-[13px] font-semibold text-muted">
-            Decided
-            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.decided)} onChange={(e) => updateMeetingNotes(meeting.id, { decided: parse(e.target.value) })} />
-          </label>
-          <label className="block text-[13px] font-semibold text-muted">
-            Progress
-            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.progress)} onChange={(e) => updateMeetingNotes(meeting.id, { progress: parse(e.target.value) })} />
-          </label>
-          <label className="block text-[13px] font-semibold text-muted">
-            Watch
-            <textarea className={cx(textareaClass, 'mt-1')} rows={3} value={lines(ai.watch)} onChange={(e) => updateMeetingNotes(meeting.id, { watch: parse(e.target.value) })} />
-          </label>
-          <label className="block text-[13px] font-semibold text-muted">
-            Full notes · private
-            <textarea className={cx(textareaClass, 'mt-1')} rows={4} value={lines(ai.notes)} onChange={(e) => updateMeetingNotes(meeting.id, { notes: parse(e.target.value) })} />
-          </label>
-        </div>
-      ) : (
-        <>
-          <SummaryCards ai={ai} />
-          {ai.notes.length > 0 && (
-            <details className="text-[13px]">
-              <summary className="flex min-h-11 items-center font-semibold text-accent">Full notes · private to you</summary>
-              <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
-                {ai.notes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </>
+  const item = useApproval(meeting, 'notes')
+  const summary = (
+    <>
+      <SummaryCards ai={ai} />
+      {ai.notes.length > 0 && (
+        <Disclosure label="Full notes · private to you" className="mt-1">
+          <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+            {ai.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </Disclosure>
       )}
       <SourceNotes meeting={meeting} />
-      {pending && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" onClick={() => reviewNotes(meeting.id, 'approved')}>
-            Approve
-          </Button>
-          <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
-          <Button variant="quiet" onClick={() => reviewNotes(meeting.id, 'dismissed')}>
-            Discard
-          </Button>
-          <span className="text-xs text-muted">Approved notes become this meeting’s record. They are never sent to anyone.</span>
-        </div>
-      )}
+    </>
+  )
+  return (
+    <Section k="notes" n={n} title="Meeting notes" right={<SectionState review={ai.notesReview} approval={ai.notesApproval} />}>
+      <div {...HOME} className="focus:outline-none">
+        {item ? (
+          <ApprovalCard item={item} compact hideKind note="Approved notes become this meeting’s record. They are never sent to anyone.">
+            {summary}
+          </ApprovalCard>
+        ) : (
+          summary
+        )}
+      </div>
     </Section>
   )
 }
@@ -261,16 +300,13 @@ function TasksSection({ n, meeting, student }: { n: number; meeting: Meeting; st
   const pending = tasks.filter((t) => t.review === 'pending')
   return (
     <Section
+      k="tasks"
       n={n}
       title="Tasks from this meeting"
       right={
         <>
           <ReviewTag review={groupReview(tasks)} approvedLabel="Added to tasks" />
-          {pending.length > 1 && (
-            <Button variant="primary" onClick={() => pending.forEach((t) => reviewDraftTask(meeting.id, t.id, 'approved'))}>
-              Approve {pending.length} tasks
-            </Button>
-          )}
+          {pending.length > 1 && <Button onClick={() => pending.forEach((t) => reviewDraftTask(meeting.id, t.id, 'approved'))}>Approve {pending.length} tasks</Button>}
         </>
       }
     >
@@ -284,64 +320,32 @@ function TasksSection({ n, meeting, student }: { n: number; meeting: Meeting; st
 }
 
 function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: Student; draft: DraftTask }) {
-  const { updateDraftTask, reviewDraftTask } = useStore.getState()
-  const [editing, setEditing] = useState(false)
-  const pending = draft.review === 'pending'
-  const ownerKey = draft.owner === 'parent' ? `parent:${draft.ownerParentId}` : draft.owner
-  const patch = (p: Partial<DraftTask>) => updateDraftTask(meeting.id, draft.id, p)
-
-  return (
-    <li className={cx('border-t border-line py-3 first:border-t-0', draft.review === 'dismissed' && 'opacity-60')}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="min-w-[14rem] flex-1">
-          <p className="text-sm font-medium">{draft.title}</p>
-          {draft.detail && <p className="text-[13px] text-muted">{draft.detail}</p>}
-        </div>
-        <OwnerChip owner={draft.owner} label={ownerLabel(draft, student)} />
-        <span className="text-[13px] text-muted">
-          {formatDate(draft.dueDate)}
-          {draft.dueDateBasis === 'inferred' && pending && <span className="text-warn"> · date suggested by AI</span>}
-        </span>
-        {pending ? (
-          <span className="flex flex-wrap gap-1.5">
-            <Button variant="primary" onClick={() => reviewDraftTask(meeting.id, draft.id, 'approved')}>
-              Approve
-            </Button>
-            <Button onClick={() => setEditing(!editing)} aria-expanded={editing}>
-              {editing ? 'Done' : 'Edit'}
-            </Button>
-            <Button variant="quiet" onClick={() => reviewDraftTask(meeting.id, draft.id, 'dismissed')}>
-              Discard
-            </Button>
-          </span>
-        ) : (
-          <span className="flex flex-wrap items-center gap-2">
-            <SectionState review={draft.review} approval={draft.approval} approvedLabel="Added to tasks" />
-          </span>
-        )}
+  const item = useApproval(meeting, 'task', draft.id)
+  const started = useStartedPending(Boolean(item))
+  const body = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="min-w-[14rem] flex-1">
+        <p className="text-sm font-medium">{draft.title}</p>
+        {draft.detail && <p className="text-[13px] text-muted">{draft.detail}</p>}
       </div>
-      {editing && pending && (
-        <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
-          <input className={cx(inputBase, 'min-w-[14rem] flex-1')} value={draft.title} onChange={(e) => patch({ title: e.target.value })} aria-label="Task" />
-          <select
-            className={inputBase}
-            value={ownerKey}
-            aria-label="Owner"
-            onChange={(e) => {
-              const v = e.target.value
-              patch(v.startsWith('parent:') ? { owner: 'parent', ownerParentId: v.slice(7) } : { owner: v as OwnerType, ownerParentId: undefined })
-            }}
-          >
-            <option value="student">{student.firstName}</option>
-            {student.parents.map((p) => (
-              <option key={p.id} value={`parent:${p.id}`}>
-                {p.name} ({p.relationship})
-              </option>
-            ))}
-            <option value="counselor">You</option>
-          </select>
-          <input type="date" className={inputBase} value={draft.dueDate} aria-label="Due date" onChange={(e) => e.target.value && patch({ dueDate: e.target.value, dueDateBasis: 'stated' })} />
-        </div>
+      <OwnerChip owner={draft.owner} label={ownerLabel(draft, student)} />
+      <span className="text-[13px] text-muted">
+        {formatDate(draft.dueDate)}
+        {draft.dueDateBasis === 'inferred' && item && <span className="text-warn"> · date suggested by AI</span>}
+      </span>
+    </div>
+  )
+  return (
+    <li {...HOME} className={cx(ROW, draft.review === 'dismissed' && 'opacity-60')}>
+      {item ? (
+        <ApprovalCard item={item} compact hideKind>
+          {body}
+        </ApprovalCard>
+      ) : (
+        <>
+          {body}
+          <Settled here={started} review={draft.review} approval={draft.approval} approvedLabel="Added to tasks" />
+        </>
       )}
     </li>
   )
@@ -352,163 +356,83 @@ function DraftTaskRow({ meeting, student, draft }: { meeting: Meeting; student: 
 function ParentsSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
   const updates = meeting.ai!.parentUpdates
   return (
-    <Section n={n} title={updates.length > 1 ? 'Parent updates' : 'Parent update'} right={<ReviewTag review={groupReview(updates)} approvedLabel="Sent" />}>
-      {updates.map((u) => (
-        <ParentUpdateRow key={u.id} meeting={meeting} student={student} updateId={u.id} />
-      ))}
+    <Section k="parents" n={n} title={updates.length > 1 ? 'Parent updates' : 'Parent update'} right={<ReviewTag review={groupReview(updates)} approvedLabel="Sent" />}>
+      <ul>
+        {updates.map((u) => (
+          <ParentUpdateRow key={u.id} meeting={meeting} student={student} updateId={u.id} />
+        ))}
+      </ul>
     </Section>
   )
 }
 
 function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; student: Student; updateId: string }) {
-  const { updateParentUpdate, reviewParentUpdate } = useStore.getState()
   const toast = useToast()
-  const [editing, setEditing] = useState(false)
   const update = meeting.ai!.parentUpdates.find((u) => u.id === updateId)!
+  const item = useApproval(meeting, 'parent_update', updateId)
+  const started = useStartedPending(Boolean(item))
   const parent = findParent(student, update.parentId)
   if (!parent) return null
-  const pending = update.review === 'pending'
-  const decide = (d: Decision) => {
-    reviewParentUpdate(meeting.id, update.id, d)
-    toast(d === 'approved' ? `Approved. Sending in ${UNDO_SECONDS} seconds.` : 'Discarded.')
-  }
-
+  const body = <Bilingual language={parent.language} en={update.bodyEn} local={update.bodyLocal} recipient={parent.name} />
+  const copy = (
+    <Button
+      onClick={() => {
+        void navigator.clipboard?.writeText(update.bodyLocal ?? update.bodyEn)
+        toast(`Copied. Paste it into ${CHANNEL_LABEL[parent.channel]} yourself.`)
+      }}
+    >
+      Copy for {CHANNEL_LABEL[parent.channel]}
+    </Button>
+  )
   return (
-    <div className={cx('flex flex-col gap-3 border-t border-line pt-3 first:border-t-0 first:pt-0', update.review === 'dismissed' && 'opacity-60')}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-ink-soft">{recipientLine(parent)}</span>
-        {!pending && (
+    <li {...HOME} className={cx(ROW, update.review === 'dismissed' && 'opacity-60')}>
+      {item ? (
+        // On a channel that is not connected the card's own button is the copy, so a second one is not shown beside it.
+        <ApprovalCard item={item} compact hideKind actions={sentByHand(item) ? undefined : copy}>
+          {body}
+        </ApprovalCard>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <span className="text-[13px] font-medium text-ink-soft">{recipientLine(parent)}</span>
+          {body}
           <span className="flex flex-wrap items-center gap-2">
-            <SectionState review={update.review} approval={update.approval} approvedLabel={`Sent by ${CHANNEL_LABEL[parent.channel]}`} />
+            <Settled here={started} review={update.review} approval={update.approval} approvedLabel={`Sent by ${CHANNEL_LABEL[parent.channel]}`} />
+            {copy}
           </span>
-        )}
-      </div>
-      <Bilingual
-        language={parent.language}
-        en={update.bodyEn}
-        local={update.bodyLocal}
-        recipient={parent.name}
-        editable={editing && pending}
-        onChangeEn={(bodyEn) => updateParentUpdate(meeting.id, update.id, { bodyEn })}
-        onChangeLocal={(bodyLocal) => updateParentUpdate(meeting.id, update.id, { bodyLocal })}
-      />
-      <div className="flex flex-wrap gap-2">
-        {pending && (
-          <>
-            <Button variant="primary" onClick={() => decide('approved')}>
-              Approve and send
-            </Button>
-            <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
-          </>
-        )}
-        <Button
-          onClick={() => {
-            void navigator.clipboard?.writeText(update.bodyLocal ?? update.bodyEn)
-            toast(`Copied. Paste it into ${CHANNEL_LABEL[parent.channel]} yourself.`)
-          }}
-        >
-          Copy for {CHANNEL_LABEL[parent.channel]}
-        </Button>
-        {pending && (
-          <Button variant="quiet" onClick={() => decide('dismissed')}>
-            Discard
-          </Button>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </li>
   )
 }
 
 // ── 4. Recap for the student ────────────────────────────────────────────────
 
 function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
-  const { updateRecap, reviewRecap } = useStore.getState()
-  const toast = useToast()
-  const [editing, setEditing] = useState(false)
   const recap = meeting.recap!
-  const pending = recap.review === 'pending'
-  return (
-    <Section n={n} title={`Recap for ${student.firstName}`} right={<SectionState review={recap.review} approval={recap.approval} approvedLabel={`Shared with ${student.firstName}`} />}>
-      {editing && pending ? (
-        <>
-          <textarea className={textareaClass} rows={4} value={recap.summary} onChange={(e) => updateRecap(meeting.id, { summary: e.target.value })} aria-label="Recap" />
-          <label className="block">
-            <SectionLabel className="mb-1">Next steps, one per line</SectionLabel>
-            <textarea
-              className={textareaClass}
-              rows={Math.max(3, recap.nextSteps.length + 1)}
-              value={recap.nextSteps.join('\n')}
-              onChange={(e) => updateRecap(meeting.id, { nextSteps: e.target.value.split('\n') })}
-              onBlur={() => updateRecap(meeting.id, { nextSteps: recap.nextSteps.map((s) => s.trim()).filter(Boolean) })}
-            />
-          </label>
-        </>
-      ) : (
-        <div className="rounded-lg bg-canvas p-3 text-sm leading-relaxed">
-          <p>{recap.summary}</p>
-          {recap.nextSteps.length > 0 && (
-            <ol className="mt-2 list-decimal space-y-1 pl-5">
-              {recap.nextSteps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          )}
-        </div>
+  const item = useApproval(meeting, 'recap')
+  const body = (
+    <div className="rounded-control bg-canvas p-3 text-sm leading-relaxed">
+      <p className="max-w-prose">{recap.summary}</p>
+      {recap.nextSteps.length > 0 && (
+        <ol className="mt-2 max-w-prose list-decimal space-y-1 pl-5">
+          {recap.nextSteps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
       )}
-      {pending && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="primary"
-            onClick={() => {
-              reviewRecap(meeting.id, 'approved')
-              toast(`Approved. Sending in ${UNDO_SECONDS} seconds.`)
-            }}
-          >
-            Approve and send
-          </Button>
-          <Button onClick={() => setEditing(!editing)}>{editing ? 'Done editing' : 'Edit'}</Button>
-          <Button variant="quiet" onClick={() => reviewRecap(meeting.id, 'dismissed')}>
-            Discard
-          </Button>
-          <span className="text-xs text-muted">{student.firstName} sees this in the student view only after you approve it.</span>
-        </div>
-      )}
-    </Section>
+    </div>
   )
-}
-
-// ── 6. Profile changes ──────────────────────────────────────────────────────
-
-function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
-  const reviewProfileChange = useStore((s) => s.reviewProfileChange)
-  const changes = meeting.ai!.profileChanges
   return (
-    <Section n={n} title="Profile changes" right={<ReviewTag review={groupReview(changes)} approvedLabel="Applied" />}>
-      <ul className="flex flex-col">
-        {changes.map((c) => (
-          <li key={c.id} className={cx('flex flex-wrap items-center justify-between gap-3 border-t border-line py-3 first:border-t-0 first:pt-0', c.review === 'dismissed' && 'opacity-60')}>
-            <div className="min-w-0 text-sm">
-              <SectionLabel>{c.label}</SectionLabel>
-              <p className="mt-0.5">
-                <span className="text-muted line-through">{c.from}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{c.to}</span>
-              </p>
-              <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {c.evidence}</p>
-            </div>
-            {c.review === 'pending' ? (
-              <span className="flex gap-1.5">
-                <Button onClick={() => reviewProfileChange(meeting.id, c.id, 'approved')}>Approve</Button>
-                <Button variant="quiet" onClick={() => reviewProfileChange(meeting.id, c.id, 'dismissed')}>
-                  Discard
-                </Button>
-              </span>
-            ) : (
-              <span className="flex flex-wrap items-center gap-2">
-                <SectionState review={c.review} approval={c.approval} approvedLabel="Applied" />
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
+    <Section k="recap" n={n} title={`Recap for ${student.firstName}`} right={<SectionState review={recap.review} approval={recap.approval} approvedLabel={`Shared with ${student.firstName}`} />}>
+      <div {...HOME} className="focus:outline-none">
+        {item ? (
+          <ApprovalCard item={item} compact hideKind note={`${student.firstName} sees this in the student view only after you approve it.`}>
+            {body}
+          </ApprovalCard>
+        ) : (
+          body
+        )}
+      </div>
     </Section>
   )
 }
@@ -523,7 +447,7 @@ function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
 function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting; student: Student }) {
   const notes = meeting.ai!.personalNotes ?? []
   return (
-    <Section n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
+    <Section k="remember" n={n} title="Things to remember" right={<ReviewTag review={groupReview(notes)} approvedLabel="Saved" />}>
       <p className="text-[13px] text-muted">
         Things {student.firstName} mentioned in passing. A saved one is brought up in a text to {student.firstName}: good luck beforehand, “how did it go?” afterwards, then never again. One with a date is kept until it has happened; one without is dropped at the next meeting. They are never used in anything a parent reads, and {student.firstName} cannot see this list.
       </p>
@@ -537,43 +461,72 @@ function RememberSection({ n, meeting, student }: { n: number; meeting: Meeting;
 }
 
 function DraftNoteRow({ meeting, note }: { meeting: Meeting; note: DraftPersonalNote }) {
-  const { updateDraftNote, reviewDraftNote } = useStore.getState()
-  const [editing, setEditing] = useState(false)
-  const pending = note.review === 'pending'
+  const item = useApproval(meeting, 'remember', note.id)
+  const started = useStartedPending(Boolean(item))
+  const body = (
+    <div className="text-sm">
+      <p className="font-medium">
+        {note.text}
+        {note.eventDate && <span className="font-normal text-muted"> · {note.eventDateApprox ? `around ${formatDate(note.eventDate)} (estimated: no exact day was given)` : formatDateLong(note.eventDate)}</span>}
+        {!note.eventDate && item && <span className="font-normal text-muted"> · no date, so it is dropped at the next meeting</span>}
+      </p>
+      <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {note.evidence}</p>
+    </div>
+  )
   return (
-    <li className={cx('border-t border-line py-3 first:border-t-0 first:pt-0', note.review === 'dismissed' && 'opacity-60')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-[14rem] flex-1 text-sm">
-          <p className="font-medium">
-            {note.text}
-            {note.eventDate && <span className="font-normal text-muted"> · {note.eventDateApprox ? `around ${formatDate(note.eventDate)} (estimated: no exact day was given)` : formatDateLong(note.eventDate)}</span>}
-            {!note.eventDate && pending && <span className="font-normal text-muted"> · no date, so it is dropped at the next meeting</span>}
-          </p>
-          <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {note.evidence}</p>
-        </div>
-        {pending ? (
-          <span className="flex flex-wrap gap-1.5">
-            <Button onClick={() => reviewDraftNote(meeting.id, note.id, 'approved')} disabled={!note.text.trim()}>
-              Approve
-            </Button>
-            <Button onClick={() => setEditing(!editing)} aria-expanded={editing}>
-              {editing ? 'Done' : 'Edit'}
-            </Button>
-            <Button variant="quiet" onClick={() => reviewDraftNote(meeting.id, note.id, 'dismissed')}>
-              Discard
-            </Button>
-          </span>
-        ) : (
-          <span className="flex flex-wrap items-center gap-2">
-            <SectionState review={note.review} approval={note.approval} approvedLabel="Saved" />
-          </span>
-        )}
-      </div>
-      {editing && pending && (
-        <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-canvas p-3">
-          <input className={cx(inputBase, 'min-w-[14rem] flex-1')} maxLength={300} value={note.text} onChange={(e) => updateDraftNote(meeting.id, note.id, { text: e.target.value })} aria-label="Thing to remember" />
-          <input type="date" className={inputBase} value={note.eventDate ?? ''} aria-label="Date of the event, if there is one" onChange={(e) => updateDraftNote(meeting.id, note.id, { eventDate: e.target.value || undefined, eventDateApprox: undefined })} />
-        </div>
+    <li {...HOME} className={cx(ROW, note.review === 'dismissed' && 'opacity-60')}>
+      {item ? (
+        <ApprovalCard item={item} compact hideKind>
+          {body}
+        </ApprovalCard>
+      ) : (
+        <>
+          {body}
+          <Settled here={started} review={note.review} approval={note.approval} approvedLabel="Saved" />
+        </>
+      )}
+    </li>
+  )
+}
+
+// ── 6. Profile changes ──────────────────────────────────────────────────────
+
+function ProfileSection({ n, meeting }: { n: number; meeting: Meeting }) {
+  const changes = meeting.ai!.profileChanges
+  return (
+    <Section k="profile" n={n} title="Profile changes" right={<ReviewTag review={groupReview(changes)} approvedLabel="Applied" />}>
+      <ul className="flex flex-col">
+        {changes.map((c) => (
+          <ProfileChangeRow key={c.id} meeting={meeting} change={c} />
+        ))}
+      </ul>
+    </Section>
+  )
+}
+
+function ProfileChangeRow({ meeting, change: c }: { meeting: Meeting; change: ProfileChange }) {
+  const item = useApproval(meeting, 'profile', c.id)
+  const started = useStartedPending(Boolean(item))
+  const body = (
+    <div className="min-w-0 text-sm">
+      <SectionLabel>{c.label}</SectionLabel>
+      <p className="mt-0.5">
+        <span className="text-muted line-through">{c.from}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{c.to}</span>
+      </p>
+      <p className="mt-0.5 text-[13px] italic text-muted">From the meeting: {c.evidence}</p>
+    </div>
+  )
+  return (
+    <li {...HOME} className={cx(ROW, c.review === 'dismissed' && 'opacity-60')}>
+      {item ? (
+        <ApprovalCard item={item} compact hideKind>
+          {body}
+        </ApprovalCard>
+      ) : (
+        <>
+          {body}
+          <Settled here={started} review={c.review} approval={c.approval} approvedLabel="Applied" />
+        </>
       )}
     </li>
   )

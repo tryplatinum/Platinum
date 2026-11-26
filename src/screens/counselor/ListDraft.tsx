@@ -10,11 +10,13 @@
 // A band is a starting point from public data, not a prediction. Nothing on
 // this screen states or implies any student's chance of admission.
 
+import { X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { CONTROLS, CONTROL_LABEL, REGIONS, yearOf, type CollegeSummary } from '../../../shared/colleges'
-import { CollegeFigures, CollegePicker, DirectorySourceNote, collegePlace } from '../../components/colleges'
-import { AiTag, Button, Card, CardHeader, LinkButton, PageHeader, Pill, SectionLabel, Thinking, cx, inputBase, useToast } from '../../components/ui'
+import { CollegeFigures, CollegePicker, DirectorySourceNote, FiguresLoading, collegePlace } from '../../components/colleges'
+import { MotionList } from '../../components/motion'
+import { AiTag, Button, Card, CardHeader, CheckRow, Disclosure, LinkButton, PageHeader, Pill, SectionLabel, Thinking, cx, inputBase, useConfirm, usePageTitle, useToast } from '../../components/ui'
 import { BAND_RULES, FITS, MAX_PER_BAND, SIZES, SIZE_BANDS, formatRate } from '../../lib/collegeBands'
 import { STOCK_REASON, defaultPreferences, draftItems, draftRun, matchMajors, normalMix, normalizePreferences, openListDraft, regeneratePreferences, searchPrograms } from '../../lib/collegeListDraft'
 import { formatTimestamp } from '../../lib/dates'
@@ -32,6 +34,7 @@ export default function ListDraft() {
   const directory = useDirectoryColleges(items.map((i) => i.unitid))
   /** The preferences form, open over a draft that is about to be replaced. */
   const [again, setAgain] = useState<CollegeListPreferences>()
+  usePageTitle(student ? `College list draft, ${fullName(student)}` : 'College list draft')
   if (!student) return <Navigate to="/app/students" replace />
 
   const back = `/app/students/${student.id}`
@@ -40,11 +43,11 @@ export default function ListDraft() {
       <PageHeader
         above={
           <>
-            <Link to="/app/students" className="font-medium text-accent hover:underline">
+            <Link to="/app/students" className="tap-link font-medium text-accent hover:underline">
               Students
             </Link>{' '}
             /{' '}
-            <Link to={back} className="font-medium text-accent hover:underline">
+            <Link to={back} className="tap-link font-medium text-accent hover:underline">
               {fullName(student)}
             </Link>{' '}
             / Draft a college list
@@ -54,7 +57,7 @@ export default function ListDraft() {
         sub={`Only counselors see a draft. Nothing here appears on ${student.firstName}’s page or in a parent report.`}
         actions={<LinkButton to={back}>Back to {student.firstName}</LinkButton>}
       />
-      <div className="mt-6 flex flex-col gap-6">
+      <div key={draft && !again ? 'review' : 'form'} className="motion-page flex flex-col gap-6">
         {draft && !again ? (
           <Review student={student} draft={draft} items={items} directory={directory} onRegenerate={() => setAgain(regeneratePreferences(draft, items, (unitid) => directory.college(unitid)?.name ?? `College ${unitid}`))} />
         ) : (
@@ -73,15 +76,6 @@ const splitList = (text: string) =>
     .map((part) => part.trim())
     .filter(Boolean)
 
-function Check({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
-  return (
-    <label className="flex min-h-11 items-center gap-2 text-sm">
-      <input type="checkbox" className="h-4 w-4 accent-accent" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      {children}
-    </label>
-  )
-}
-
 function Group({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <fieldset className="flex flex-col gap-1.5">
@@ -94,10 +88,10 @@ function Group({ label, hint, children }: { label: string; hint?: string; childr
 
 function Chip({ children, onRemove, label }: { children: ReactNode; onRemove: () => void; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-lg border border-line bg-canvas py-0.5 pl-2.5 pr-0.5 text-[13px]">
+    <span className="inline-flex items-center gap-1 rounded-control border border-line bg-canvas pl-3 text-[13px]">
       {children}
-      <button type="button" aria-label={label} className="flex h-8 w-8 items-center justify-center rounded-md text-base text-muted hover:bg-surface hover:text-ink" onClick={onRemove}>
-        ×
+      <button type="button" aria-label={label} className="flex h-11 w-11 items-center justify-center rounded-control text-muted hover:bg-surface hover:text-ink" onClick={onRemove}>
+        <X size={16} strokeWidth={1.75} aria-hidden />
       </button>
     </span>
   )
@@ -169,7 +163,7 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
       toast(made.byModel ? 'The draft is ready to review. Nothing has been added to the list.' : 'The AI step did not run. The draft holds the top candidates in each band for you to pick from.')
       onDone()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The list could not be drafted. Please try again.')
+      setError((e instanceof Error && e.message) || 'The list could not be drafted. Please try again.')
       setBusy(false)
     }
   }
@@ -208,7 +202,7 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
             <p className="text-[13px] text-ink-soft">
               Not covered by a program above: {unmatched.map((m) => `“${m.major}”`).join(', ')}.{' '}
               {unmatched.some((m) => m.programs.length > 0) ? (
-                <button type="button" className="font-semibold text-accent underline" onClick={matchPrograms}>
+                <button type="button" className="tap-link font-semibold text-accent underline" onClick={matchPrograms}>
                   Match programs to the majors again
                 </button>
               ) : (
@@ -251,9 +245,9 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
         <Group label="Regions">
           <div className="grid grid-cols-2 gap-x-4">
             {REGIONS.map((r) => (
-              <Check key={r} checked={prefs.regions.includes(r)} onChange={(on) => set({ regions: toggle(prefs.regions, r, on) })}>
+              <CheckRow key={r} checked={prefs.regions.includes(r)} onChange={(on) => set({ regions: toggle(prefs.regions, r, on) })}>
                 {r}
-              </Check>
+              </CheckRow>
             ))}
           </div>
         </Group>
@@ -261,9 +255,9 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
         <Group label="Size (undergraduates)" hint="None ticked means any size.">
           <div className="flex flex-wrap gap-x-5">
             {SIZES.map((s) => (
-              <Check key={s} checked={prefs.sizes.includes(s)} onChange={(on) => set({ sizes: SIZES.filter((x) => (x === s ? on : prefs.sizes.includes(x))) })}>
+              <CheckRow key={s} checked={prefs.sizes.includes(s)} onChange={(on) => set({ sizes: SIZES.filter((x) => (x === s ? on : prefs.sizes.includes(x))) })}>
                 {SIZE_BANDS[s].label}
-              </Check>
+              </CheckRow>
             ))}
           </div>
         </Group>
@@ -271,9 +265,9 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
         <Group label="Public or private" hint="None ticked means any.">
           <div className="flex flex-wrap gap-x-5">
             {CONTROLS.map((c) => (
-              <Check key={c} checked={prefs.control.includes(c)} onChange={(on) => set({ control: toggle(prefs.control, c, on) })}>
+              <CheckRow key={c} checked={prefs.control.includes(c)} onChange={(on) => set({ control: toggle(prefs.control, c, on) })}>
                 {CONTROL_LABEL[c]}
-              </Check>
+              </CheckRow>
             ))}
           </div>
         </Group>
@@ -285,9 +279,9 @@ function PreferencesForm({ student, initial, replaces, onDone, onCancel }: { stu
               Enter a whole number of dollars, or leave it empty.
             </p>
           )}
-          <Check checked={prefs.includeOpenAdmission} onChange={(on) => set({ includeOpenAdmission: on })}>
+          <CheckRow checked={prefs.includeOpenAdmission} onChange={(on) => set({ includeOpenAdmission: on })}>
             Include open-admission colleges
-          </Check>
+          </CheckRow>
         </Group>
 
         <Group label="How many in each band" hint={`Up to ${MAX_PER_BAND} each. A band with fewer matching colleges than you ask for comes back shorter.`}>
@@ -352,6 +346,7 @@ function admissionsYears(items: CollegeListDraftItem[], directory: DirectoryFigu
 function Review({ student, draft, items, directory, onRegenerate }: { student: Student; draft: CollegeListDraft; items: CollegeListDraftItem[]; directory: DirectoryFigures; onRegenerate: () => void }) {
   const { addDraftToList, addCollegeToDraft, discardListDraft, keepDraftItem } = useStore.getState()
   const toast = useToast()
+  const confirm = useConfirm()
   const navigate = useNavigate()
   const [adding, setAdding] = useState('')
   const [busy, setBusy] = useState<'add' | 'college'>()
@@ -399,15 +394,17 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
         <p className="text-base font-semibold">
           Bands are a starting point from public data for the class that entered in {years.length ? years.join(' or ') : 'the year shown beside each figure'}. They are not a prediction.
         </p>
-        <p className="text-sm text-ink-soft">
+        <Disclosure label="How the bands are worked out">
+        <p className="max-w-prose text-sm text-ink-soft">
           What the bands use: each college’s admit rate{dated(years)} and the 25th and 75th percentiles of its enrolled students’ SAT and ACT scores{dated(testYears)}, both from the U.S. Department of Education
           College Scorecard, set against {student.firstName}’s best test score on file. GPA is not used, because the directory has no GPA figures for colleges.
         </p>
-        <p className="text-[13px] text-ink-soft">
+        <p className="mt-2 max-w-prose text-[13px] text-ink-soft">
           Each band is set by a fixed rule in our code, never by the AI: an admit rate under {formatRate(BAND_RULES.reachAdmitRateBelow)} is a Reach; a best test score at or above the college’s 75th percentile with an admit rate of{' '}
           {formatRate(BAND_RULES.likelyAdmitRateAtLeast)} or more is Likely; a score below the 25th percentile is a Reach; anything else is a Target. “Limited data” marks a band
           that rests on the admit rate alone. The admit rate is the college’s own published figure for everyone who applied.
         </p>
+        </Disclosure>
       </Card>
 
       <Card className="flex flex-col gap-3 p-5">
@@ -445,15 +442,14 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
         return (
           <Card key={fit}>
             <CardHeader size="section" className="px-5 py-4" title={fit} count={rows.length} sub={byModel && drafted < asked ? `You asked for ${asked}. Fewer colleges that pass your filters fall in this band.` : undefined} />
-            {rows.length === 0 ? (
+            {rows.length === 0 && (
               <p className="border-t border-line px-5 py-4 text-sm text-muted">No {fit} colleges in the draft.</p>
-            ) : (
-              <ul>
-                {rows.map((item) => (
-                  <DraftItemRow key={item.id} item={item} directory={directory} />
-                ))}
-              </ul>
             )}
+            <MotionList itemClassName="border-t border-line">
+              {rows.map((item) => (
+                <DraftItemRow key={item.id} item={item} directory={directory} />
+              ))}
+            </MotionList>
           </Card>
         )
       })}
@@ -492,7 +488,7 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" disabled={kept.length === 0 || busy !== undefined} onClick={addToList}>
+          <Button variant="primary" busy={busy === 'add'} disabled={kept.length === 0 || busy !== undefined} onClick={addToList}>
             {busy === 'add' ? 'Adding…' : `Add ${kept.length === 1 ? '1 college' : `${kept.length} colleges`} to ${student.firstName}’s list`}
           </Button>
           <Button disabled={busy !== undefined} onClick={onRegenerate}>
@@ -501,8 +497,8 @@ function Review({ student, draft, items, directory, onRegenerate }: { student: S
           <Button
             variant="quiet"
             disabled={busy !== undefined}
-            onClick={() => {
-              if (!window.confirm('Discard this draft? Nothing is added to the list.')) return
+            onClick={async () => {
+              if (!(await confirm({ title: 'Discard draft', body: 'Discard this draft? Nothing is added to the list.', action: 'Discard draft' }))) return
               discardListDraft(draft.id)
               toast('The draft was discarded. Nothing was added to the list.')
             }}
@@ -527,7 +523,7 @@ function DraftItemRow({ item, directory }: { item: CollegeListDraftItem; directo
   const basis = item.fitBasis
   const byCounselor = basis.addedBy === 'counselor'
   return (
-    <li className="flex flex-col gap-2 border-t border-line px-5 py-4">
+    <div className="flex flex-col gap-2 px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-base font-semibold">
@@ -556,7 +552,13 @@ function DraftItemRow({ item, directory }: { item: CollegeListDraftItem; directo
       {item.reason ? <p className="max-w-prose text-sm">{item.reason}</p> : <p className="text-sm text-muted">No reason: you added this college yourself.</p>}
       {basis.programs && basis.programs.length > 0 && <p className="text-[13px] text-ink-soft">Programs that match: {basis.programs.join('; ')}</p>}
       <div className="rounded-lg bg-canvas px-3 py-2.5">
-        {college ? <CollegeFigures college={college} /> : <p className="text-[13px] text-muted">{directory.missing(item.unitid) ? 'The directory has no record for this college.' : (directory.error ?? 'Loading figures…')}</p>}
+        {college ? (
+          <CollegeFigures college={college} />
+        ) : directory.missing(item.unitid) || directory.error ? (
+          <p className="text-[13px] text-muted">{directory.missing(item.unitid) ? 'The directory has no record for this college.' : directory.error}</p>
+        ) : (
+          <FiguresLoading />
+        )}
       </div>
       <p className="max-w-prose text-[13px] text-ink-soft">
         <span className="font-semibold">Why {item.fit}:</span> {basis.summary ?? 'No basis was recorded.'}
@@ -566,6 +568,6 @@ function DraftItemRow({ item, directory }: { item: CollegeListDraftItem; directo
           <span className="font-semibold">Limited data.</span> {basis.limitedReason ?? 'A figure the rule needs is missing.'} Treat this band as a rough placement.
         </p>
       )}
-    </li>
+    </div>
   )
 }

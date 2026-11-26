@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { FolderSettings } from '../../components/files/FolderSettings'
 import { GoogleAccount } from '../../components/google/GoogleAccount'
 import { YourPhone } from '../../components/phone/YourPhone'
-import { Button, Card, CardHeader, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useToast } from '../../components/ui'
+import { Button, Card, CardHeader, CheckRow, Field, PageHeader, SegmentedControl, cx, inputBase, inputClass, useConfirm, usePageTitle, useToast } from '../../components/ui'
 import { WEEKDAYS } from '../../lib/derive'
 import { useData, useStore } from '../../store/store'
 import { setAppearance, useAppearance } from '../../theme'
@@ -15,6 +15,7 @@ import type { ReminderMode } from '../../types'
 
 export default function Settings() {
   const { hash } = useLocation()
+  usePageTitle('Settings')
   useEffect(() => {
     if (hash) document.getElementById(hash.slice(1))?.scrollIntoView()
   }, [hash])
@@ -87,7 +88,7 @@ function FirmForm() {
         <Field label="Your name" hint="Used to sign messages and to record who approved each draft.">
           <input className={inputClass} value={counselor} onChange={(e) => setCounselor(e.target.value)} />
         </Field>
-        <Button type="submit" variant="primary" className="self-start" disabled={unchanged}>
+        <Button type="submit" variant={unchanged ? 'secondary' : 'primary'} className="self-start" disabled={unchanged}>
           Save
         </Button>
       </form>
@@ -112,7 +113,7 @@ function ReminderRules() {
       <ul>
         {rules.map((rule) => (
           <li key={rule.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
-            <div className="min-w-[14rem] flex-1">
+            <div className="min-w-0 flex-1 basis-56">
               <p className="text-sm font-semibold">{rule.label}</p>
               <p className="text-[13px] text-muted">{rule.description}</p>
             </div>
@@ -159,13 +160,9 @@ function AppearanceSetting() {
   return (
     <Card className="flex flex-col items-start gap-3 p-5">
       <CardHeader size="section" title="Appearance" sub="Kept in this browser." />
-      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-        <input type="checkbox" className="h-5 w-5 shrink-0" checked={auto} onChange={(e) => setAppearance(e.target.checked ? 'auto' : theme)} />
-        <span>
-          Match this device
-          <span className="block text-xs font-normal text-muted">{auto ? `Showing ${theme} now` : 'Off: choose below'}</span>
-        </span>
-      </label>
+      <CheckRow checked={auto} onChange={(on) => setAppearance(on ? 'auto' : theme)} hint={auto ? `Showing ${theme} now` : 'Off: choose below'}>
+        Match this device
+      </CheckRow>
       {!auto && (
         <SegmentedControl
           label="Appearance"
@@ -186,39 +183,57 @@ function AppearanceSetting() {
 function DemoData() {
   const navigate = useNavigate()
   const toast = useToast()
+  const confirm = useConfirm()
   const { resetDemo, startEmpty } = useStore.getState()
+  const [busy, setBusy] = useState<'reset' | 'empty'>()
   return (
     <Card className="flex flex-col gap-4 p-5">
       <CardHeader size="section" title="Demo data" sub="Both delete every student, task, meeting and message in your firm. Each asks you to type a word first." />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="danger"
-          onClick={() => {
+          busy={busy === 'reset'}
+          disabled={Boolean(busy)}
+          onClick={async () => {
             // Deleting a firm's data cannot be undone, so it takes a typed word, not a click.
-            const typed = window.prompt('Reset to the sample caseload? This permanently deletes every student, task, meeting and message in your firm and loads the invented demo students.\n\nType RESET to confirm.')
-            if (typed === null) return
-            if (typed.trim() !== 'RESET') return toast('Nothing was changed. Type RESET exactly to confirm.')
-            // Said only once it has happened: a counselor who is not the owner can be refused.
-            void resetDemo().then((done) => {
-              if (!done) return
-              navigate('/app')
-              toast('Sample caseload loaded.')
+            const yes = await confirm({
+              title: 'Reset demo',
+              body: 'Reset to the sample caseload? This permanently deletes every student, task, meeting and message in your firm and loads the invented demo students.',
+              action: 'Reset demo',
+              word: 'RESET',
+              wrongWord: 'Nothing was changed. Type RESET exactly to confirm.',
             })
+            if (!yes) return
+            setBusy('reset')
+            // Said only once it has happened: a counselor who is not the owner can be refused.
+            const done = await resetDemo()
+            setBusy(undefined)
+            if (!done) return
+            navigate('/app/today')
+            toast('Sample caseload loaded.')
           }}
         >
           Reset demo
         </Button>
         <Button
           variant="danger"
-          onClick={() => {
-            const typed = window.prompt('Start with an empty firm? This permanently deletes every student, task, meeting and message in your firm.\n\nType DELETE to confirm.')
-            if (typed === null) return
-            if (typed.trim() !== 'DELETE') return toast('Nothing was changed. Type DELETE exactly to confirm.')
-            void startEmpty().then((done) => {
-              if (!done) return
-              navigate('/app/students')
-              toast('Empty firm ready. Add your first student.')
+          busy={busy === 'empty'}
+          disabled={Boolean(busy)}
+          onClick={async () => {
+            const yes = await confirm({
+              title: 'Start empty',
+              body: 'Start with an empty firm? This permanently deletes every student, task, meeting and message in your firm.',
+              action: 'Start empty',
+              word: 'DELETE',
+              wrongWord: 'Nothing was changed. Type DELETE exactly to confirm.',
             })
+            if (!yes) return
+            setBusy('empty')
+            const done = await startEmpty()
+            setBusy(undefined)
+            if (!done) return
+            navigate('/app/students')
+            toast('Empty firm ready. Add your first student.')
           }}
         >
           Start empty

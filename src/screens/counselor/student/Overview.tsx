@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { MeetingFormModal, ParentFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { AddTaskForm, TaskItem } from '../../../components/TaskRows'
-import { Button, Card, CardHeader, Empty, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
+import { MotionList } from '../../../components/motion'
+import { Button, Card, CardHeader, Disclosure, Empty, PhoneFold, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTimestamp } from '../../../lib/dates'
 import { eventWhen, isNotResponding, isOpen, isSlipping, nextMeeting, noteStatusLine, personalNotesByLife, sortByUrgency, statusText, summarize, tasksFor } from '../../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
@@ -21,16 +22,20 @@ export default function Overview({ student }: { student: Student }) {
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-w-0 flex-col gap-6">
         <TasksCard student={student} />
-        <CollegeList student={student} />
+        <PhoneFold label="College list" count={data.colleges.filter((c) => c.studentId === student.id).length}>
+          <CollegeList student={student} />
+        </PhoneFold>
       </div>
       <div className="flex min-w-0 flex-col gap-6">
         {upcoming ? (
-          <BriefCard meeting={upcoming} student={student} />
+          <PhoneFold label="Brief for the next meeting">
+            <BriefCard meeting={upcoming} student={student} />
+          </PhoneFold>
         ) : (
           <Card tone="accent" className="flex flex-col items-start gap-3 p-5">
             <h2 className="text-base font-semibold">No meeting scheduled</h2>
             <p className="text-sm text-ink-soft">Schedule the next meeting and a brief will be ready here before it.</p>
-            <Button variant="primary" onClick={() => setScheduling(true)}>
+            <Button onClick={() => setScheduling(true)}>
               Schedule a meeting
             </Button>
           </Card>
@@ -48,7 +53,6 @@ export default function Overview({ student }: { student: Student }) {
 function TasksCard({ student }: { student: Student }) {
   const data = useData()
   const [adding, setAdding] = useState(false)
-  const [showAllDone, setShowAllDone] = useState(false)
   const tasks = sortByUrgency(tasksFor(data, student.id))
   const open = tasks.filter(isOpen)
   const done = tasks.filter((t) => !isOpen(t))
@@ -61,7 +65,7 @@ function TasksCard({ student }: { student: Student }) {
       {tasks.length === 0 ? (
         !adding && (
           <Empty title={`No tasks for ${student.firstName} yet. Add one, or log a meeting and let the AI draft them from your notes.`}>
-            <Button variant="primary" onClick={() => setAdding(true)}>
+            <Button onClick={() => setAdding(true)}>
               Add task
             </Button>
           </Empty>
@@ -73,26 +77,20 @@ function TasksCard({ student }: { student: Student }) {
           {open.length === 0 ? (
             <p className="text-sm text-muted">Everything is done.</p>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <MotionList itemClassName="pb-2 last:pb-0">
               {open.map((t) => (
                 <TaskItem key={t.id} task={t} student={student} viewer="counselor" />
               ))}
-            </ul>
+            </MotionList>
           )}
           {done.length > 0 && (
-            <>
-              <SectionLabel>Done · {done.length}</SectionLabel>
-              <ul className="flex flex-col gap-2">
-                {(showAllDone ? done : done.slice(0, 3)).map((t) => (
+            <Disclosure label="Done" count={done.length}>
+              <MotionList itemClassName="pb-2 last:pb-0">
+                {done.map((t) => (
                   <TaskItem key={t.id} task={t} student={student} viewer="counselor" />
                 ))}
-              </ul>
-              {done.length > 3 && (
-                <Button variant="quiet" className="self-start" onClick={() => setShowAllDone(!showAllDone)}>
-                  {showAllDone ? 'Show fewer' : `Show ${done.length - 3} more done`}
-                </Button>
-              )}
-            </>
+              </MotionList>
+            </Disclosure>
           )}
         </>
       )}
@@ -115,7 +113,7 @@ function ThingsToRemember({ student }: { student: Student }) {
   const [text, setText] = useState('')
   const [date, setDate] = useState('')
   const row = (note: PersonalNote) => (
-    <li key={note.id} className="flex items-start justify-between gap-2 border-t border-line py-2.5 text-sm first:border-t-0 first:pt-0">
+    <div key={note.id} className="flex items-start justify-between gap-2 text-sm">
       <div className="min-w-0">
         <p className="break-words">
           {note.text}
@@ -129,7 +127,7 @@ function ThingsToRemember({ student }: { student: Student }) {
       <Button variant="quiet" className="-my-1.5 shrink-0" aria-label={`Delete: ${note.text}`} onClick={() => deletePersonalNote(note.id)}>
         Delete
       </Button>
-    </li>
+    </div>
   )
   return (
     <Card className="flex flex-col gap-3 p-5">
@@ -137,7 +135,7 @@ function ThingsToRemember({ student }: { student: Student }) {
       {live.length === 0 ? (
         <p className="text-sm text-muted">Nothing current. Things {student.firstName} mentions in passing in a meeting appear here once you approve them.</p>
       ) : (
-        <ul>{live.map(row)}</ul>
+        <MotionList itemClassName="border-t border-line py-2.5 first:border-t-0 first:pt-0">{live.map(row)}</MotionList>
       )}
       <form
         className="flex flex-wrap gap-2"
@@ -149,17 +147,16 @@ function ThingsToRemember({ student }: { student: Student }) {
           setDate('')
         }}
       >
-        <input className={cx(inputBase, 'min-w-[10rem] flex-1')} maxLength={300} placeholder="Add one, e.g. school play on Friday" aria-label="Add a thing to remember" value={text} onChange={(e) => setText(e.target.value)} />
+        <input className={cx(inputBase, 'min-w-[10rem] flex-1 basis-full')} maxLength={300} placeholder="Add one, e.g. school play on Friday" aria-label="Add a thing to remember" value={text} onChange={(e) => setText(e.target.value)} />
         <input type="date" className={inputBase} aria-label="Date of the event, if there is one" value={date} onChange={(e) => setDate(e.target.value)} />
         <Button type="submit" disabled={!text.trim()}>
           Add
         </Button>
       </form>
       {finished.length > 0 && (
-        <details className="text-[13px]">
-          <summary className="flex min-h-11 items-center font-semibold text-accent">No longer used · {finished.length}</summary>
-          <ul>{finished.map(row)}</ul>
-        </details>
+        <Disclosure label="No longer used" count={finished.length}>
+          <MotionList itemClassName="border-t border-line py-2.5 first:border-t-0">{finished.map(row)}</MotionList>
+        </Disclosure>
       )}
       <p className="text-xs text-muted">
         A text to {student.firstName} brings one of these up: good luck beforehand, “how did it go?” afterwards, and then not again. With a date it is kept until a week after the day. Without one it is dropped when you log the next meeting. Never

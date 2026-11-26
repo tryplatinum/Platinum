@@ -5,7 +5,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { Splash } from '../../components/RequireFirm'
-import { Button, Field, inputClass } from '../../components/ui'
+import { Button, Field, inputClass, usePageTitle } from '../../components/ui'
 import { supabaseConfigured } from '../../lib/supabase'
 import { sendPasswordReset, setPassword, setUpFirm, signIn, signOut, signUp } from '../../store/session'
 import { useStore } from '../../store/store'
@@ -13,14 +13,15 @@ import { useStore } from '../../store/store'
 const MIN_PASSWORD = 8
 
 /** The page the person asked for before being sent here. */
-const useFrom = () => (useLocation().state as { from?: string } | null)?.from ?? '/app'
+const useFrom = () => (useLocation().state as { from?: string } | null)?.from ?? '/app/today'
 
 function Panel({ title, sub, children, onSubmit }: { title: string; sub?: ReactNode; children: ReactNode; onSubmit: (e: FormEvent) => void }) {
+  usePageTitle(title)
   return (
     <Splash>
-      <form className="flex w-full flex-col gap-4 rounded-xl bg-surface p-6 text-left" onSubmit={onSubmit}>
+      <form className="motion-page flex w-full flex-col gap-4 rounded-card border border-line bg-surface p-6 text-left" onSubmit={onSubmit}>
         <div>
-          <h1 className="text-lg font-bold text-ink">{title}</h1>
+          <h1 className="text-lg font-semibold">{title}</h1>
           {sub && <p className="mt-0.5 text-[13px] text-muted">{sub}</p>}
         </div>
         {children}
@@ -35,6 +36,19 @@ const ErrorNote = ({ children }: { children: ReactNode }) =>
       {children}
     </p>
   ) : null
+
+/** A password that can be shown while it is typed. */
+function PasswordInput({ value, onChange, autoComplete }: { value: string; onChange: (value: string) => void; autoComplete: string }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <span className="relative block">
+      <input className={`${inputClass} pr-16!`} type={shown ? 'text' : 'password'} required value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} autoCapitalize="none" spellCheck={false} />
+      <button type="button" aria-pressed={shown} aria-label={shown ? 'Hide the password' : 'Show the password'} className="absolute inset-y-0 right-0 min-w-11 rounded-control px-3 text-[13px] font-semibold text-accent hover:underline" onClick={() => setShown(!shown)}>
+        {shown ? 'Hide' : 'Show'}
+      </button>
+    </span>
+  )
+}
 
 /** Runs one request at a time and keeps its error for the form to show. */
 function useSubmit() {
@@ -109,18 +123,11 @@ export default function SignIn() {
       </Field>
       {mode !== 'forgot' && (
         <Field label="Password" hint={mode === 'signup' ? `At least ${MIN_PASSWORD} characters.` : undefined}>
-          <input
-            className={inputClass}
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPasswordValue(e.target.value)}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          />
+          <PasswordInput value={password} onChange={setPasswordValue} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
         </Field>
       )}
       <ErrorNote>{error}</ErrorNote>
-      <Button type="submit" variant="primary" disabled={busy || account.status === 'loading'}>
+      <Button type="submit" variant="primary" busy={busy} disabled={account.status === 'loading'}>
         {busy ? 'One moment…' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
       </Button>
       <div className="flex flex-wrap items-center justify-between gap-x-4">
@@ -171,7 +178,7 @@ export function FirmSetup() {
         <input className={inputClass} required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
       </Field>
       <ErrorNote>{error}</ErrorNote>
-      <Button type="submit" variant="primary" disabled={busy || !firm.trim() || !name.trim()}>
+      <Button type="submit" variant="primary" busy={busy} disabled={!firm.trim() || !name.trim()}>
         {busy ? 'Creating…' : 'Create firm'}
       </Button>
       <button type="button" className="min-h-11 self-start text-sm font-semibold text-accent hover:underline" onClick={() => void signOut()}>
@@ -188,15 +195,15 @@ export function ResetPassword() {
   const [done, setDone] = useState(false)
   const { busy, error, run } = useSubmit()
 
-  if (done) return <Navigate to="/app" replace />
+  if (done) return <Navigate to="/app/today" replace />
   if (account.status === 'loading') return <Splash>{null}</Splash>
   if (account.status === 'signed_out') {
     return (
       <Splash>
-        <div className="flex w-full flex-col gap-3 rounded-xl bg-surface p-6 text-left">
-          <h1 className="text-lg font-bold text-ink">This reset link has expired</h1>
+        <div className="flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-6 text-left">
+          <h1 className="text-lg font-semibold">This reset link has expired</h1>
           <p className="text-sm text-ink-soft">Reset links work once and for a short time. Ask for a new one from the sign-in page.</p>
-          <Link to="/signin" className="min-h-11 text-sm font-semibold text-accent hover:underline">
+          <Link to="/signin" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
             Back to sign in
           </Link>
         </div>
@@ -217,10 +224,10 @@ export function ResetPassword() {
       }}
     >
       <Field label="New password" hint={`At least ${MIN_PASSWORD} characters.`}>
-        <input className={inputClass} type="password" required value={password} onChange={(e) => setPasswordValue(e.target.value)} autoComplete="new-password" />
+        <PasswordInput value={password} onChange={setPasswordValue} autoComplete="new-password" />
       </Field>
       <ErrorNote>{error}</ErrorNote>
-      <Button type="submit" variant="primary" disabled={busy}>
+      <Button type="submit" variant="primary" busy={busy}>
         {busy ? 'Saving…' : 'Save password'}
       </Button>
     </Panel>

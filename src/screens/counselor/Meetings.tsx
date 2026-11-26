@@ -3,13 +3,15 @@
 // drafts, or the last meeting's report and the next meeting's brief).
 // "Calendar": the week at a glance.
 
-import { useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { LogMeetingModal, MeetingFormModal } from '../../components/forms'
 import { BriefCard } from '../../components/meeting/BriefCard'
 import { MeetingReport, meetingHeading } from '../../components/meeting/MeetingReport'
 import { MeetingReview } from '../../components/meeting/MeetingReview'
-import { Button, Card, CardHeader, Empty, LinkButton, PageHeader, Pill, STATUS_LABEL, SectionLabel, StatusPill, Tabs, cx, inputClass, useTab, type TabItem } from '../../components/ui'
+import { useIsLaptop } from '../../components/motion'
+import { Button, Card, CardHeader, Empty, LinkButton, PageHeader, Pill, STATUS_LABEL, SectionLabel, StatusPill, TabPanel, Tabs, cx, inputClass, usePageTitle, useTab, type TabItem } from '../../components/ui'
 import { addDays, daysFromToday, formatDate, formatDateLong, formatRelative, formatTime, parseISODate, toISODate, todayISO } from '../../lib/dates'
 import { fullName, meetingBuckets, pendingInMeeting, summarizeAll, type StudentSummary } from '../../lib/derive'
 import { reminderQueue } from '../../lib/reminders'
@@ -24,6 +26,7 @@ const VIEWS: TabItem<'students' | 'calendar'>[] = [
 export default function Meetings() {
   const data = useData()
   const view = useTab(VIEWS, 'view')
+  usePageTitle('Meetings')
   const [params] = useSearchParams()
   const [modal, setModal] = useState<{ kind: 'schedule' | 'log'; studentId?: ID } | undefined>(params.get('log') ? { kind: 'log' } : undefined)
   const summaries = summarizeAll(data)
@@ -53,10 +56,10 @@ export default function Meetings() {
             </LinkButton>
           </Empty>
         </Card>
-      ) : view === 'calendar' ? (
-        <Calendar summaries={summaries} onSchedule={(studentId) => setModal({ kind: 'schedule', studentId })} />
       ) : (
-        <ByStudent summaries={summaries} onModal={setModal} />
+        <TabPanel tab={view} label={view === 'calendar' ? 'Calendar' : 'By student'}>
+          {view === 'calendar' ? <Calendar summaries={summaries} onSchedule={(studentId) => setModal({ kind: 'schedule', studentId })} /> : <ByStudent summaries={summaries} onModal={setModal} />}
+        </TabPanel>
       )}
 
       {modal?.kind === 'schedule' && <MeetingFormModal studentId={modal.studentId} onClose={() => setModal(undefined)} />}
@@ -85,61 +88,101 @@ function ByStudent({ summaries, onModal }: { summaries: StudentSummary[]; onModa
   const sorted = [...summaries].sort((a, b) => (a.nextMeeting?.date ?? '9999').localeCompare(b.nextMeeting?.date ?? '9999'))
   const shown = sorted.filter((s) => fullName(s.student).toLowerCase().includes(query.trim().toLowerCase()))
   const firstByGroup = GROUPS.flatMap((g) => sorted.filter((s) => groupOf(s) === g))[0]
-  const selected = summaries.find((s) => s.student.id === params.get('student')) ?? firstByGroup
+  const asked = summaries.find((s) => s.student.id === params.get('student'))
+  const laptop = useIsLaptop()
+  // On a laptop the list and one student are side by side, so one is always chosen.
+  const selected = asked ?? (laptop ? firstByGroup : undefined)
+  // On anything narrower the list gives way to the chosen student, and comes back when asked for.
+  const [changing, setChanging] = useState(false)
+  const panel = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const changeButton = useRef<HTMLButtonElement>(null)
   const select = (id: ID) => {
     const next = new URLSearchParams(params)
     next.set('student', id)
     setParams(next, { replace: true })
+    setChanging(false)
+    if (!laptop) {
+      // The list this was pressed in is gone: go to the student it opened.
+      window.scrollTo(0, 0)
+      requestAnimationFrame(() => panel.current?.focus({ preventScroll: true }))
+    }
   }
+  const showList = laptop || !selected || changing
 
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-      <Card className="overflow-hidden">
-        <section aria-label="Students">
-          <div className="border-b border-line p-3">
-            <input className={inputClass} type="search" placeholder="Search students" aria-label="Search students" value={query} onChange={(e) => setQuery(e.target.value)} />
-          </div>
-          <div className="max-h-[70vh] overflow-y-auto">
-            {GROUPS.map((g) => {
-              const rows = shown.filter((s) => groupOf(s) === g)
-              if (rows.length === 0) return null
-              return (
-                <div key={g}>
-                  <div className="bg-canvas px-4 py-2 text-xs font-semibold text-muted">{g}</div>
-                  {rows.map((s) => {
-                    const active = selected?.student.id === s.student.id
-                    return (
-                      <button
-                        key={s.student.id}
-                        type="button"
-                        aria-current={active}
-                        onClick={() => select(s.student.id)}
-                        className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold">{fullName(s.student)}</span>
-                          {g === 'Needs review' ? (
-                            <span className="text-xs font-semibold text-accent">Review ready</span>
-                          ) : (
-                            (s.status === 'behind' || s.status === 'slipping') && <span className={cx('text-xs font-semibold', s.status === 'behind' ? 'text-bad' : 'text-warn')}>{STATUS_LABEL[s.status]}</span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 block text-xs text-muted">
-                          {g === 'Needs review' && s.lastMeeting && `Met ${formatRelative(s.lastMeeting.date)} · `}
-                          {s.nextMeeting ? `Next ${when(s.nextMeeting)}` : s.lastMeeting ? `Last met ${formatDate(s.lastMeeting.date)}` : 'No meeting yet'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
-            {shown.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">No student matches “{query}”.</p>}
-          </div>
-        </section>
-      </Card>
+      {!laptop && selected && (
+        <div className="flex min-h-11 items-center justify-between gap-3 rounded-card border border-line bg-surface py-1 pl-4 pr-1">
+          <span className="min-w-0 text-sm font-semibold">{fullName(selected.student)}</span>
+          <Button
+            ref={changeButton}
+            variant="quiet"
+            aria-expanded={changing}
+            aria-controls="meeting-students"
+            onClick={() => {
+              setChanging(!changing)
+              if (!changing) requestAnimationFrame(() => search.current?.focus())
+            }}
+          >
+            {changing ? 'Close the list' : 'Change student'}
+          </Button>
+        </div>
+      )}
+      {showList && (
+        <Card className="motion-page overflow-hidden">
+          <section aria-label="Students" id="meeting-students">
+            <div className="border-b border-line p-3">
+              <input ref={search} className={inputClass} type="search" placeholder="Search students" aria-label="Search students" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            <div className="lg:max-h-[70dvh] lg:overflow-y-auto">
+              {GROUPS.map((g) => {
+                const rows = shown.filter((s) => groupOf(s) === g)
+                if (rows.length === 0) return null
+                return (
+                  <div key={g}>
+                    <div className="bg-canvas px-4 py-2 text-xs font-semibold text-muted">{g}</div>
+                    {rows.map((s) => {
+                      const active = selected?.student.id === s.student.id
+                      return (
+                        <button
+                          key={s.student.id}
+                          type="button"
+                          aria-current={active}
+                          onClick={() => select(s.student.id)}
+                          className={cx('block w-full border-l-[3px] px-4 py-3 text-left', active ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold">{fullName(s.student)}</span>
+                            {g === 'Needs review' ? (
+                              <span className="text-xs font-semibold text-accent">Review ready</span>
+                            ) : (
+                              (s.status === 'behind' || s.status === 'slipping') && <span className={cx('text-xs font-semibold', s.status === 'behind' ? 'text-bad' : 'text-warn')}>{STATUS_LABEL[s.status]}</span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted">
+                            {g === 'Needs review' && s.lastMeeting && `Met ${formatRelative(s.lastMeeting.date)} · `}
+                            {s.nextMeeting ? `Next ${when(s.nextMeeting)}` : s.lastMeeting ? `Last met ${formatDate(s.lastMeeting.date)}` : 'No meeting yet'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {shown.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">No student matches “{query}”.</p>}
+            </div>
+          </section>
+        </Card>
+      )}
 
-      {selected && <StudentMeetingPanel summary={selected} onModal={onModal} />}
+      {selected && !(changing && !laptop) && (
+        <div ref={panel} tabIndex={-1} className="min-w-0 focus:outline-none">
+          <div key={selected.student.id} className="motion-page">
+            <StudentMeetingPanel summary={selected} onModal={onModal} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -156,8 +199,8 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-bold">
-              <Link to={`/app/students/${student.id}`} className="hover:text-accent hover:underline">
+            <h2 className="text-lg font-semibold">
+              <Link to={`/app/students/${student.id}`} className="tap-link hover:text-accent hover:underline">
                 {fullName(student)}
               </Link>
             </h2>
@@ -172,7 +215,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => onModal({ kind: 'log', studentId: student.id })}>Log a meeting</Button>
           {!upcoming && (
-            <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
+            <Button onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
               Schedule
             </Button>
           )}
@@ -191,7 +234,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
             <Card className="flex flex-col gap-4 p-5">
               <div>
                 <SectionLabel>Most recent meeting</SectionLabel>
-                <h3 className="mt-0.5 text-lg font-bold">{meetingHeading(recent)}</h3>
+                <h3 className="mt-0.5 text-base font-semibold">{meetingHeading(recent)}</h3>
               </div>
               {!recent.ai && !recent.recap && recent.transcript ? <MeetingReview meeting={recent} student={student} /> : <MeetingReport meeting={recent} student={student} />}
             </Card>
@@ -200,7 +243,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
               <Empty title={`No meetings with ${student.firstName} yet. Schedule one, or log one that already happened.`}>
                 <div className="flex flex-wrap justify-center gap-2">
                   {!upcoming && (
-                    <Button variant="primary" onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
+                    <Button onClick={() => onModal({ kind: 'schedule', studentId: student.id })}>
                       Schedule a meeting
                     </Button>
                   )}
@@ -257,13 +300,13 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button aria-label="Previous week" onClick={() => setOffset(offset - 1)}>
-            ‹
+          <Button aria-label="Previous week" className="w-11 px-0!" onClick={() => setOffset(offset - 1)}>
+            <ChevronLeft size={20} strokeWidth={1.75} aria-hidden />
           </Button>
-          <Button aria-label="Next week" onClick={() => setOffset(offset + 1)}>
-            ›
+          <Button aria-label="Next week" className="w-11 px-0!" onClick={() => setOffset(offset + 1)}>
+            <ChevronRight size={20} strokeWidth={1.75} aria-hidden />
           </Button>
-          <h2 className="ml-1 text-lg font-bold">
+          <h2 aria-live="polite" className="nums ml-1 text-lg font-semibold">
             {formatDate(days[0])} to {formatDate(days[6])}
           </h2>
           {offset !== 0 && (
@@ -277,13 +320,14 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
         </p>
       </div>
 
-      <Card className="overflow-x-auto">
-        <div className="grid min-w-[980px] grid-cols-7 divide-x divide-line">
+      {/* Seven columns where there is room for them, and one day under another where there is not. */}
+      <Card className="@container overflow-hidden">
+        <div key={start} className="motion-page grid grid-cols-1 divide-y divide-line @min-[52rem]:grid-cols-7 @min-[52rem]:divide-x @min-[52rem]:divide-y-0">
           {days.map((day) => {
             const isToday = day === today
             const list = meetings.filter((m) => m.date === day)
             return (
-              <div key={day} className={cx('flex min-h-[260px] flex-col gap-2 p-2', isToday && 'outline outline-2 -outline-offset-2 outline-accent')}>
+              <div key={day} className={cx('flex min-w-0 flex-col gap-2 p-3 @min-[52rem]:min-h-[260px] @min-[52rem]:p-2', isToday && 'outline outline-2 -outline-offset-2 outline-accent')}>
                 <div className={cx('px-1 text-xs font-semibold uppercase', isToday ? 'text-accent' : 'text-muted')}>
                   {parseISODate(day).toLocaleDateString('en-US', { weekday: 'short' })} {parseISODate(day).getDate()}
                   {isToday && ' · today'}
@@ -292,7 +336,7 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
                 {list.map((m) => {
                   const s = byStudent.get(m.studentId)!
                   return (
-                    <Link key={m.id} to={`/app/meetings?student=${m.studentId}`} className={cx('block rounded-lg p-2 hover:brightness-95', TINT[s.status])}>
+                    <Link key={m.id} to={`/app/meetings?student=${m.studentId}`} className={cx('block min-h-11 rounded-control p-2 hover:brightness-95', TINT[s.status])}>
                       <span className="block text-xs font-semibold">
                         {formatTime(m.time)} · {STATUS_LABEL[s.status]}
                       </span>
@@ -319,13 +363,13 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
             {unscheduled.map((s) => (
               <li key={s.student.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-2 first:border-t-0">
                 <span className="text-sm">
-                  <Link to={`/app/meetings?student=${s.student.id}`} className="font-semibold hover:text-accent hover:underline">
+                  <Link to={`/app/meetings?student=${s.student.id}`} className="tap-link font-semibold hover:text-accent hover:underline">
                     {fullName(s.student)}
                   </Link>{' '}
                   <span className="text-muted">{s.lastMeeting ? `last met ${formatDate(s.lastMeeting.date)}` : 'has not met yet'}</span>
                   {s.status !== 'on_track' && <Pill tone={s.status === 'behind' ? 'bad' : s.status === 'slipping' ? 'warn' : 'neutral'} className="ml-2">{STATUS_LABEL[s.status]}</Pill>}
                 </span>
-                <Button onClick={() => onSchedule(s.student.id)}>Schedule</Button>
+                <Button aria-label={`Schedule a meeting with ${fullName(s.student)}`} onClick={() => onSchedule(s.student.id)}>Schedule</Button>
               </li>
             ))}
           </ul>

@@ -260,7 +260,7 @@ export function buildSeed(): AppData {
       trigger: 'approved',
       status: 'sent',
       sendAfter: timestampAt(on, '17:40'),
-      note: 'Legacy simulated send.',
+      note: 'Sample message, not sent.',
     })
   }
 
@@ -288,7 +288,7 @@ export function buildSeed(): AppData {
       trigger: 'automatic',
       status: 'sent',
       sendAfter: timestampAt(on, time),
-      note: 'Legacy simulated send.',
+      note: 'Sample message, not sent.',
     })
 
   const did = (studentId: ID, on: number, time: string, actor: Actor, text: string) =>
