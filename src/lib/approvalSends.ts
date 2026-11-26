@@ -1,5 +1,5 @@
 // Which queued message an approved assistant draft became, for this session.
-// The approval card uses it to show "Sending in 60 seconds" and its own Undo,
+// The approval card uses it to show "Sending in 10 seconds" and its own Undo,
 // in the assistant panel and in the Inbox alike. Nothing here writes
 // to the outbox: the id is the one the store gave the row, and `confirmed`
 // comes from the same notice the Undo toast listens to.

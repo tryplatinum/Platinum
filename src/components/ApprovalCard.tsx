@@ -6,7 +6,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { previewStudentLink } from '../../shared/dispatch'
-import { outboxStatusLabel } from '../../shared/outbox'
+import { UNDO_SECONDS, outboxStatusLabel } from '../../shared/outbox'
 import { deciding, rememberSend, useApprovalSends } from '../lib/approvalSends'
 import { APPROVAL_TYPE_LABEL, findStudent, fullName, type ApprovalItem } from '../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
@@ -42,7 +42,7 @@ export function ApprovalCard({ item, as: Tag = 'li', compact, showStudent, class
 
   const onApprove = () => {
     void Promise.resolve(approveItem(item))
-      .then(() => toast(item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
+      .then(() => toast(item.isSend ? `Approved. Sending in ${UNDO_SECONDS} seconds.` : 'Approved.'))
       .catch((error: unknown) => toast(reasonOf(error, 'Could not approve.')))
   }
 
@@ -247,7 +247,7 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
         <Modal title={title} onClose={() => setConfirming(false)}>
           <p className="text-sm text-ink-soft">
             {approvable.length} {approvable.length === 1 ? 'item' : 'items'}
-            {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send. Each message keeps its own 60-second Undo.` : '. No messages will be queued.'}
+            {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send. Each message keeps its own ${UNDO_SECONDS}-second Undo.` : '. No messages will be queued.'}
             {left > 0 && ` ${leftLine}`}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">

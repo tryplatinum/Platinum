@@ -11,7 +11,7 @@
 // There Google is the invented one in server/google/fakeDrive.ts and the
 // database is the in-memory stand-in in scripts/fakeSupabase.ts. Nothing is sent.
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -67,7 +67,18 @@ const valid = {
 
 const parsed = validateQueuePayload(valid)
 check('a complete payload is accepted', parsed.ok === true)
-check('the undo window is 60 seconds', UNDO_SECONDS === 60)
+check('the undo window is 10 seconds', UNDO_SECONDS === 10)
+{
+  // The newest migration that defines queue_message sets the real wait.
+  const dir = new URL('../supabase/migrations/', import.meta.url)
+  const newest = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => readFileSync(new URL(f, dir), 'utf8'))
+    .filter((sql) => /create (or replace )?function public\.queue_message\(/.test(sql))
+    .at(-1)
+  check('queue_message holds a message for the same time', newest?.match(/now\(\) \+ interval '(\d+) seconds'/)?.[1] === String(UNDO_SECONDS))
+}
 check('a missing body is rejected', validateQueuePayload({ ...valid, body: '  ' }).ok === false)
 check('a missing student is rejected', validateQueuePayload({ ...valid, studentId: 'not-an-id' }).ok === false)
 check('a missing recipient name is rejected', validateQueuePayload({ ...valid, toName: '' }).ok === false)

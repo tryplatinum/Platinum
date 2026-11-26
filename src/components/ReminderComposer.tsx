@@ -1,6 +1,6 @@
 // A reminder about one task, drafted by the AI for one person in their
 // language and for their preferred channel. The counselor reads it, edits if
-// needed, and approves. An approved message waits 60 seconds, then goes out
+// needed, and approves. An approved message waits 10 seconds, then goes out
 // through the allowlist. It can still be copied and sent by hand.
 //
 // A reminder to the student can come with a parent copy: a second, separate
@@ -15,6 +15,7 @@ import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
 import { AiErrorNote, AiTag, Button, PlaceholderNote, SectionLabel, Thinking, textareaClass, useToast } from './ui'
+import { UNDO_SECONDS } from '../../shared/outbox'
 
 const CHANNEL_NOUN = { text: 'text message', email: 'email', wechat: 'WeChat message', line: 'LINE message' } as const
 
@@ -89,7 +90,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
     }, d.toKind === 'student' ? d.usedNote : undefined)
-    toast('Approved. Sending in 60 seconds.')
+    toast(`Approved. Sending in ${UNDO_SECONDS} seconds.`)
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()
     else setDrafts((all) => all.map((x, j) => (j === i ? { ...x, sent: true } : x)))
@@ -143,7 +144,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             )}
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
-                <span className="text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in 60 seconds.</span>
+                <span className="text-[13px] font-semibold text-good">Approved. Sending to {d.toName} in {UNDO_SECONDS} seconds.</span>
               ) : (
                 <Button variant="primary" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
                   Approve and send
@@ -175,7 +176,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
           {drafts.some((d) => d.sent) ? 'Close' : 'Cancel'}
         </Button>
         <span className="text-xs text-muted">
-          Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.
+          Goes by {CHANNEL_LABEL[drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))]}. Each message is approved and logged on its own. Approved messages wait {UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.
         </span>
       </div>
     </div>

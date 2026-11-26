@@ -29,6 +29,7 @@ import {
   useAi,
   useToast,
 } from '../ui'
+import { UNDO_SECONDS } from '../../../shared/outbox'
 
 export function MeetingReview({ meeting, student }: { meeting: Meeting; student: Student }) {
   const approveAll = useStore((s) => s.approveAllInMeeting)
@@ -369,7 +370,7 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
   const pending = update.review === 'pending'
   const decide = (d: Decision) => {
     reviewParentUpdate(meeting.id, update.id, d)
-    toast(d === 'approved' ? 'Approved. Sending in 60 seconds.' : 'Discarded.')
+    toast(d === 'approved' ? `Approved. Sending in ${UNDO_SECONDS} seconds.` : 'Discarded.')
   }
 
   return (
@@ -460,7 +461,7 @@ function RecapSection({ n, meeting, student }: { n: number; meeting: Meeting; st
             variant="primary"
             onClick={() => {
               reviewRecap(meeting.id, 'approved')
-              toast('Approved. Sending in 60 seconds.')
+              toast(`Approved. Sending in ${UNDO_SECONDS} seconds.`)
             }}
           >
             Approve and send

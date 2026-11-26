@@ -12,6 +12,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { parentReport } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
 import type { ParentReport, ReportSettings, Student } from '../../../types'
+import { UNDO_SECONDS } from '../../../../shared/outbox'
 
 const SCHEDULES: { value: ReportSettings['schedule']; label: string }[] = [
   { value: 'after_meetings', label: 'After each meeting' },
@@ -206,7 +207,7 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
         <div className="mt-3 flex flex-col gap-2">
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
-            <ApprovalStamp approval={report.approval} /> Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.
+            <ApprovalStamp approval={report.approval} /> Approved messages wait {UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand.
           </p>
         </div>
       )}
