@@ -15,6 +15,7 @@ import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import PhoneSetup from './screens/PhoneSetup'
 import Settings from './screens/counselor/Settings'
+import Templates from './screens/counselor/Templates'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="meetings" element={<Meetings />} />
           <Route path="messages" element={<Messages />} />
           <Route path="documents" element={<Documents />} />
+          <Route path="templates" element={<Templates />} />
           <Route path="settings" element={<Settings />} />
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />

@@ -6,6 +6,7 @@
 
 import type { ISODate } from './lib/dates'
 import type { DeliveryDetail } from '../shared/phoneGateway'
+import type { TemplateContent, TemplateKind } from '../shared/templates'
 
 export type ID = string
 /** A moment, as an ISO string ending in Z. */
@@ -211,6 +212,8 @@ export interface Task {
   /** The task asks for a document of this category. Until one is attached it counts as "requested and not received". */
   expectsDocument?: DocCategory
   attachments: Attachment[]
+  /** The template this task was made from, if it was. */
+  templateId?: ID
 }
 
 export type ApplicationPlan = 'ED' | 'ED2' | 'EA' | 'REA' | 'RD' | 'Rolling' | 'UC'
@@ -855,6 +858,43 @@ export interface Firm {
   counselorFirstName: string
 }
 
+/** One reusable thing in the firm's library. `content` has the shape for its kind (shared/templates.ts). */
+export interface Template {
+  id: ID
+  kind: TemplateKind
+  name: string
+  content: TemplateContent
+  archived: boolean
+  /** The account that made it. */
+  createdBy?: ID
+}
+
+/**
+ * What a message template made for one recipient. It is a draft, not a
+ * message: it waits in the Inbox, and only a counselor's approval queues it.
+ */
+export interface MessageDraft {
+  id: ID
+  studentId: ID
+  templateId?: ID
+  /** Drafts made in one go share this and are shown as one group. */
+  batchId: ID
+  toKind: 'student' | 'parent'
+  parentId?: ID
+  toName: string
+  channel: Channel
+  language: Language
+  /** The outbox kind it is queued as when approved. */
+  kind: 'parent_report' | 'weekly_text'
+  subject?: string
+  body: string
+  /** The template had no body in the recipient's language, so this is the English one. */
+  untranslated?: boolean
+  status: 'draft' | 'approved' | 'discarded'
+  approval?: Approval
+  createdAt: string
+}
+
 /** Everything the app knows. The store holds exactly one of these. */
 export interface AppData {
   firm: Firm
@@ -879,4 +919,6 @@ export interface AppData {
   reminderSkips: ReminderSkip[]
   /** Pending (and recent) drafts from the server assistant. */
   agentProposals: AgentProposal[]
+  templates: Template[]
+  messageDrafts: MessageDraft[]
 }

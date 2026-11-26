@@ -6,6 +6,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StudentFormModal } from '../../components/forms'
 import { StudentTable } from '../../components/StudentTable'
+import { ApplyTemplate, TemplatePicker } from '../../components/templates'
+import type { Template } from '../../types'
 import { Button, Card, Empty, PageHeader, cx, inputBase, usePageTitle } from '../../components/ui'
 import { formatDateLong, todayISO } from '../../lib/dates'
 import { classLabel, fullName, summarizeAll } from '../../lib/derive'
@@ -18,6 +20,9 @@ export default function Students() {
   const { archiveStudent, loadSample } = useStore.getState()
   const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const [choosing, setChoosing] = useState(false)
+  const [applying, setApplying] = useState<Template>()
   const all = summarizeAll(data)
   const rows = all.filter((s) => `${fullName(s.student)} ${s.student.localName ?? ''} ${s.student.school}`.toLowerCase().includes(query.trim().toLowerCase()))
   const behind = all.filter((s) => s.status === 'behind').length
@@ -25,6 +30,8 @@ export default function Students() {
   const waiting = inboxCount(data)
   const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
   const archived = data.students.filter((s) => s.archived)
+  /** The ticked students, in the order they are listed. */
+  const chosen = all.filter((s) => picked.has(s.student.id)).map((s) => s.student)
 
   return (
     <>
@@ -64,9 +71,55 @@ export default function Students() {
             <Button onClick={() => setQuery('')}>Clear search</Button>
           </Empty>
         ) : (
-          <StudentTable rows={rows} />
+          <>
+            {/* Tick students to do one thing to several of them. */}
+            {chosen.length > 0 && (
+              <div className="motion-fade flex flex-wrap items-center gap-2 border-b border-line bg-accent-soft px-4 py-2 sm:px-5" role="status">
+                <span className="mr-auto text-sm font-semibold text-heading">
+                  {chosen.length} {chosen.length === 1 ? 'student' : 'students'} selected
+                </span>
+                <Button onClick={() => setChoosing(true)}>Assign a template</Button>
+                <Button variant="quiet" onClick={() => setPicked(new Set())}>
+                  Clear
+                </Button>
+              </div>
+            )}
+            <StudentTable
+              rows={rows}
+              select={{
+                ids: picked,
+                toggle: (id) =>
+                  setPicked((was) => {
+                    const next = new Set(was)
+                    if (!next.delete(id)) next.add(id)
+                    return next
+                  }),
+              }}
+            />
+          </>
         )}
       </Card>
+      {choosing && (
+        <TemplatePicker
+          kinds={['task_plan', 'handout', 'message']}
+          title={`Assign a template to ${chosen.length} ${chosen.length === 1 ? 'student' : 'students'}`}
+          onClose={() => setChoosing(false)}
+          onPick={(t) => {
+            setChoosing(false)
+            setApplying(t)
+          }}
+        />
+      )}
+      {applying && (
+        <ApplyTemplate
+          template={applying}
+          students={chosen}
+          onClose={() => {
+            setApplying(undefined)
+            setPicked(new Set())
+          }}
+        />
+      )}
       {/* Read out as the list narrows; the rows themselves are on screen. */}
       <p role="status" className="sr-only">
         {query.trim() ? `${plural(rows.length, 'student')} found` : ''}

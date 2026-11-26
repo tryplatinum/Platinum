@@ -26,7 +26,7 @@ export function withFreshIds(data: AppData): AppData {
     add(s.id)
     s.parents.forEach((p) => add(p.id))
   }
-  for (const list of [data.tasks, data.meetings, data.colleges, data.documents, data.reports, data.outbox, data.activity, data.weeklyTexts ?? [], data.personalNotes ?? [], data.reminderSkips ?? []]) {
+  for (const list of [data.tasks, data.meetings, data.colleges, data.documents, data.reports, data.outbox, data.activity, data.weeklyTexts ?? [], data.personalNotes ?? [], data.reminderSkips ?? [], data.templates ?? [], data.messageDrafts ?? []]) {
     list.forEach((row) => add(row.id))
   }
 

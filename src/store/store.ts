@@ -55,6 +55,7 @@ import type {
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
 import { clearStoredFiles, fileActions, type FileActions } from './files'
 import { listDraftActions, type ListDraftActions } from './listDrafts'
+import { templateActions, type TemplateActions } from './templates'
 
 /** Where versions before accounts kept everything. Read once, to offer an import. */
 const LEGACY_STORAGE_KEY = 'platinum-v0'
@@ -259,6 +260,10 @@ interface Actions extends FileActions {}
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface Actions extends ListDraftActions {}
 
+/** Templates and the drafts a message template makes: see store/templates.ts. */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+interface Actions extends TemplateActions {}
+
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
 /** Row ids are uuids, made here so a new row can be shown before the database confirms it. */
@@ -392,6 +397,8 @@ function emptyData(firm: Firm): AppData {
     collegeListDraftItems: [],
     reminderSkips: [],
     agentProposals: [],
+    templates: [],
+    messageDrafts: [],
   }
 }
 
@@ -408,6 +415,7 @@ function merged(base: AppData, add: AppData): AppData {
     outbox: [...add.outbox, ...base.outbox],
     activity: [...add.activity, ...base.activity].slice(0, ACTIVITY_LIMIT),
     weeklyTexts: [...base.weeklyTexts, ...add.weeklyTexts],
+    templates: [...(base.templates ?? []), ...(add.templates ?? [])],
     personalNotes: [...base.personalNotes, ...add.personalNotes],
   }
 }
@@ -591,7 +599,7 @@ export const useStore = create<State & Actions>()((set, get) => {
       const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as { state?: { schema?: unknown; data?: unknown } } | null
       const data = migrate(saved?.state?.schema, saved?.state?.data)
       // Saved before weekly texts and things to remember existed.
-      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
+      return data && data.students.length > 0 ? { ...data, templates: data.templates ?? [], messageDrafts: data.messageDrafts ?? [], weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
     } catch {
       return undefined
     }
@@ -1417,6 +1425,8 @@ export const useStore = create<State & Actions>()((set, get) => {
     ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
 
     ...listDraftActions({ get, absorb: (fn) => get().absorb(fn), change, saved: () => writes }),
+
+    ...templateActions({ get, change, batch, log: (data, studentId, text) => logActivity(data, studentId, 'counselor', text) }),
   }
 })
 

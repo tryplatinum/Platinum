@@ -29,8 +29,11 @@ function DueChip({ task }: { task: Task }) {
 
 /** Where a task came from, e.g. "from the Nov 10 meeting". */
 function useSourceText(task: Task): string | undefined {
-  const meeting = useData().meetings.find((m) => m.id === task.meetingId)
+  const data = useData()
+  const meeting = data.meetings.find((m) => m.id === task.meetingId)
   if (meeting) return `from the ${formatDate(meeting.date)} meeting`
+  const template = task.templateId ? data.templates?.find((t) => t.id === task.templateId) : undefined
+  if (template) return `from the ${template.name} template`
   return task.source === 'ai_notes' ? 'from your notes' : undefined
 }
 
@@ -117,7 +120,8 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
 
   return (
     <div className="flex flex-col gap-3 border-t border-line px-4 py-3">
-      {task.detail && <p className="text-sm text-ink-soft">{task.detail}</p>}
+      {/* A handout written in Platinum is the task's own text: kept line for line. */}
+      {task.detail && <p className="whitespace-pre-wrap text-sm text-ink-soft">{task.detail}</p>}
       {task.progressNote && viewer === 'counselor' && <p className="text-sm italic text-ink-soft">“{task.progressNote}”</p>}
 
       {task.attachments.length > 0 && (

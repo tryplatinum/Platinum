@@ -91,7 +91,7 @@ export function ApprovalCard({
   const profile = item.kind === 'profile' ? meeting?.ai?.profileChanges.find((c) => c.id === item.draftId) : undefined
   const recap = item.kind === 'recap' ? meeting?.recap : undefined
   // Nothing to send or save: the database would refuse it.
-  const blank = !item.preview.trim() && (item.isSend || item.kind === 'remember' || item.kind === 'task')
+  const blank = (!item.preview.trim() && (item.isSend || item.kind === 'remember' || item.kind === 'task')) || Boolean(item.problem)
   // A channel Platinum cannot send on: the counselor copies the text and sends it themselves.
   const byHand = sentByHand(item) && !weekly
   const [copying, setCopying] = useState(false)
@@ -180,6 +180,12 @@ export function ApprovalCard({
             )}
           </div>
           {byHand && item.channel && !leaving && <p className="mt-1 text-[13px] font-medium text-warn">{notConnectedLine(item.channel)}</p>}
+          {item.problem && !leaving && (
+            <p role="alert" className="mt-1 text-[13px] font-semibold text-bad">
+              {item.problem} It cannot be approved until then.
+            </p>
+          )}
+          {item.caution && !leaving && <p className="mt-1 text-[13px] font-medium text-warn">{item.caution}</p>}
           {children ? (
             <div className="mt-3">{children}</div>
           ) : profile ? (
@@ -356,14 +362,17 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
   const [confirming, setConfirming] = useState(false)
   const [working, setWorking] = useState(false)
   // A weekly text, and a message on a channel that is not connected, are sent by hand: they cannot be approved along with the rest.
-  const approvable = items.filter((i) => i.kind !== 'weekly_text' && !sentByHand(i))
+  // A draft with a blank still in it cannot be approved at all, alone or with the rest.
+  const blocked = items.filter((i) => i.problem).length
+  const approvable = items.filter((i) => i.kind !== 'weekly_text' && !sentByHand(i) && !i.problem)
   const left = items.length - approvable.length
   const sends = approvable.filter((i) => i.isSend).length
   // What "Approve 11 of 13" leaves behind, by name.
-  const byHand = items.filter((i) => i.kind !== 'weekly_text' && sentByHand(i)).length
-  const weeklyLeft = left - byHand
+  const byHand = items.filter((i) => i.kind !== 'weekly_text' && sentByHand(i) && !i.problem).length
+  const weeklyLeft = left - byHand - blocked
   const leftLine = [
     byHand > 0 && `${byHand} ${byHand === 1 ? 'is' : 'are'} for WeChat or LINE and ${byHand === 1 ? 'stays' : 'stay'} here for you to copy.`,
+    blocked > 0 && `${blocked} ${blocked === 1 ? 'has' : 'have'} a blank still in the text and ${blocked === 1 ? 'stays' : 'stay'} here until it is filled in.`,
     weeklyLeft > 0 && `${weeklyLeft} weekly ${weeklyLeft === 1 ? 'text stays' : 'texts stay'} here for you to send by hand.`,
   ]
     .filter(Boolean)
@@ -694,6 +703,23 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     )
   }
 
+  if (item.kind === 'template_message' && item.messageDraftId) {
+    const draft = data.messageDrafts.find((d) => d.id === item.messageDraftId)
+    if (!draft) return null
+    return (
+      <EditBox onClose={onClose}>
+        {draft.subject !== undefined && (
+          <Field label="Subject">
+            <input className={inputClass} value={draft.subject} onChange={(e) => store.updateMessageDraft(draft.id, { subject: e.target.value })} />
+          </Field>
+        )}
+        <Field label={`Message, as ${item.toName ?? 'they'} will receive it`}>
+          <textarea lang={draft.language} className={textareaClass} rows={rowsFor(draft.body)} value={draft.body} onChange={(e) => store.updateMessageDraft(draft.id, { body: e.target.value })} />
+        </Field>
+      </EditBox>
+    )
+  }
+
   if (item.proposalId && item.kind.startsWith('agent_')) {
     const proposal = data.agentProposals.find((p) => p.id === item.proposalId)
     if (!proposal) return null
@@ -927,6 +953,10 @@ export function approveItem(item: ApprovalItem): void | Promise<void> {
       if (draft) s.sendMessage({ ...draft.message, trigger: 'approved' })
       break
     }
+    case 'template_message':
+      // Throws when a blank is still in the text; otherwise queues through sendMessage like any approved send.
+      if (item.messageDraftId) s.approveMessageDraft(item.messageDraftId)
+      break
     case 'agent_message':
     case 'agent_parent_update':
     case 'agent_task':
@@ -975,6 +1005,9 @@ export function discardItem(item: ApprovalItem): void | Promise<void> {
       break
     }
     case 'reminder':
+      break
+    case 'template_message':
+      if (item.messageDraftId) s.discardMessageDraft(item.messageDraftId)
       break
     case 'agent_message':
     case 'agent_parent_update':

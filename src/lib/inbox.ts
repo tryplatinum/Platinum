@@ -71,14 +71,14 @@ export interface InboxGroup {
 
 const oneLine = (text: string) => previewStudentLink(text).replace(/\s+/g, ' ').trim()
 
-export function approvalRow(data: AppData, item: ApprovalItem): InboxRow {
+export function approvalRow(data: AppData, item: ApprovalItem, nameStudent = false): InboxRow {
   const student = findStudent(data, item.studentId)
   const pill = APPROVAL_TYPE_LABEL[item.kind]
   return {
     key: item.key,
     studentId: item.studentId,
     pill,
-    who: item.toName ? `To ${item.toName}${item.channel ? ` · ${CHANNEL_LABEL[item.channel]}` : ''}` : '',
+    who: [nameStudent && student ? fullName(student) : '', item.toName ? `To ${item.toName}${item.channel ? ` · ${CHANNEL_LABEL[item.channel]}` : ''}` : ''].filter(Boolean).join(' · '),
     line: oneLine(item.preview) || item.sourceLine,
     label: `${pill}${item.toName ? ` to ${item.toName}` : ''}${student ? `, ${fullName(student)}` : ''}`,
     item,
@@ -91,6 +91,11 @@ export function inboxGroups(data: AppData, c: InboxContents): InboxGroup[] {
   for (const g of approvalGroups(c.approvals)) {
     const student = findStudent(data, g.studentId)
     if (!student) continue
+    // Drafts made together from a template: one group under the template's name, each row saying whose it is.
+    if (g.groupName) {
+      groups.push({ id: g.sourceKey, name: g.groupName, rows: g.items.map((item) => approvalRow(data, item, true)) })
+      continue
+    }
     groups.push({ id: `${g.studentId}:${g.sourceKey}`, name: fullName(student), source: g.sourceLabel, studentId: g.studentId, rows: g.items.map((item) => approvalRow(data, item)) })
   }
   const fileRow = (doc: StudentDocument, waiting: boolean): InboxRow => {

@@ -34,7 +34,8 @@ import { formatDate } from '../../../lib/dates'
 import { ESSAY_STATUS, currentDraft, essayApproval, essayGroups, wordCount, type EssayGroup } from '../../../lib/derive'
 import { essayFeedback } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
-import type { EssayFeedback, EssayStatus, Student, StudentDocument } from '../../../types'
+import { ApplyTemplate, TemplatePicker } from '../../../components/templates'
+import type { EssayFeedback, EssayStatus, Student, StudentDocument, Template } from '../../../types'
 
 type Filter = 'all' | 'college' | 'summer' | 'feedback'
 
@@ -53,6 +54,8 @@ export default function EssaysTab({ student }: { student: Student }) {
   const [params, setParams] = useSearchParams()
   const [filter, setFilter] = useState<Filter>('all')
   const [adding, setAdding] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [giving, setGiving] = useState<Template>()
   const { college, summer, counts } = essayGroups(data, student.id)
   const selectedId = params.get('essay')
   const selected = data.documents.find((d) => d.id === selectedId && d.studentId === student.id && d.kind === 'essay')
@@ -128,10 +131,23 @@ export default function EssaysTab({ student }: { student: Student }) {
             { value: 'feedback', label: 'Needs your feedback', count: counts.needsFeedback },
           ]}
         />
-        <Button onClick={() => setAdding(true)}>
-          Add essay
-        </Button>
+        <span className="flex flex-wrap gap-2">
+          <Button onClick={() => setPicking(true)}>From a template</Button>
+          <Button onClick={() => setAdding(true)}>Add essay</Button>
+        </span>
       </div>
+      {picking && (
+        <TemplatePicker
+          kinds={['handout']}
+          title="Give a handout"
+          onClose={() => setPicking(false)}
+          onPick={(t) => {
+            setPicking(false)
+            setGiving(t)
+          }}
+        />
+      )}
+      {giving && <ApplyTemplate template={giving} students={[student]} onClose={() => setGiving(undefined)} />}
 
       {adding && <AddEssayForm student={student} onDone={(id) => (setAdding(false), id && select(id))} />}
 
