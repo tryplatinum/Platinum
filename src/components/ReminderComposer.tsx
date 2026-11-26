@@ -15,6 +15,9 @@ import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
 import { UNDO_SECONDS } from '../../shared/outbox'
+import { bodyFor, draftProblems, fillPlaceholders, type MessageContent } from '../../shared/templates'
+import { TemplatePicker, placeholderValues } from './templates'
+import type { Template } from '../types'
 import { canDeliver, notConnectedLine } from '../lib/delivery'
 import { copyText, textWithStudentLink } from '../lib/studentLinks'
 import { AiErrorNote, AiTag, Button, CheckRow, PlaceholderNote, SectionLabel, SendLabel, Thinking, textareaClass, useToast } from './ui'
@@ -42,6 +45,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
   const [loading, setLoading] = useState(0)
   const [error, setError] = useState<string>()
   const [editing, setEditing] = useState(false)
+  const [picking, setPicking] = useState(false)
   const to = reminderRecipient(student, task)
   // The parent copy only applies to a reminder that goes to the student.
   const choice = to?.kind === 'student' ? parentCopyChoice(data, student) : { offered: false, ticked: false, parent: undefined }
@@ -67,6 +71,8 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
   }, [task.id])
 
   if (!to) return <p className="text-sm text-muted">This task is yours, so there is nobody to remind.</p>
+  /** A blank a template left in the text. It blocks approval, as it does in the Inbox. */
+  const blank = (d: ReminderMessage) => (d.body.includes('{{') ? draftProblems(d.body, d.toKind === 'student')[0] : undefined)
 
   const toggleParent = (checked: boolean) => {
     setTellParent(checked)
@@ -105,6 +111,19 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
     void copyText(d.toKind === 'student' ? textWithStudentLink(student.id, d.body) : d.body)
       .then(() => send(i))
       .catch((e: unknown) => setError(`${e instanceof Error ? e.message : 'Nothing was copied.'} This message is not marked approved.`))
+  }
+
+  /** "Use a template": the template's text, with its blanks filled from this student's record, takes the place of the draft. Nothing is sent. */
+  const useTemplate = (template: Template) => {
+    setPicking(false)
+    const i = drafts.findIndex((d) => !d.sent && d.toKind === to.kind)
+    if (i < 0) return
+    const content = template.content as MessageContent
+    const parent = to.kind === 'parent' ? to.parent : undefined
+    const chosen = bodyFor(content, drafts[i].language)
+    const filled = fillPlaceholders(chosen.body, placeholderValues(data, student, parent, task.dueDate), to.kind === 'student')
+    setDrafts((all) => all.map((x, j) => (j === i ? { ...x, body: filled.text, bodyEn: undefined, usedNote: undefined, warnings: chosen.missing ? [`“${template.name}” has no ${LANGUAGE_LABEL[drafts[i].language]} version, so this is the English text.`] : [] } : x)))
+    setEditing(true)
   }
 
   const patch = (i: number, fields: Partial<ReminderMessage>) => setDrafts((d) => d.map((x, j) => (j === i ? { ...x, ...fields } : x)))
@@ -153,6 +172,11 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
                 </Button>
               </p>
             )}
+            {!d.sent && blank(d) && (
+              <p role="alert" className="text-[13px] font-semibold text-bad">
+                {blank(d)} It cannot be approved until then.
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
                 <span className="motion-fade text-[13px] font-semibold text-good">
@@ -160,13 +184,13 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
                 </span>
               ) : !canDeliver(d.channel) ? (
                 <>
-                  <Button variant="remind" aria-label={`Copy for ${CHANNEL_LABEL[d.channel]}, to ${d.toName}`} onClick={() => copyThenSend(i)} disabled={loading > 0 || !d.body.trim()}>
+                  <Button variant="remind" aria-label={`Copy for ${CHANNEL_LABEL[d.channel]}, to ${d.toName}`} onClick={() => copyThenSend(i)} disabled={loading > 0 || !d.body.trim() || blank(d) !== undefined}>
                     Copy for {CHANNEL_LABEL[d.channel]}
                   </Button>
                   <span className="text-[13px] font-medium text-warn">{notConnectedLine(d.channel)}</span>
                 </>
               ) : (
-                <Button variant="remind" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim()}>
+                <Button variant="remind" aria-label={`Approve and send to ${d.toName}`} onClick={() => send(i)} disabled={loading > 0 || !d.body.trim() || blank(d) !== undefined}>
                   <SendLabel>Approve and send</SendLabel>
                 </Button>
               )}
@@ -187,6 +211,10 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
         <Button onClick={() => setEditing(!editing)} disabled={drafts.every((d) => d.sent)}>
           {editing ? 'Done editing' : 'Edit'}
         </Button>
+        <Button onClick={() => setPicking(true)} disabled={loading > 0 || drafts.every((d) => d.sent)}>
+          Use a template
+        </Button>
+        {picking && <TemplatePicker kinds={['message']} title="Use a template" only={(t) => (t.content as MessageContent).to === to.kind} onPick={useTemplate} onClose={() => setPicking(false)} />}
         {error && drafts.length === 0 && <Button onClick={() => draft(to)}>Try again</Button>}
         <Button variant="quiet" onClick={onDone}>
           {drafts.some((d) => d.sent) ? 'Close' : 'Cancel'}

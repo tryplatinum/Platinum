@@ -16,10 +16,25 @@ import { Button, DateChip, LinkButton, ProgressWithCount, StatusPill, cx } from 
 /** Deadlines this close are shown in the alert colour. */
 const NEAR_DAYS = 10
 
-export function StudentTable({ rows }: { rows: StudentSummary[] }) {
+/** Ticking students, for doing one thing to several of them. */
+export interface Selection {
+  ids: ReadonlySet<string>
+  toggle: (id: string) => void
+}
+
+export function StudentTable({ rows, select }: { rows: StudentSummary[]; select?: Selection }) {
   const box = useRef<HTMLDivElement>(null)
   const wide = useRoomFor(box, 680)
-  return <div ref={box}>{wide ? <Table rows={rows} /> : <StudentCards rows={rows} />}</div>
+  return <div ref={box}>{wide ? <Table rows={rows} select={select} /> : <StudentCards rows={rows} select={select} />}</div>
+}
+
+/** The tick box for one student. The whole 44px square is the target. */
+function Tick({ s, select }: { s: StudentSummary; select: Selection }) {
+  return (
+    <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-control hover:bg-surface-2">
+      <input type="checkbox" className="h-5 w-5" checked={select.ids.has(s.student.id)} onChange={() => select.toggle(s.student.id)} aria-label={`Select ${fullName(s.student)}`} />
+    </label>
+  )
 }
 
 // ── The pieces both shapes share ────────────────────────────────────────────
@@ -117,7 +132,7 @@ function why(s: StudentSummary): string {
 }
 
 /** `brief` is one compact row a student, for a short list of who needs chasing: name, status, why, and the button. */
-export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; brief?: boolean }) {
+export function StudentCards({ rows, brief = false, select }: { rows: StudentSummary[]; brief?: boolean; select?: Selection }) {
   const [reminding, setReminding] = useState<string>()
   return (
     <ul className="text-sm">
@@ -153,6 +168,7 @@ export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; 
         return (
           <li key={s.student.id} className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0 sm:px-5">
             <div className="flex items-center gap-3">
+              {select && <Tick s={s} select={select} />}
               <div className="min-w-0 flex-1">
                 <Link to={`/app/students/${s.student.id}`} className="tap-link font-semibold text-heading hover:text-accent hover:underline">
                   {fullName(s.student)}
@@ -195,14 +211,19 @@ export function StudentCards({ rows, brief = false }: { rows: StudentSummary[]; 
 
 // ── Table ───────────────────────────────────────────────────────────────────
 
-function Table({ rows }: { rows: StudentSummary[] }) {
+function Table({ rows, select }: { rows: StudentSummary[]; select?: Selection }) {
   const [reminding, setReminding] = useState<string>()
   return (
     <div className="overflow-hidden rounded-card">
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-surface-2 text-left text-xs text-muted">
-            <th scope="col" className="px-5 py-3 font-semibold">
+            {select && (
+              <th scope="col" className="w-11 py-3 pl-3">
+                <span className="sr-only">Select</span>
+              </th>
+            )}
+            <th scope="col" className={cx('py-3 pr-5 font-semibold', select ? 'pl-2' : 'pl-5')}>
               Student
             </th>
             <th scope="col" className="w-[22%] px-3 py-3 font-semibold">
@@ -222,7 +243,12 @@ function Table({ rows }: { rows: StudentSummary[] }) {
             return (
               <Fragment key={s.student.id}>
                 <tr className="border-t border-line align-middle transition-colors hover:bg-surface-2">
-                  <td className="px-5 py-4">
+                  {select && (
+                    <td className="py-2 pl-3">
+                      <Tick s={s} select={select} />
+                    </td>
+                  )}
+                  <td className={cx('py-4 pr-5', select ? 'pl-2' : 'pl-5')}>
                     <Who s={s} />
                   </td>
                   <td className="px-3 py-4">
@@ -240,7 +266,7 @@ function Table({ rows }: { rows: StudentSummary[] }) {
                 </tr>
                 {open && s.waitingOn && (
                   <tr>
-                    <td colSpan={4} className="px-5 pb-4">
+                    <td colSpan={select ? 5 : 4} className="px-5 pb-4">
                       <div className="motion-rise">
                         <ReminderComposer student={s.student} task={s.waitingOn.task} onDone={() => setReminding(undefined)} />
                       </div>

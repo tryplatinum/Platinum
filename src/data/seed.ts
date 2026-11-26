@@ -8,6 +8,7 @@
 // NOTE: The Chinese text was written by a non-native speaker and needs a
 // native review before it is shown to a Mandarin-speaking parent or counselor.
 
+import { sampleTemplates } from './templateSeed'
 import { addDays, formatDate, formatDateZh, timestampAt, todayISO } from '../lib/dates'
 import { CATEGORY_FOR_KIND, splitContact } from '../store/migrate'
 import type {
@@ -1145,6 +1146,8 @@ export function buildSeed(): AppData {
     collegeListDraftItems: [],
     reminderSkips: [],
     agentProposals: [],
+    templates: sampleTemplates(),
+    messageDrafts: [],
   }
 }
 

@@ -1,5 +1,30 @@
 # Build log
 
+## Templates (branch `templates`, on top of `ui-ux-redesign`)
+
+A firm's own reusable material: task plans, messages and handouts, in one library.
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261206000001_templates.sql`. Push `20261205000001` first, by itself, then this one, then run `npm run db:types` (the types in `src/lib/database.types.ts` were edited by hand to match). It only adds: `templates`, `message_drafts`, a nullable `tasks.template_id`, and `apply_changes` restated whole with the two tables added to its upsert list (`templates` before `tasks`). Nothing is in its delete list: a template is archived and a draft is decided, never deleted. `test:templates` checks that the rest of `apply_changes` is word for word what it was. The whole chain plus this file runs clean in PGlite with stub `auth` and `storage` schemas. Until it is pushed, saving a template or a task made from one fails against the real database and the store undoes it and says why; the preview and the offline checks do not need it.
+
+- **Contract and rules:** `shared/templates.ts`. Zod shapes for the three kinds, `planDates` (offsets to dates, in whole calendar days), the fixed list of blanks (`PLACEHOLDERS`), `fillPlaceholders`, `draftProblems`, `bodyFor`. No model call anywhere in applying a template.
+- **Store:** `src/store/templates.ts`, spread into the one store like the college list actions. `addTemplateTasks` and `giveHandout` add ordinary tasks with `templateId`. `addMessageDrafts` only adds drafts. `approveMessageDraft` is the one place a template reaches the outbox: it calls the store's own `sendMessage` (so `queue_message`, the hold and Undo) and refuses while a blank is in the text. `store.ts` changed by four lines to spread the actions in and to keep the two new lists in `emptyData`, `merged` and the legacy import.
+- **Inbox:** a draft is `template_message` on the shared approval card (`messageDraftApproval` in `derive.ts`). Drafts made together are one group across students, named after the template (`groupName`), with the existing "Approve all", which leaves a draft with a blank where it is.
+- **Screens:** `Templates.tsx` (list, kind filter, New, Edit, Duplicate, Archive) and `src/components/templates.tsx` (`TemplatePicker`, `ApplyTemplate`, `TemplateEditor`). Sidebar footer link above Settings; no new item in the main navigation.
+- **Sample:** eight invented templates in `src/data/templateSeed.ts`, loaded with the sample caseload.
+
+**Where the brief and the code differ.**
+- *One table.* A message draft for a student has nowhere to live today (`reports` needs a parent, `agent_proposals` is the server's and locked down), so there is a second new table, `message_drafts`.
+- *A file from Documents as a handout* was not built: every stored file belongs to one student and is only ever served to that student's own link. A handout is text kept in Platinum, or a link.
+- *A Google Doc* is attached by its address. Picking with the Picker and "Make a copy for <first name>" were not built; the screen says the link is attached as it is and that Platinum does not copy it or change who can open it.
+- *A missing language.* There is no path that translates English into Chinese (the only translation in the app is into English, for assistant drafts). A parent whose language the template lacks gets the English text with an amber line saying so; it does not block approval.
+- *The subject line* is kept on the template and the draft, but the outbox has no subject column and `queue_message` may not be restated, so an email still goes out under the subject the dispatcher derives from its kind.
+- *Outbox kinds:* a draft to a parent is queued as `parent_report`, one to a student as `weekly_text`.
+- *Who may edit:* any member of the firm, as for reminder rules.
+- *Rich text:* a handout's text is plain text kept line for line; no editor library was added.
+- "Use a template" is in the reminder box. The weekly text editor and the report editor do not have it.
+
+**Checked** offline (`npm run test:templates`, 51 checks, also part of `test:notes`) and by hand from `preview.html` at 1440 light and 375 dark: make each kind, edit, duplicate, archive and bring back; a plan for one student with a date counted back, a row removed and one edited; a plan for four behind one confirm ("20 tasks for 4 students"); a handout from Essays; a message for a WeChat parent (Copy, no send) and a text parent (approved, one `queue_message`); a blank that could not be filled blocking approval. Not run against a real database.
+
 ## Up to date with main, then wording and four flow fixes (branch `ui-ux-redesign`, PR 33)
 
 **Merged, not rebased.** `main` (PR 31, the 10-second hold) into `ui-ux-fixes`, then `ui-ux-fixes` into `ui-ux-redesign`. Main's behaviour was kept (`UNDO_SECONDS` in `shared/outbox.ts`, now 10) with each branch's layout and wording. No sentence, toast, dialog, comment or doc gives a number of seconds for the send hold: each reads `UNDO_SECONDS`. The 60 seconds on file download links is a different thing and stays. With 10 seconds, Undo was timed in the preview on a laptop and at 375 by 812 and 375 by 560: it is on screen, on top and 44px high within a tenth of a second of the press, and still cancels when pressed four seconds later.

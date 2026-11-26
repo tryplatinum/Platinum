@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { MeetingFormModal, ParentFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { AddTaskForm, TaskItem } from '../../../components/TaskRows'
+import { ApplyTemplate, TemplatePicker } from '../../../components/templates'
 import { MotionList } from '../../../components/motion'
 import { Button, Card, CardHeader, Disclosure, Empty, PhoneFold, Pill, ProgressWithCount, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTimestamp } from '../../../lib/dates'
@@ -12,7 +13,7 @@ import { eventWhen, isNotResponding, isOpen, isSlipping, nextMeeting, noteStatus
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { useData, useStore } from '../../../store/store'
 import { CollegeList } from './CollegeList'
-import type { Parent, ParentCopySetting, PersonalNote, Student } from '../../../types'
+import type { Parent, ParentCopySetting, PersonalNote, Student, Template } from '../../../types'
 
 export default function Overview({ student }: { student: Student }) {
   const data = useData()
@@ -53,6 +54,8 @@ export default function Overview({ student }: { student: Student }) {
 function TasksCard({ student }: { student: Student }) {
   const data = useData()
   const [adding, setAdding] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [applying, setApplying] = useState<Template>()
   const tasks = sortByUrgency(tasksFor(data, student.id))
   const open = tasks.filter(isOpen)
   const done = tasks.filter((t) => !isOpen(t))
@@ -60,7 +63,29 @@ function TasksCard({ student }: { student: Student }) {
 
   return (
     <Card className="flex flex-col gap-4 p-5">
-      <CardHeader size="section" title="Tasks" action={!adding && <Button onClick={() => setAdding(true)}>Add task</Button>} />
+      <CardHeader
+        size="section"
+        title="Tasks"
+        action={
+          !adding && (
+            <span className="flex flex-wrap gap-2">
+              <Button onClick={() => setPicking(true)}>From a template</Button>
+              <Button onClick={() => setAdding(true)}>Add task</Button>
+            </span>
+          )
+        }
+      />
+      {picking && (
+        <TemplatePicker
+          kinds={['task_plan', 'handout']}
+          onClose={() => setPicking(false)}
+          onPick={(t) => {
+            setPicking(false)
+            setApplying(t)
+          }}
+        />
+      )}
+      {applying && <ApplyTemplate template={applying} students={[student]} onClose={() => setApplying(undefined)} />}
       {adding && <AddTaskForm student={student} onDone={() => setAdding(false)} />}
       {tasks.length === 0 ? (
         !adding && (

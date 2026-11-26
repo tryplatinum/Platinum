@@ -6,7 +6,7 @@
 // Six places in the sidebar, Today first. Activity, Settings and Sign out sit
 // in its footer. The Inbox badge is the only count.
 
-import { ArrowLeft, CalendarDays, ClipboardList, FolderOpen, Inbox, LogOut, Menu, Send, Settings, Sun, Users, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, CalendarDays, ClipboardList, FolderOpen, Inbox, LayoutTemplate, LogOut, Menu, Send, Settings, Sun, Users, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName } from '../lib/derive'
@@ -146,6 +146,7 @@ export function CounselorLayout() {
           <div className="mt-6 flex flex-col gap-3 lg:mt-auto lg:pt-6">
             <div className="flex flex-col gap-1 border-t border-line pt-3">
               <NavItem to="/app/activity" label="Activity" icon={ClipboardList} />
+              <NavItem to="/app/templates" label="Templates" icon={LayoutTemplate} />
               <NavItem to="/app/settings" label="Settings" icon={Settings} />
               <button type="button" className={cx(NAV_ITEM, 'w-full text-left font-medium hover:bg-chip hover:text-heading')} onClick={() => void signOut()}>
                 <LogOut {...ICON} className="shrink-0" />
