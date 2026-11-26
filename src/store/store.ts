@@ -79,7 +79,7 @@ export type StudentFields = Partial<Omit<Student, 'id' | 'parents' | 'onboardedO
 export type NewTask = Pick<Task, 'studentId' | 'title' | 'owner' | 'dueDate'> &
   Partial<Pick<Task, 'detail' | 'category' | 'ownerParentId' | 'expectsDocument'>>
 
-export type NewMeeting = Pick<Meeting, 'studentId' | 'title' | 'date' | 'time'> & Partial<Pick<Meeting, 'durationMin' | 'location'>>
+export type NewMeeting = Pick<Meeting, 'studentId' | 'title' | 'date' | 'time'> & Partial<Pick<Meeting, 'durationMin' | 'location' | 'googleEventId' | 'googleSync'>>
 
 export type NewDocument = Pick<StudentDocument, 'studentId' | 'name' | 'kind' | 'addedBy'> &
   Partial<Omit<StudentDocument, 'id' | 'addedOn' | 'studentId' | 'name' | 'kind' | 'addedBy'>>
@@ -175,6 +175,10 @@ interface Actions {
   addMeeting: (meeting: NewMeeting) => ID
   /** Reschedule, rename, or edit the agenda. */
   updateMeeting: (id: ID, patch: Partial<Pick<Meeting, 'title' | 'date' | 'time' | 'durationMin' | 'location' | 'agenda'>>) => void
+  /** What a meeting remembers about its Google Calendar event. Set after Google has answered; `undefined` clears a field. */
+  setMeetingCalendar: (id: ID, patch: Pick<Meeting, 'googleEventId' | 'googleSync'> | Pick<Meeting, 'googleSync'>) => void
+  /** Resolves once every change made so far has been written, or has failed and been undone. */
+  whenSaved: () => Promise<void>
   /** Marks a meeting as held and stores the notes or transcript the AI will read. */
   completeMeeting: (id: ID, notes: string, heldOn?: string) => void
   deleteMeeting: (id: ID) => void
@@ -937,6 +941,10 @@ export const useStore = create<State & Actions>()((set, get) => {
     },
 
     updateMeeting: (id, patch) => change((data) => patchMeeting(data, id, (m) => ({ ...m, ...patch }))),
+
+    setMeetingCalendar: (id, patch) => change((data) => (data.meetings.some((m) => m.id === id) ? patchMeeting(data, id, (m) => ({ ...m, ...patch })) : data)),
+
+    whenSaved: () => writes,
 
     completeMeeting: (id, notes, heldOn) =>
       change((data) => {

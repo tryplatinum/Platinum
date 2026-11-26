@@ -71,6 +71,12 @@ export function loadGoogleStatus(force = false): Promise<void> {
 
 export const takeGoogleStatus = setStatus
 
+/** The connection as last heard, outside React. */
+export const googleStatusNow = () => status
+
+/** True when the calendar can be used right now: connected, turned on, and not waiting for a reconnect. */
+export const calendarReady = (s: GoogleStatus | undefined) => Boolean(s?.available && s.connected && s.calendar && !s.reconnect)
+
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)

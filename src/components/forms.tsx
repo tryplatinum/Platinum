@@ -2,6 +2,7 @@
 // meetings, and logging a meeting that has happened. Each is a modal that
 // writes through a store action.
 
+import { removeMeetingFromCalendar, syncMeetingToCalendar } from '../lib/calendarSync'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MAX_TEXT_CHARS } from '../../shared/constants'
@@ -239,8 +240,9 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
           onSubmit={(e) => {
             e.preventDefault()
             const fields = { title: f.title.trim() || 'Check-in', date: f.date, time: f.time, durationMin: Number(f.durationMin) || 45, location: f.location.trim() || undefined }
-            if (meeting) updateMeeting(meeting.id, fields)
-            else addMeeting({ studentId: f.studentId, ...fields })
+            // The meeting is saved first and never waits for Google: its event follows, or it says "Not on your calendar yet".
+            const id = meeting ? (updateMeeting(meeting.id, fields), meeting.id) : addMeeting({ studentId: f.studentId, ...fields })
+            void syncMeetingToCalendar(id)
             onClose()
           }}
         >
@@ -282,6 +284,7 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
                 ? async () => {
                     if (!(await confirm({ title: 'Cancel this meeting', body: 'Cancel this meeting and remove it from the schedule?', action: 'Cancel this meeting' }))) return
                     deleteMeeting(meeting.id)
+                    void removeMeetingFromCalendar(meeting)
                     onClose()
                   }
                 : undefined

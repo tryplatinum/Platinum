@@ -4,6 +4,7 @@
 // the counselor asks for them; that part is kept on the meeting.
 // Only the counselor reads this, so there is nothing to approve.
 
+import { CalendarLine } from '../google/CalendarBits'
 import { useState } from 'react'
 import { formatDateLong, formatRelative, formatTime } from '../../lib/dates'
 import { briefFacts } from '../../lib/facts'
@@ -47,6 +48,7 @@ export function BriefCard({ meeting, student, heading = 'Before your next meetin
         <p className="text-[13px] text-ink-soft">
           {meeting.title} · {formatRelative(meeting.date)} · {meeting.durationMin} minutes{meeting.location && ` · ${meeting.location}`}
         </p>
+        <CalendarLine meeting={meeting} className="mt-1" />
       </div>
 
       {brief?.headline && <p className="text-sm leading-relaxed">{brief.headline}</p>}

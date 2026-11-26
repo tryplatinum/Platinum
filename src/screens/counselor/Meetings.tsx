@@ -3,6 +3,8 @@
 // drafts, or the last meeting's report and the next meeting's brief).
 // "Calendar": the week at a glance.
 
+import { GoogleChangeNote, GoogleEventRow, looseEvents } from '../../components/google/CalendarBits'
+import { useCalendarEvents } from '../../lib/calendarSync'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -294,6 +296,9 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
     .filter((m) => byStudent.has(m.studentId) && m.date >= days[0] && m.date <= days[6])
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
   const briefs = meetings.filter((m) => m.status === 'scheduled' && m.brief).length
+  // The counselor's own Google events for the week on screen, read when it opens and on Refresh. None is stored.
+  const google = useCalendarEvents(days[0], days[6])
+  const loose = looseEvents(google.events, data.meetings)
   const unscheduled = summaries.filter((s) => !s.nextMeeting)
 
   return (
@@ -315,10 +320,24 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
             </Button>
           )}
         </div>
-        <p className="text-[13px] text-muted">
+        <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
           {meetings.length} {meetings.length === 1 ? 'meeting' : 'meetings'} this week · {briefs} {briefs === 1 ? 'brief' : 'briefs'} ready
+          {google.on && (
+            <>
+              {' '}
+              · {loose.length} from Google Calendar
+              <Button variant="quiet" busy={google.loading} onClick={google.refresh} aria-label="Refresh from Google Calendar">
+                Refresh
+              </Button>
+            </>
+          )}
         </p>
       </div>
+      {google.error && (
+        <p role="alert" className="text-[13px] text-bad">
+          {google.error} Your meetings here are unaffected.
+        </p>
+      )}
 
       {/* Seven columns where there is room for them, and one day under another where there is not. */}
       <Card className="@container overflow-hidden">
@@ -332,7 +351,7 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
                   {parseISODate(day).toLocaleDateString('en-US', { weekday: 'short' })} {parseISODate(day).getDate()}
                   {isToday && ' · today'}
                 </div>
-                {list.length === 0 && <p className="px-1 text-[13px] text-muted">No meetings</p>}
+                {list.length === 0 && loose.every((e) => e.date !== day) && <p className="px-1 text-[13px] text-muted">No meetings</p>}
                 {list.map((m) => {
                   const s = byStudent.get(m.studentId)!
                   return (
@@ -350,6 +369,14 @@ function Calendar({ summaries, onSchedule }: { summaries: StudentSummary[]; onSc
                     </Link>
                   )
                 })}
+                {list.map((m) => (
+                  <GoogleChangeNote key={`google-${m.id}`} meeting={m} events={google.events} name={byStudent.get(m.studentId)?.student.firstName} />
+                ))}
+                {loose
+                  .filter((e) => e.date === day)
+                  .map((e) => (
+                    <GoogleEventRow key={e.id} event={e} />
+                  ))}
               </div>
             )
           })}

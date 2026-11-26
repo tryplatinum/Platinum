@@ -182,7 +182,7 @@ const minutesBetween = (a: { date: string; time: string }, b: { date: string; ti
 }
 
 /** Printable text only, cut to a line: an event's title is typed by anyone who can write to the calendar. */
-const plain = (text: string | undefined, max: number) => (text ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const plain = (text: string | undefined, max: number) => (text ?? '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
 
 export function toCalendarEvent(raw: GoogleEvent): CalendarEvent | undefined {
   const cancelled = raw.status === 'cancelled'
