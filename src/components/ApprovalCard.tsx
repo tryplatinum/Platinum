@@ -41,8 +41,11 @@ export function ApprovalCard({
   actions,
   note,
   primary,
+  onDecide,
 }: {
   item: ApprovalItem
+  /** Told how the draft was decided, in the same press, for a screen that shows it somewhere else as it leaves. */
+  onDecide?: (how: 'approved' | 'copied' | 'discarded' | 'skipped') => void
   /** The one filled button of the view it is in. Everywhere else the decision is an outlined button. */
   primary?: boolean
   compact?: boolean
@@ -95,6 +98,7 @@ export function ApprovalCard({
   const run = (work: () => void | Promise<void>, outcome: 'approved' | 'discarded', fallback: string) => {
     setError(undefined)
     setSettled(outcome)
+    onDecide?.(outcome === 'discarded' ? (weekly ? 'skipped' : 'discarded') : byHand ? 'copied' : 'approved')
     return Promise.resolve()
       .then(work)
       .catch((e: unknown) => {
@@ -147,6 +151,7 @@ export function ApprovalCard({
     setError(undefined)
     try {
       setSettled('skipped')
+      onDecide?.('skipped')
       await useStore.getState().skipReminder(item.reminderKey, mode, item.studentId, draft?.taskTitle ?? 'task')
     } catch (e) {
       setSettled(undefined)

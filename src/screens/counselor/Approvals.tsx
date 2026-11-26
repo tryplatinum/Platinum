@@ -38,6 +38,10 @@ const KINDS: { value: string; label: string }[] = [
 /** Groups a counselor has closed. Kept for the session, so coming back finds the Inbox as it was left. */
 const closedGroups = new Set<string>()
 
+/** How each row was decided, so the row can say so while it leaves. A leaving row gets no new props; it reads this instead. */
+const decided = new Map<string, string>()
+const OUTCOME = { approved: 'Approved', copied: 'Copied', discarded: 'Discarded', skipped: 'Skipped' } as const
+
 /** The list and the open draft sit side by side when the page is at least this wide. */
 const TWO_PANES = 760
 
@@ -134,13 +138,15 @@ export default function Inbox() {
   const selected = rows.find((r) => r.key === next.item)
 
   // The address follows what is open, so a reload or a link lands on it.
+  const leaving = params.has('google')
   useEffect(() => {
-    if (next.item === asked) return
+    // Back from Google's consent screen the page is on its way to Settings (Layout): the address is not ours to write.
+    if (next.item === asked || leaving) return
     const to = new URLSearchParams(params)
     if (next.item) to.set('item', next.item)
     else to.delete('item')
     setParams(to, { replace: true })
-  }, [next.item, asked]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [next.item, asked, leaving]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const byKeys = useRef(false)
   const listScroll = useRef(0)
@@ -355,13 +361,14 @@ function Group({ group, open, onToggle, selected, onOpen }: { group: InboxGroup;
     <div>
       <div className="flex items-center justify-between gap-x-2 bg-canvas px-1">
         <h2 className="min-w-0 flex-1 font-sans text-sm">
-          <button type="button" aria-expanded={open} aria-controls={bodyId} aria-label={`${name}, ${group.rows.length}`} onClick={onToggle} className="flex min-h-11 w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left font-semibold leading-snug text-heading hover:bg-surface-2">
+          <button type="button" aria-expanded={open} aria-controls={bodyId} aria-label={`${name}, ${group.rows.length}`} onClick={onToggle} className="flex min-h-11 w-full min-w-0 items-center gap-1.5 rounded-control px-2 text-left font-semibold text-heading hover:bg-surface-2">
             <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
-            <span className="min-w-0">
+            {/* One line: the name gives way, the count never does. */}
+            <span className="min-w-0 truncate" title={name}>
               {group.name}
               {group.source && <span className="font-medium text-ink-soft"> · {group.source}</span>}
-              <span className="nums font-medium text-muted"> · {group.rows.length}</span>
             </span>
+            <span className="nums shrink-0 font-medium text-muted">· {group.rows.length}</span>
           </button>
         </h2>
         <GroupAction group={group} items={items} />
@@ -404,7 +411,7 @@ function RowButton({ row, selected: chosen, onOpen }: { row: InboxRow; selected:
       onClick={() => onOpen(row.key)}
       className={cx('flex min-h-11 w-full items-center border-l-2 py-2.5 pl-3.5 pr-4 text-left transition-none', selected ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-surface-2')}
     >
-      <InboxLine row={row} className="flex-1" />
+      <InboxLine row={row} className="flex-1" outcome={leaving ? decided.get(row.key) : undefined} />
     </button>
   )
 }
@@ -413,7 +420,7 @@ function RowButton({ row, selected: chosen, onOpen }: { row: InboxRow; selected:
 function Detail({ row }: { row: InboxRow }) {
   const data = useData()
   const student = row.studentId ? findStudent(data, row.studentId) : undefined
-  if (row.item) return <ApprovalCard item={row.item} primary showStudent />
+  if (row.item) return <ApprovalCard item={row.item} primary showStudent onDecide={(how) => decided.set(row.key, OUTCOME[how])} />
   if (row.toFile)
     return (
       <div className="px-4 py-4 sm:px-5">

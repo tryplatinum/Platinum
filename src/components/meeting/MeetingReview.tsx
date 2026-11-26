@@ -387,7 +387,8 @@ function ParentUpdateRow({ meeting, student, updateId }: { meeting: Meeting; stu
   return (
     <li {...HOME} className={cx(ROW, update.review === 'dismissed' && 'opacity-60')}>
       {item ? (
-        <ApprovalCard item={item} compact hideKind actions={copy}>
+        // On a channel that is not connected the card's own button is the copy, so a second one is not shown beside it.
+        <ApprovalCard item={item} compact hideKind actions={sentByHand(item) ? undefined : copy}>
           {body}
         </ApprovalCard>
       ) : (
