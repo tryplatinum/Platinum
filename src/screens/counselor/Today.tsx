@@ -16,7 +16,9 @@ import { StudentCards } from '../../components/StudentTable'
 import { InboxLine } from '../../components/InboxLine'
 import { MotionList, Reveal } from '../../components/motion'
 import { AiErrorNote, Button, Card, CardHeader, Empty, LinkButton, PageHeader, Pill, StatTile, Thinking, useAi, usePageTitle } from '../../components/ui'
-import { formatDateLong, formatRelative, formatTime, todayISO } from '../../lib/dates'
+import { CalendarLine, GoogleChangeNote, GoogleEventRow, looseEvents } from '../../components/google/CalendarBits'
+import { useCalendarEvents } from '../../lib/calendarSync'
+import { addDays, formatDateLong, formatRelative, formatTime, todayISO } from '../../lib/dates'
 import { findStudent, fullName, pendingInMeeting, summarizeAll } from '../../lib/derive'
 import { approvalRow, inboxContents, inboxSize, type InboxRow } from '../../lib/inbox'
 import { meetingsForToday, slippingStudents, waitingSpread, type TodayMeeting } from '../../lib/today'
@@ -77,6 +79,7 @@ export default function Today() {
             <WaitingCard waiting={waiting} inbox={inbox} />
             <div className="flex min-w-0 flex-col gap-6">
               <MeetingsCard meetings={meetings} onOpen={setOpen} />
+              <GoogleToday />
               <Card>
                 <CardHeader
                   size="section"
@@ -216,6 +219,7 @@ function MeetingRow({ item, heading, onOpen }: { item: TodayMeeting; heading?: s
             {m.title}
             {m.location && ` · ${m.location}`}
           </p>
+          <CalendarLine meeting={m} />
         </div>
         {state}
         <div className="flex flex-wrap gap-2">
@@ -249,6 +253,49 @@ function MeetingRow({ item, heading, onOpen }: { item: TodayMeeting; heading?: s
         )}
       </div>
     </div>
+  )
+}
+
+/** Today's and tomorrow's events from the counselor's own Google Calendar, beside Platinum's meetings. Shown only when the calendar is on. */
+function GoogleToday() {
+  const data = useData()
+  const today = todayISO()
+  const tomorrow = addDays(today, 1)
+  const google = useCalendarEvents(today, tomorrow)
+  if (!google.on) return null
+  const loose = looseEvents(google.events, data.meetings)
+  const linked = data.meetings.filter((m) => m.googleEventId && (m.date === today || m.date === tomorrow))
+  return (
+    <Card>
+      <CardHeader
+        size="section"
+        className="px-4 py-2 sm:px-5"
+        title="From Google Calendar"
+        count={loose.length}
+        action={
+          <Button variant="quiet" busy={google.loading} onClick={google.refresh} aria-label="Refresh from Google Calendar">
+            Refresh
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+        {google.error && (
+          <p role="alert" className="text-[13px] text-bad">
+            {google.error}
+          </p>
+        )}
+        {linked.map((m) => (
+          <GoogleChangeNote key={m.id} meeting={m} events={google.events} name={m.title} />
+        ))}
+        {loose.length === 0 && !google.error && <p className="text-sm text-muted">{google.loading ? 'Reading your calendar…' : 'Nothing else on your calendar today or tomorrow.'}</p>}
+        {loose.map((e) => (
+          <div key={e.id}>
+            {e.date === tomorrow && <p className="mb-1 text-xs font-semibold text-muted">Tomorrow</p>}
+            <GoogleEventRow event={e} />
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 

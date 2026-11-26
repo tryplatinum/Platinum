@@ -361,6 +361,17 @@ export default function Styleguide() {
           Date of the next meeting is still blank: fill it in or take it out. It cannot be approved until then.
         </p>
         <p className="text-[13px] text-muted">Templates: the three kinds, and the line a draft shows when a blank could not be filled. That line takes the approve button away; a caution about language is amber and does not.</p>
+        <div className="grid max-w-xl gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1 rounded-lg border border-dashed border-line-strong bg-surface px-3 py-2">
+            <span className="flex items-center gap-2">
+              <Pill>Google</Pill>
+              <span className="nums text-xs font-semibold text-muted">4:00 PM</span>
+            </span>
+            <span className="text-[13px] font-semibold text-ink">An event from Google Calendar</span>
+          </div>
+          <div className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] font-medium text-warn">Changed in Google Calendar: now Tue 4:00 PM. Update the meeting?</div>
+        </div>
+        <p className="text-[13px] text-muted">An event that is Google’s has a dashed edge and the Google label. A change made in Google is asked about in amber; Platinum never moves or removes a meeting by itself.</p>
         <PhoneFold label="A long card" count={10}>
           <Card className="p-4 text-sm">On a phone this starts closed under its name. Where there is room it is simply shown.</Card>
         </PhoneFold>

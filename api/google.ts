@@ -13,9 +13,11 @@
 // server/google/. No token ever leaves the server: not in an answer, a log or
 // an error message. Nothing here logs file names, folder names or addresses.
 
+import { calendarEventsInput, calendarPutInput, calendarRemoveInput } from '../shared/calendar.js'
 import { browseInput, connectInput, folderInput, foldersInput, importInput, linkInput, syncInput } from '../shared/google.js'
 import { FileError } from '../server/documentSorting.js'
-import { GoogleError, accessTokenFor, clearStateCookie, connectionStatus, disconnect, finishConnect, startConnect } from '../server/google/connection.js'
+import { putEvent, readCalendar, removeEvent } from '../server/google/calendar.js'
+import { GoogleError, accessTokenFor, calendarOff, clearStateCookie, connectionStatus, disconnect, finishConnect, scopesOf, startConnect } from '../server/google/connection.js'
 import { browseDrive } from '../server/google/drive.js'
 import { importDriveFile, importRemovedAgain, linkFolder, listFolders, syncFolder, unlinkFolder } from '../server/google/driveFiles.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
@@ -52,7 +54,8 @@ const ACTIONS: Record<string, (caller: SignedIn, body: unknown, request: Request
   picker: async (caller) => ({ data: { token: await accessTokenFor({ userId: caller.userId, firmId: caller.firmId }) } }),
   /** The address of Google's consent screen, and the cookie that ties the answer to this browser. */
   connect: async (caller, body, request) => {
-    const { url, setCookie } = startConnect(caller, request, checked(connectInput, body))
+    // What is already on stays on: a new consent replaces the grant, so it is asked for again.
+    const { url, setCookie } = startConnect(caller, request, { ...checked(connectInput, body), keep: await scopesOf(caller) })
     return { data: { url }, headers: { 'set-cookie': setCookie } }
   },
   /** Revokes the grant at Google, then deletes our row. */
@@ -66,6 +69,14 @@ const ACTIONS: Record<string, (caller: SignedIn, body: unknown, request: Request
   unlink: async (caller, body) => ({ data: await unlinkFolder(caller, checked(folderInput, body).id) }),
   /** One bounded batch of a linked folder's sync. The browser calls again while `more` is true. */
   sync: async (caller, body) => ({ data: await syncFolder(caller, checked(syncInput, body)) }),
+  /** The counselor's own events in a range, read live for the screen. Not saved. */
+  calendar_events: async (caller, body) => ({ data: await readCalendar(caller, checked(calendarEventsInput, body)) }),
+  /** Makes or updates the one event for a meeting. No guests, no notifications. */
+  calendar_put: async (caller, body, request) => ({ data: await putEvent(caller, request, checked(calendarPutInput, body).meetingId) }),
+  /** Removes the event Platinum made for a meeting. An event it did not make is left alone. */
+  calendar_remove: async (caller, body) => ({ data: await removeEvent(caller, checked(calendarRemoveInput, body)) }),
+  /** Stops using the calendar. Meetings are untouched. */
+  calendar_off: async (caller) => ({ data: await calendarOff(caller) }),
   /** Forgets which files were deleted here, so the next sync imports them again. */
   import_removed: async (caller, body) => ({ data: await importRemovedAgain(caller, checked(folderInput, body).id) }),
 }

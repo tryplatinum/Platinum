@@ -666,6 +666,10 @@ export interface Meeting {
   brief?: SavedBrief
   ai?: MeetingAI
   recap?: Recap
+  /** The event on the counselor's own Google Calendar that goes with this meeting, if there is one. */
+  googleEventId?: string
+  /** Where that event stands: see CalendarSync in shared/calendar.ts. */
+  googleSync?: string
 }
 
 // ── Parent reports, sending, reminders ──────────────────────────────────────

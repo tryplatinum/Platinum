@@ -30,6 +30,7 @@ const PDF = 'application/pdf'
 export const FAKE_ADDRESS = 'sample.counselor@example.com'
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned'
 
 interface FakeFile {
   id: string
@@ -173,9 +174,10 @@ export async function fakeGoogle(url: string, init?: RequestInit): Promise<Respo
   if (at.hostname === 'oauth2.googleapis.com' && at.pathname === '/token' && method === 'POST') {
     if (form.get('grant_type') === 'authorization_code') {
       const code = form.get('code')
-      if (code !== 'fake-code' && code !== 'fake-code-gmail') return json({ error: 'invalid_grant', error_description: 'Bad code.' }, 400)
-      const gmail = code === 'fake-code-gmail'
-      return json({ access_token: 'fake-access-token', expires_in: 3600, refresh_token: gmail ? 'fake-refresh-token-gmail' : 'fake-refresh-token', scope: gmail ? `${DRIVE_SCOPE} ${GMAIL_SCOPE}` : DRIVE_SCOPE, token_type: 'Bearer' })
+      if (!code || !/^fake-code(-gmail)?(-calendar)?$/.test(code)) return json({ error: 'invalid_grant', error_description: 'Bad code.' }, 400)
+      const gmail = code.includes('-gmail')
+      const calendar = code.includes('-calendar')
+      return json({ access_token: 'fake-access-token', expires_in: 3600, refresh_token: gmail ? 'fake-refresh-token-gmail' : 'fake-refresh-token', scope: [DRIVE_SCOPE, gmail && GMAIL_SCOPE, calendar && CALENDAR_SCOPE].filter(Boolean).join(' '), token_type: 'Bearer' })
     }
     if (state().expired || !form.get('refresh_token')?.startsWith('fake-refresh-token')) return json({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }, 400)
     return json({ access_token: 'fake-access-token', expires_in: 3600, token_type: 'Bearer' })
@@ -186,6 +188,11 @@ export async function fakeGoogle(url: string, init?: RequestInit): Promise<Respo
   if (at.hostname === 'gmail.googleapis.com' && at.pathname === '/gmail/v1/users/me/messages/send' && method === 'POST') {
     if (new Headers(init?.headers).get('authorization') !== 'Bearer fake-access-token' || state().expired) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
     return json({ id: `fake-gmail-${Date.now().toString(36)}`, threadId: 'fake-thread', labelIds: ['SENT'] })
+  }
+
+  if (at.hostname === 'www.googleapis.com' && at.pathname.startsWith('/calendar/v3/')) {
+    if (new Headers(init?.headers).get('authorization') !== 'Bearer fake-access-token' || state().expired) return json({ error: { code: 401, message: 'Invalid Credentials' } }, 401)
+    return fakeCalendar(at, method, typeof init?.body === 'string' ? init.body : undefined)
   }
 
   if (at.hostname !== 'www.googleapis.com' || !at.pathname.startsWith('/drive/v3/')) return notFound()
@@ -216,4 +223,133 @@ export async function fakeGoogle(url: string, init?: RequestInit): Promise<Respo
     return new Response(bytesOf(file) as BodyInit, { headers: { 'content-type': file.mimeType } })
   }
   return json(meta(file))
+}
+
+// ── The invented calendar ───────────────────────────────────────────────────
+//
+// One week of made-up events on a made-up counselor's own calendar, in Pacific
+// time. It lives in this process's memory, so what a dev server writes is still
+// there on the next request and gone when the server stops. Like Google, it
+// answers a write; unlike Google, it refuses one that has a guest in it or that
+// would notify anyone, so a slip in our code fails loudly here first.
+
+export const FAKE_CALENDAR_ZONE = 'America/Los_Angeles'
+
+interface FakeEvent {
+  id: string
+  summary: string
+  location?: string
+  /** Wall-clock start and end in the calendar's zone, or a whole day. */
+  start: string
+  end: string
+  allDay?: boolean
+  status: 'confirmed' | 'cancelled'
+  private?: Record<string, string>
+  updated: string
+}
+
+const dayFromNow = (n: number) => {
+  const d = new Date()
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + n)).toISOString().slice(0, 10)
+}
+const stampNow = () => new Date().toISOString()
+
+function seedCalendar(): Map<string, FakeEvent> {
+  const e = (id: string, day: number, from: string, to: string, summary: string, location?: string): FakeEvent => ({ id, summary, location, start: `${dayFromNow(day)}T${from}:00`, end: `${dayFromNow(day)}T${to}:00`, status: 'confirmed', updated: '2026-11-20T18:00:00.000Z' })
+  return new Map(
+    [
+      e('fake-evt-standup', 0, '09:00', '09:30', 'Team stand-up', 'Office'),
+      // Names one sample student: the screen suggests them, and links nothing by itself.
+      e('fake-evt-daniel', 1, '15:00', '15:45', 'Daniel Kim essay check-in', 'Zoom'),
+      // Tie this one to a student, then Refresh: it has moved an hour.
+      e('fake-evt-mia', 2, '16:00', '16:30', 'Portfolio review with Mia', 'Studio B'),
+      e('fake-evt-dentist', 3, '11:00', '12:00', 'Dentist'),
+      e('fake-evt-webinar', 4, '17:00', '18:00', 'Financial aid night (webinar)'),
+      { id: 'fake-evt-holiday', summary: 'School holiday', start: dayFromNow(5), end: dayFromNow(6), allDay: true, status: 'confirmed' as const, updated: '2026-11-20T18:00:00.000Z' },
+      e('fake-evt-lunch', 6, '12:30', '13:30', 'Lunch with a colleague'),
+    ].map((x) => [x.id, x]),
+  )
+}
+
+let calendar: Map<string, FakeEvent> | undefined
+let calendarReads = 0
+let made = 0
+/** For tests: start the invented calendar again. */
+export function resetFakeCalendar(): void {
+  calendar = undefined
+  calendarReads = 0
+  made = 0
+}
+/** For tests: the invented calendar as it stands. */
+export const fakeCalendarEvents = () => [...(calendar ??= seedCalendar()).values()]
+
+const shown = (e: FakeEvent) => ({
+  id: e.id,
+  status: e.status,
+  summary: e.summary,
+  location: e.location,
+  updated: e.updated,
+  start: e.allDay ? { date: e.start } : { dateTime: `${e.start}-08:00`, timeZone: FAKE_CALENDAR_ZONE },
+  end: e.allDay ? { date: e.end } : { dateTime: `${e.end}-08:00`, timeZone: FAKE_CALENDAR_ZONE },
+  extendedProperties: e.private ? { private: e.private } : undefined,
+})
+
+function fakeCalendar(at: URL, method: string, raw: string | undefined): Response {
+  const events = (calendar ??= seedCalendar())
+  const path = at.pathname.slice('/calendar/v3'.length)
+  const list = '/calendars/primary/events'
+  if (!path.startsWith(list)) return notFound()
+  const id = path.length > list.length ? decodeURIComponent(path.slice(list.length + 1)) : undefined
+
+  if (method === 'GET' && !id) {
+    // The third look finds one event moved an hour later, as if it had been dragged in Google.
+    if (at.searchParams.has('timeMin') && ++calendarReads === 3) {
+      const moved = events.get('fake-evt-mia')
+      if (moved && moved.status === 'confirmed') events.set(moved.id, { ...moved, start: moved.start.replace('T16:00', 'T17:00'), end: moved.end.replace('T16:30', 'T17:30'), updated: stampNow() })
+    }
+    const from = (at.searchParams.get('timeMin') ?? '').slice(0, 10)
+    const to = (at.searchParams.get('timeMax') ?? '9999').slice(0, 10)
+    const items = [...events.values()].filter((e) => (e.status === 'confirmed' || at.searchParams.get('showDeleted') === 'true') && e.start.slice(0, 10) >= from && e.start.slice(0, 10) <= to).sort((a, b) => a.start.localeCompare(b.start))
+    return json({ timeZone: FAKE_CALENDAR_ZONE, items: items.slice(0, Number(at.searchParams.get('maxResults') ?? 250)).map(shown) })
+  }
+  if (method === 'GET' && id) {
+    const found = events.get(id)
+    return found ? json(shown(found)) : json({ error: { code: 404, message: 'Not Found' } }, 404)
+  }
+
+  // Writes. A guest, or anything but sendUpdates=none, is refused outright.
+  let body: Record<string, unknown> = {}
+  try {
+    body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+  } catch {
+    return json({ error: { code: 400, message: 'Parse Error' } }, 400)
+  }
+  if (at.searchParams.get('sendUpdates') !== 'none' || 'attendees' in body || 'conferenceData' in body) return json({ error: { code: 400, message: 'The invented calendar takes no guests and sends nothing.' } }, 400)
+  const wall = (value: unknown) => (typeof value === 'object' && value && typeof (value as { dateTime?: unknown }).dateTime === 'string' ? (value as { dateTime: string }).dateTime.slice(0, 19) : undefined)
+  const fields = (): Partial<FakeEvent> => ({
+    ...(typeof body.summary === 'string' ? { summary: body.summary } : {}),
+    ...(typeof body.location === 'string' ? { location: body.location } : {}),
+    ...(wall(body.start) ? { start: wall(body.start)! } : {}),
+    ...(wall(body.end) ? { end: wall(body.end)! } : {}),
+    ...(typeof body.extendedProperties === 'object' && body.extendedProperties ? { private: (body.extendedProperties as { private?: Record<string, string> }).private } : {}),
+  })
+  if (method === 'POST' && !id) {
+    const f = fields()
+    if (!f.start || !f.end) return json({ error: { code: 400, message: 'Missing start or end.' } }, 400)
+    const event: FakeEvent = { id: `fakemade${++made}`, summary: f.summary ?? '', location: f.location, start: f.start, end: f.end, status: 'confirmed', private: f.private, updated: stampNow() }
+    events.set(event.id, event)
+    return json(shown(event))
+  }
+  const existing = id ? events.get(id) : undefined
+  if (!existing || existing.status === 'cancelled') return json({ error: { code: id && existing ? 410 : 404, message: 'Not Found' } }, id && existing ? 410 : 404)
+  if (method === 'PATCH') {
+    const next = { ...existing, ...fields(), updated: stampNow() }
+    events.set(next.id, next)
+    return json(shown(next))
+  }
+  if (method === 'DELETE') {
+    events.set(existing.id, { ...existing, status: 'cancelled', updated: stampNow() })
+    return new Response(null, { status: 204 })
+  }
+  return notFound()
 }

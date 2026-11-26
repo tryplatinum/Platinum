@@ -144,6 +144,8 @@ const meetingFrom = (r: Row<'meetings'>): Meeting => ({
   brief: from<Meeting['brief']>(r.brief),
   ai: from<Meeting['ai']>(r.ai),
   recap: from<Meeting['recap']>(r.recap),
+  googleEventId: u(r.google_event_id),
+  googleSync: u(r.google_sync),
 })
 
 const collegeFrom = (r: Row<'colleges'>): CollegeApp => ({
@@ -437,6 +439,8 @@ const meetingRow = (m: Meeting): Out<'meetings'> => ({
   brief: json(m.brief),
   ai: json(m.ai),
   recap: json(m.recap),
+  google_event_id: n(m.googleEventId),
+  google_sync: n(m.googleSync),
 })
 
 const collegeRow = (c: CollegeApp): Out<'colleges'> => ({

@@ -7,6 +7,7 @@ import { LogMeetingModal, MeetingFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { MeetingReport, meetingHeading } from '../../../components/meeting/MeetingReport'
 import { MeetingReview } from '../../../components/meeting/MeetingReview'
+import { removeMeetingFromCalendar } from '../../../lib/calendarSync'
 import { Button, Card, CardHeader, Empty, PhoneFold, Pill, SectionLabel, useConfirm } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTime } from '../../../lib/dates'
 import { meetingBuckets, meetingOneLine, pendingInMeeting, taskProgress, tasksFromMeeting } from '../../../lib/derive'
@@ -81,7 +82,10 @@ export default function MeetingsTab({ student }: { student: Student }) {
                           variant="danger"
                           className="self-start"
                           onClick={async () => {
-                            if (await confirm({ title: 'Delete meeting', body: 'Delete this meeting and its notes? Tasks that came from it are kept.', action: 'Delete meeting' })) deleteMeeting(m.id)
+                            if (await confirm({ title: 'Delete meeting', body: 'Delete this meeting and its notes? Tasks that came from it are kept.', action: 'Delete meeting' })) {
+                              deleteMeeting(m.id)
+                              void removeMeetingFromCalendar(m)
+                            }
                           }}
                         >
                           Delete meeting
