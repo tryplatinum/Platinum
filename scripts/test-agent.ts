@@ -235,7 +235,7 @@ try {
     check('2 draft fits its channel’s length', draftWords(drafted) <= limit + 25, `${draftWords(drafted)} words, limit ${limit} before the signature`)
     const reply = body.reply ?? ''
     const snippet = drafted.replace(/\s+/g, ' ').trim().slice(0, 24)
-    check('2 reply is a short confirmation', /review it in approvals/i.test(reply) && reply.length < 500, reply.slice(0, 180))
+    check('2 reply is a short confirmation', /you can approve it below/i.test(reply) && reply.length < 500, reply.slice(0, 180))
     check('2 reply does not restate the message', snippet.length < 12 || !reply.includes(snippet))
     check('2 no glued sentence', !hasGluedSentence(reply))
   }

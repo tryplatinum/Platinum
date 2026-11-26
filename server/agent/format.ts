@@ -66,7 +66,7 @@ export function formatDraftConfirmation(data: unknown): string {
   if (typeof row.toName !== 'string' || typeof row.channel !== 'string' || typeof row.language !== 'string') return ''
   const channel = CHANNEL[row.channel] ?? row.channel
   const language = LANGUAGE[row.language] ?? row.language
-  return `I drafted ${/^[aeiou]/i.test(channel) ? 'an' : 'a'} ${channel} to ${row.toName} in ${language}. Review it in Approvals.`
+  return `I drafted ${/^[aeiou]/i.test(channel) ? 'an' : 'a'} ${channel} to ${row.toName} in ${language}. You can approve it below.`
 }
 
 /** The reply for a tool whose output is the whole answer. Empty when this tool is not one of those. */

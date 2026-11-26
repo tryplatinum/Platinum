@@ -12,7 +12,7 @@ import { APPROVAL_TYPE_LABEL, findStudent, fullName, type ApprovalItem } from '.
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderQueue } from '../lib/reminders'
 import { translateProposal } from '../services/agentClient'
-import { useData, useStore } from '../store/store'
+import { ProposalNotDecided, useData, useStore } from '../store/store'
 import type { DraftParentUpdate, DraftTask, ID, ProfileChange, ProfilePatch } from '../types'
 import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextTooLong } from './WeeklyTextSend'
 import { Button, Modal, Pill, cx, inputBase, textareaClass, useToast } from './ui'
@@ -706,19 +706,21 @@ function ProfileChangeEditor({ meetingId, change, onClose }: { meetingId: string
 
 /**
  * Approves an assistant draft through the store, and notes which message it
- * queued. The store adds that message to the outbox before it waits for
- * anything, so the new row is there as soon as the call returns.
+ * queued. If the message was queued but the decision was not saved, the card
+ * still offers Undo for it, and no second approval.
  */
 async function approveProposal(id: ID): Promise<void> {
   return deciding(id, async () => {
     const outbox = useStore.getState().data.outbox
     const earlier = useApprovalSends.getState().messageOf[id]
     if (earlier && outbox.some((m) => m.id === earlier && m.status !== 'cancelled')) throw new Error('This message is already queued.')
-    const known = new Set(outbox.map((m) => m.id))
-    const done = useStore.getState().approveAgentProposal(id)
-    const queued = useStore.getState().data.outbox.find((m) => !known.has(m.id))
-    if (queued) rememberSend(id, queued.id)
-    await done
+    try {
+      const messageId = await useStore.getState().approveAgentProposal(id)
+      if (messageId) rememberSend(id, messageId)
+    } catch (error) {
+      if (error instanceof ProposalNotDecided) rememberSend(id, error.messageId)
+      throw error
+    }
   })
 }
 

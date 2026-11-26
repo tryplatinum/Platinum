@@ -31,7 +31,7 @@ import { addDays, daysBetween, formatDate, formatDateZh, todayISO } from '../lib
 import { currentDraft, daysLate, fullName, isLate, isOpen, nextMeeting, tasksFor } from '../lib/derive'
 import { briefFacts, buildFacts, parentReportInput, reminderRequest, type BriefFacts, type NoteForDraft, type ReminderRecipient } from '../lib/facts'
 import { zhGiven, zhGreeting } from '../lib/language'
-import { WEEKLY_TEXT_MAX, parentText, studentText, weeklyTextFactLines, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks, weeklyTextTemplate, type WeeklyTextFacts } from '../lib/reminders'
+import { WEEKLY_TEXT_MAX, linkRoom, parentText, studentText, weeklyTextFactLines, weeklyTextFirstTask, weeklyTextHasRoomForNote, weeklyTextMissing, weeklyTextTasks, weeklyTextTemplate, type WeeklyTextFacts } from '../lib/reminders'
 import type {
   AiSource,
   AppData,
@@ -565,6 +565,8 @@ function leadFrom(text: string, facts: WeeklyTextFacts, leadTaskId: string | nul
 export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en', notes: NoteForDraft[] = []): Promise<WeeklyTextDraft> {
   const lines = weeklyTextFactLines(facts)
   const template = (reason: string): WeeklyTextDraft => ({ body: weeklyTextTemplate(facts), facts: lines, source: { kind: 'placeholder', reason } })
+  // The placeholder in the draft becomes a longer address when the text is sent.
+  const limit = WEEKLY_TEXT_MAX - linkRoom(facts.link ?? '')
   const ask = (offered: NoteForDraft[]) =>
     callAi('weeklyText', {
       today: todayISO(),
@@ -578,20 +580,20 @@ export function weeklyText(facts: WeeklyTextFacts, language: Language = 'en', no
       deadlines: facts.deadlines.length ? facts.deadlines : undefined,
       link: facts.link,
       personalNotes: offered.length ? offered.map((n) => n.fact) : undefined,
-      maxChars: WEEKLY_TEXT_MAX,
+      maxChars: limit,
     })
   return withPlaceholder<WeeklyTextDraft>(
     async () => {
       let offered = weeklyTextHasRoomForNote(facts) ? notes : []
       let { draft, model } = await ask(offered)
-      if (draft.text.trim().length > WEEKLY_TEXT_MAX && offered.length) {
+      if (draft.text.trim().length > limit && offered.length) {
         offered = []
         ;({ draft, model } = await ask(offered))
       }
       const text = draft.text.trim()
       const missing = weeklyTextMissing(text, facts)
       if (missing.length) return template(`The AI draft changed or left out “${missing[0]}”, so the fixed template is used instead.`)
-      if (text.length > WEEKLY_TEXT_MAX) return template(`The AI draft was ${text.length} characters, over the limit of ${WEEKLY_TEXT_MAX}, so the fixed template is used instead.`)
+      if (text.length > limit) return template(`The AI draft was ${text.length} characters, over the limit of ${limit}, so the fixed template is used instead.`)
       return { body: text, facts: lines, source: claude(model), usedNote: usedNoteFrom(draft.usedNoteId, offered), lead: leadFrom(text, facts, draft.leadTaskId, draft.leadReason) }
     },
     (source) => template(source.kind === 'placeholder' ? source.reason : ''),

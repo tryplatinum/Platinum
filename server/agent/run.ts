@@ -344,7 +344,7 @@ export async function runAgent(args: {
 
   if (hitRoundCap || outOfBudget) {
     const note = outOfBudget
-      ? 'The firm reached its daily assistant limit before I could finish. Check Approvals for anything I drafted.'
+      ? 'The firm reached its daily assistant limit before I could finish. Check the Inbox for anything I drafted.'
       : 'I hit the tool-round limit for this turn before I could finish. Ask me to continue, or narrow the question.'
     reply = reply ? `${reply}\n\n${note}` : note
     // A tool call that was not run still has to be closed, or the next turn is rejected.
@@ -369,7 +369,7 @@ export async function runAgent(args: {
     })
   }
 
-  if (!reply) reply = 'I have nothing further to add. Check Approvals if I drafted anything.'
+  if (!reply) reply = 'I have nothing further to add. Check the Inbox if I drafted anything.'
 
   const modelMs = timing.models.reduce((sum, row) => sum + row.ms, 0)
   const toolMs = timing.tools.reduce((sum, row) => sum + row.ms, 0)

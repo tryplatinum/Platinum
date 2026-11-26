@@ -1,5 +1,14 @@
 # Build log
 
+## UI and UX fixes (branch `ui-ux-fixes`)
+
+Four fixes. No migration, no API route, no outbox or dispatch change.
+
+- **Assistant wording.** A drafted message ends with "You can approve it below." (`server/agent/format.ts`, the `reply:` instructions in `tools.ts`, the rule in `server/prompts.ts`). "Approvals" is "the Inbox" and "Firm settings" is "Settings" in the other server text. `test:agent` case 2 checks the new sentence; it needs an API key and was not run. Threads already stored keep the old sentence.
+- **Remind on any open task** with someone to remind, filled style when late and plain otherwise. `ReminderComposer` already worded a task that is not due yet.
+- **Weekly text link.** `src/lib/studentLinks.ts` fills `{{student_link}}` when a counselor copies a text or opens Messages, with one link per student kept in memory for the session and forgotten when it is replaced, revoked or the session ends. The stored text, the outbox row and the log keep the placeholder. Copy hands Safari a promised `ClipboardItem`. Nothing is marked sent unless the copy or the link worked. `OpenInMessages` is a button that follows the `sms:` address, because the address may have to be made first. The character count, the facts and the limit given to the AI allow for the real address (`linkRoom` in `src/lib/reminders.ts`). Messages, Sent uses the same helper.
+- **Undo id.** `sendMessage` returns the queued message's id and `approveAgentProposal` resolves to it. If the message was queued but the decision was not saved, it rejects with `ProposalNotDecided`, which carries the id so the card still offers Undo. The order of queueing and deciding is unchanged.
+
 ## 10-second Undo (branch `undo-10-seconds`)
 
 An approved message waits 10 seconds instead of 60. `UNDO_SECONDS` in `shared/outbox.ts` is now the one number the store and the copy read, and `test:outbox` checks it against the newest `queue_message` migration.
@@ -10,7 +19,7 @@ An approved message waits 10 seconds instead of 60. `UNDO_SECONDS` in `shared/ou
 
 ## UX cleanup (branch `ux-cleanup`)
 
-Front end only. No migration, no server, API, outbox or dispatch change. Every send still goes through `sendMessage`, `queue_message` and the 60-second hold. `src/store/store.ts` is unchanged.
+Front end only. No migration, no server, API, outbox or dispatch change. Every send still goes through `sendMessage`, `queue_message` and the hold before sending (`UNDO_SECONDS`). `src/store/store.ts` is unchanged.
 
 - **One approval card.** `src/components/ApprovalCard.tsx` holds the card, its edit forms, `approveItem`, `discardItem`, `ApproveAll` and `SendState`. The Inbox, the assistant panel, Parent reports, Essays and Scheduled reminders use it. `children` replaces the plain preview; `compact` is the panel size.
 - **Approval in the assistant.** A pending proposal in the panel is that card, built by `proposalApproval` from `data.agentProposals`. `src/lib/approvalSends.ts` remembers, for the session, which message an approved proposal queued: the store adds the outbox row before its first wait, so the row that is new right after the call is the one. The card's Undo waits for the same queue notice the toast listens to. It also blocks a second press while a decision is on its way, and a card whose message is already queued offers no second approval.
@@ -43,7 +52,7 @@ What `drive.file` cannot do: list the rest of a linked folder. Folder sync now s
 
 **Claims (W1b).** Only the device that claimed a job can report it. The lease is 10 minutes. When it runs out with no report, the sweep marks the job `unknown` (unconfirmed) and the outbox row `phone_unknown`, still `sending`. Nothing ever moves a job back to `pending` (`jobCanMove` refuses it), and `claim_phone_send_job` takes only pending jobs, so an unconfirmed text is never handed out again by any device. A late report from the claiming device (after 10 minutes, or for an unconfirmed job) is accepted, logged as `[phone] late report` (no number or text), and recorded as a late event. A job's `body` is set to null in the same update that makes it submitted, failed, expired or cancelled.
 
-**Unconfirmed texts in Messages.** The row says "Your phone didn’t confirm this text. Check your phone’s sent messages." with two actions. "It was sent" calls `resolve { sent: true }`: the job is submitted, the row is sent, and the activity row has `actor: 'counselor'`. "Send again" calls `resolve { sent: false, again: true }`, which fails the old row with "Not confirmed. The counselor sent it again." (that row then offers no Retry and no send-by-hand), and only if that worked, queues the same message as a new approval through `queue_message` with the usual Undo toast. The server makes no job for it; the dispatcher does, after the 60 seconds, as for any approved text.
+**Unconfirmed texts in Messages.** The row says "Your phone didn’t confirm this text. Check your phone’s sent messages." with two actions. "It was sent" calls `resolve { sent: true }`: the job is submitted, the row is sent, and the activity row has `actor: 'counselor'`. "Send again" calls `resolve { sent: false, again: true }`, which fails the old row with "Not confirmed. The counselor sent it again." (that row then offers no Retry and no send-by-hand), and only if that worked, queues the same message as a new approval through `queue_message` with the usual Undo toast. The server makes no job for it; the dispatcher does, after the hold, as for any approved text.
 
 **Student uploads.** Supabase Storage takes no expiry for a signed upload URL (the route uses the project's fixed `uploadSignedUrlExpirationTime`), so the limit is enforced by the server: `finishStudentUpload` refuses and removes an upload finished more than `STUDENT_UPLOAD_SECONDS` (300) after its URL was issued, and the next start clears unfinished ones older than that. Five minutes, not 60 seconds, because a 25 MB upload from a phone can take minutes.
 
@@ -210,7 +219,7 @@ M4a (branch `m4a-agent`): server-side assistant — threads per student, tools, 
   - `src/types.ts`: one import, and `OutboxMessage.detail?: DeliveryDetail`.
   - `src/data/repo.ts`: one line in `outboxFrom`, `detail: u(r.delivery_detail)`.
   - `src/store/store.ts`: none.
-  - `server/dispatch.ts`: `note` added to `OutboxRow` and to both selects; `outboxId` and `note` passed to the transport; a result with `waiting` goes to the new `markWaiting` (sets `delivery_detail`, leaves the row `sending`) instead of `markSent`; `markFailed` takes an optional detail from the transport's error; `DispatchSummary.waiting`. The allowlist check, the claim, the 60-second window and the student-link step are untouched and still run in the same order. It also calls `sweepJobs()` at the start of `dispatchFirm`, inside a try/catch, and `DispatchSummary` has `swept`. `src/services/dispatch.ts` reloads when `processed + swept > 0`.
+  - `server/dispatch.ts`: `note` added to `OutboxRow` and to both selects; `outboxId` and `note` passed to the transport; a result with `waiting` goes to the new `markWaiting` (sets `delivery_detail`, leaves the row `sending`) instead of `markSent`; `markFailed` takes an optional detail from the transport's error; `DispatchSummary.waiting`. The allowlist check, the claim, the hold before sending and the student-link step are untouched and still run in the same order. It also calls `sweepJobs()` at the start of `dispatchFirm`, inside a try/catch, and `DispatchSummary` has `swept`. `src/services/dispatch.ts` reloads when `processed + swept > 0`.
   - `server/transport/types.ts`: `TransportSend.outboxId`, `TransportSend.note`, `TransportResult.waiting`.
 - William's steps:
   1. Done: the migration is applied and the types are regenerated.

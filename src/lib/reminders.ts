@@ -156,6 +156,14 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
 export const WEEKLY_TEXT_MAX = 480
 const WEEKLY_TEXT_MAX_ITEMS = 4
 
+/** A student's address is this site, "/s/" and a 43-character token. */
+const STUDENT_TOKEN_LENGTH = 43
+const studentUrlLength = () => (typeof window === 'undefined' ? 0 : `${window.location.origin}/s/`.length + STUDENT_TOKEN_LENGTH)
+
+/** How much longer a text gets when the placeholders in it become the student's real address. 0 without one. */
+export const linkRoom = (text: string): number =>
+  (text.split(STUDENT_LINK_PLACEHOLDER).length - 1) * Math.max(0, studentUrlLength() - STUDENT_LINK_PLACEHOLDER.length)
+
 export interface WeeklyTextFacts {
   firstName: string
   counselorFirstName: string
@@ -206,7 +214,8 @@ export function weeklyTextFacts(student: Student, counselorFirstName: string, it
   }
   for (let count = Math.min(WEEKLY_TEXT_MAX_ITEMS, all.length); count > 0; count--) {
     const facts = build(count)
-    if (weeklyTextTemplate(facts).length + reserve <= WEEKLY_TEXT_MAX) return facts
+    const text = weeklyTextTemplate(facts)
+    if (text.length + linkRoom(text) + reserve <= WEEKLY_TEXT_MAX) return facts
   }
   return build(0)
 }
@@ -230,7 +239,7 @@ export const WEEKLY_NOTE_ROOM = 90
  * meeting, tasks and link already fill the text, no "thing to remember" is
  * offered, so the facts are never crowded out.
  */
-export const weeklyTextHasRoomForNote = (f: WeeklyTextFacts): boolean => weeklyTextTemplate(f).length + WEEKLY_NOTE_ROOM <= WEEKLY_TEXT_MAX
+export const weeklyTextHasRoomForNote = (f: WeeklyTextFacts): boolean => weeklyTextTemplate(f).length + linkRoom(f.link ?? '') + WEEKLY_NOTE_ROOM <= WEEKLY_TEXT_MAX
 
 /** Every string that must appear in the text exactly as computed. */
 export function weeklyTextRequired(f: WeeklyTextFacts): string[] {

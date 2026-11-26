@@ -98,7 +98,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_message',
-    description: `Draft a message for Approvals. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write the message, a translation, or a summary in your reply. Channel is optional; omit it and the server picks a channel that can send. Call this once. If the record says no sendable channel, do not call this.`,
+    description: `Draft a message for the Inbox. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write the message, a translation, or a summary in your reply. Channel is optional; omit it and the server picks a channel that can send. Call this once. If the record says no sendable channel, do not call this.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -130,7 +130,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_parent_update',
-    description: `Draft a parent update for Approvals. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write a translation. Channel is optional; omit it and the server picks a channel that can send.`,
+    description: `Draft a parent update for the Inbox. Never sends. Put the full message only in body. Keep body to ${DRAFT_WORD_LIMIT.text} words or fewer for a text, LINE or WeChat message, and ${DRAFT_WORD_LIMIT.email} or fewer for email (in Chinese, about twice that many characters); the server refuses a longer one. Do not write a translation. Channel is optional; omit it and the server picks a channel that can send.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -155,7 +155,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_task',
-    description: 'Draft a new task for Approvals. Never writes the task list directly.',
+    description: 'Draft a new task for the Inbox. Never writes the task list directly.',
     input_schema: {
       type: 'object',
       properties: {
@@ -181,7 +181,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'propose_profile_change',
-    description: 'Draft a profile field change for Approvals. Never edits the profile directly.',
+    description: 'Draft a profile field change for the Inbox. Never edits the profile directly.',
     input_schema: {
       type: 'object',
       properties: {
@@ -614,7 +614,7 @@ async function proposeMessage(ctx: AgentContext, input: Record<string, unknown>)
       language,
       channel,
       toName,
-      reply: `Reply in one or two sentences: a ${language} ${channel} to ${toName}. End with "Review it in Approvals." Do not repeat the message or translate it.`,
+      reply: `Reply in one or two sentences: a ${language} ${channel} to ${toName}. End with "You can approve it below." Do not repeat the message or translate it.`,
     },
   }
 }
@@ -655,7 +655,7 @@ async function proposeParentUpdate(ctx: AgentContext, input: Record<string, unkn
       language: parent.language,
       channel,
       toName: parent.name,
-      reply: `Reply in one or two sentences: a ${parent.language} ${channel} to ${parent.name}. End with "Review it in Approvals." Do not repeat the message or translate it.`,
+      reply: `Reply in one or two sentences: a ${parent.language} ${channel} to ${parent.name}. End with "You can approve it below." Do not repeat the message or translate it.`,
     },
   }
 }

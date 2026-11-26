@@ -815,7 +815,7 @@ const agentProposalFrom = (r: {
   decidedAt: r.decided_at ? stamp(r.decided_at) : undefined,
 })
 
-/** Updates a pending proposal’s editable payload (Approvals inline edit). */
+/** Updates a pending proposal’s editable payload (inline edit on the approval card). */
 export async function updateAgentProposalPayload(id: ID, payload: Record<string, unknown>): Promise<void> {
   const { error } = await supabase.rpc('edit_agent_proposal', { proposal: id, payload: payload as Json })
   if (error) fail(error, 'Could not update the proposal')

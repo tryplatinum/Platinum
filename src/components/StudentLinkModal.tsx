@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import { formatTimestamp } from '../lib/dates'
+import { forgetStudentLink } from '../lib/studentLinks'
 import { useStore } from '../store/store'
 import type { Student } from '../types'
 import { Button, LinkButton, Modal, SectionLabel, inputClass, useToast } from './ui'
@@ -87,6 +88,7 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
                     onClick={() =>
                       void attempt(async () => {
                         const token = await rotateStudentLink(link.id)
+                        forgetStudentLink(student.id)
                         setFresh(`${window.location.origin}/s/${token}`)
                         toast('New link ready. The previous one has stopped working.')
                       })
@@ -100,6 +102,7 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
                     onClick={() =>
                       void attempt(async () => {
                         await revokeStudentLink(link.id)
+                        forgetStudentLink(student.id)
                         toast('Link revoked. It no longer opens anything.')
                       })
                     }

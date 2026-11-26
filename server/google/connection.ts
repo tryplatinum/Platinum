@@ -33,7 +33,7 @@ export class GoogleError extends Error {
   }
 }
 
-export const RECONNECT_MESSAGE = 'Google has ended this connection. Reconnect Google in Firm settings.'
+export const RECONNECT_MESSAGE = 'Google has ended this connection. Reconnect Google in Settings.'
 export const DRIVE_RECONNECT_MESSAGE = 'Reconnect Google Drive'
 
 /** Google features need the three Google settings and the service role (the only role that can read a connection). */
@@ -233,7 +233,7 @@ export async function accessTokenFor(who: Who, scope: string = DRIVE_SCOPE): Pro
   const row = await rowOf(userId)
   if (!row || row.firm_id !== who.firmId) {
     cached.delete(userId)
-    throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
+    throw new GoogleError('not_connected', 'Connect Google in Settings first.', 409)
   }
   if (row.last_error === 'reconnect') throw new GoogleError('reconnect', RECONNECT_MESSAGE, 409)
   if (!row.scopes.includes(scope)) {
@@ -247,7 +247,7 @@ export async function accessTokenFor(who: Who, scope: string = DRIVE_SCOPE): Pro
   // Someone who has left the firm keeps no working connection in it.
   const member = await serviceClient().from('firm_members').select('user_id').eq('user_id', userId).eq('firm_id', who.firmId).maybeSingle()
   if (member.error) throw new Error(`reading the membership failed: ${member.error.message}`)
-  if (!member.data) throw new GoogleError('not_connected', 'Connect Google in Firm settings first.', 409)
+  if (!member.data) throw new GoogleError('not_connected', 'Connect Google in Settings first.', 409)
 
   let refresh: string
   try {

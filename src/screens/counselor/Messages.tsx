@@ -7,12 +7,13 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Empty, Pill, Tabs, PageHeader, cx, inputBase, useTab, useToast, type TabItem } from '../../components/ui'
-import { STUDENT_LINK_PLACEHOLDER, previewStudentLink } from '../../../shared/dispatch'
+import { previewStudentLink } from '../../../shared/dispatch'
 import { UNDO_SECONDS, outboxStatusLabel } from '../../../shared/outbox'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
 import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
 import { callPhone, phoneReason } from '../../services/phone'
+import { copyText, textWithStudentLink } from '../../lib/studentLinks'
 import { formatTimestamp } from '../../lib/dates'
 import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
@@ -229,8 +230,10 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
   const byHand = canSendByHand(m) && !sentByHand
   const student = findStudent(data, m.studentId)
   const phone = (m.toKind === 'parent' ? student?.parents.find((p) => p.id === m.parentId)?.phone : student?.phone)?.trim()
-  /** The student's link is added by the server when it sends, so this text cannot be completed here. */
-  const needsLink = m.body.includes(STUDENT_LINK_PLACEHOLDER)
+  /** What went wrong the last time this row was copied or opened in Messages. */
+  const [handError, setHandError] = useState<string>()
+  /** The text to send by hand. The student's link is filled in here; the stored row keeps the placeholder. */
+  const handText = () => (m.toKind === 'student' ? textWithStudentLink(m.studentId, m.body) : m.body)
   const askPhone = async (action: string, body: Record<string, unknown>): Promise<boolean> => {
     setBusy(true)
     try {
@@ -290,23 +293,26 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
       {byHand && (
         <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2">
           <p className="min-w-0 flex-1 text-[13px] text-ink-soft">
-            {needsLink
-              ? 'This text includes the student’s link, which is added when it is sent, so it cannot be sent by hand from here. Retry once your phone is connected.'
-              : phone
-                ? 'This text did not go out through your phone. You can send it yourself from this device.'
-                : `${m.toName} has no phone number on file, so there is nowhere to send this.`}
+            {phone ? 'This text did not go out through your phone. You can send it yourself from this device.' : `${m.toName} has no phone number on file, so there is nowhere to send this.`}
           </p>
-          {!needsLink && phone && (
+          {phone && (
             <OpenInMessages
               phone={phone}
-              text={m.body}
+              text={handText}
+              onError={setHandError}
               onOpen={() => {
+                setHandError(undefined)
                 again(HAND_SENT_NOTE)
                 toast(`Opening your Messages app. You can undo the queued message for ${UNDO_SECONDS} seconds.`)
               }}
             />
           )}
         </div>
+      )}
+      {handError && (
+        <p role="alert" className="mt-2 text-[13px] text-bad">
+          {handError}
+        </p>
       )}
       {open ? (
         <div className="mt-2 flex flex-col gap-2">
@@ -315,8 +321,10 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
           <Button
             className="self-start"
             onClick={() => {
-              void navigator.clipboard?.writeText(preview)
-              toast(`Copied. Paste it into ${CHANNEL_LABEL[m.channel]} yourself.`)
+              setHandError(undefined)
+              void copyText(handText())
+                .then(() => toast(`Copied. Paste it into ${CHANNEL_LABEL[m.channel]} yourself.`))
+                .catch((e: unknown) => setHandError(e instanceof Error ? e.message : 'Nothing was copied. Please try again.'))
             }}
           >
             Copy for {CHANNEL_LABEL[m.channel]}
