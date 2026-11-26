@@ -694,7 +694,7 @@ export type OutboxStatus = 'queued' | 'cancelled' | 'sending' | 'sent' | 'failed
 
 /**
  * One outbound message. A new row is queued by the database, with the counselor
- * who approved it, and waits 60 seconds before a sender may deliver it.
+ * who approved it, and waits 10 seconds before a sender may deliver it.
  */
 export interface OutboxMessage {
   id: ID

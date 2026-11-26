@@ -12,7 +12,7 @@ import { withFreshIds } from '../data/ids'
 import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, decideAgentProposal, diffData, firstNameOf, listStudentLinks, loadAll, logMeetingDraftsReady, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, updateAgentProposalPayload, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
 import { notify, notifyQueued, notifySkipUndo } from '../lib/notify'
-import { validateQueuePayload } from '../../shared/outbox'
+import { UNDO_SECONDS, validateQueuePayload } from '../../shared/outbox'
 import { studentLinkWrite, type StudentWrite } from '../services/studentLink'
 import { addDays, nowTimestamp, todayISO, type ISODate } from '../lib/dates'
 import { fullName } from '../lib/derive'
@@ -120,7 +120,7 @@ interface Actions {
   /** Replaces a link's secret. The previous token stops working. Returns the new token once. */
   rotateStudentLink: (linkId: ID) => Promise<string>
   revokeStudentLink: (linkId: ID) => Promise<void>
-  /** Undoes a queued message during its 60-second window. */
+  /** Undoes a queued message during its 10-second window. */
   cancelQueued: (id: ID) => Promise<void>
   updateFirm: (firm: Partial<Pick<Firm, 'name' | 'counselorName' | 'weeklyTextDay' | 'sortFilesAutomatically'>>) => void
   /**
@@ -279,7 +279,7 @@ function deliver(data: AppData, message: OutgoingMessage): AppData {
     id: newId(),
     sentAt: now.toISOString(),
     status: 'queued',
-    sendAfter: new Date(now.getTime() + 60_000).toISOString(),
+    sendAfter: new Date(now.getTime() + UNDO_SECONDS * 1000).toISOString(),
     approvedBy: approval.byId,
     approvedAt: now.toISOString(),
   }
