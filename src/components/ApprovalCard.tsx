@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../shared/dispatch'
+import { UNDO_SECONDS } from '../../shared/outbox'
 import { deciding, rememberSend, useApprovalSends } from '../lib/approvalSends'
 import { messageStatusLabel, notConnectedLine, sentByHand } from '../lib/delivery'
 import { APPROVAL_TYPE_LABEL, findStudent, fullName, type ApprovalItem } from '../lib/derive'
@@ -118,7 +119,7 @@ export function ApprovalCard({
       return
     }
     void run(() => work, 'approved', 'Could not approve.')
-      .then(() => toast(copied && item.channel ? `Copied. Paste it into ${CHANNEL_LABEL[item.channel]}${item.toName ? ` to ${item.toName}` : ''}.` : item.isSend ? 'Approved. Sending in 60 seconds.' : 'Approved.'))
+      .then(() => toast(copied && item.channel ? `Copied. Paste it into ${CHANNEL_LABEL[item.channel]}${item.toName ? ` to ${item.toName}` : ''}.` : item.isSend ? `Approved. Sending in ${UNDO_SECONDS} seconds.` : 'Approved.'))
       .catch(() => undefined)
   }
 
@@ -391,7 +392,7 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
         <Modal title={title} onClose={() => setConfirming(false)}>
           <p className="text-sm text-ink-soft">
             {approvable.length} {approvable.length === 1 ? 'item' : 'items'}
-            {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send. Each message keeps its own 60-second Undo.` : '. No messages will be queued.'}
+            {sends > 0 ? `, including ${sends} ${sends === 1 ? 'message' : 'messages'} that will be queued to send. Each message keeps its own ${UNDO_SECONDS}-second Undo.` : '. No messages will be queued.'}
             {left > 0 && ` ${leftLine}`}
           </p>
           <div className="mt-4 flex flex-wrap justify-end gap-2">

@@ -901,7 +901,7 @@ function queuedFrom(data: Json): Queued {
   return { message: outboxFrom(body.message), activity: activityFrom(body.activity) }
 }
 
-/** The only insert into the outbox. The database records the approver and the 60-second hold. */
+/** The only insert into the outbox. The database records the approver and the 10-second hold. */
 export async function queueMessage(payload: QueuePayload): Promise<Queued> {
   const { data, error } = await supabase.rpc('queue_message', { payload: payload as unknown as Json })
   if (error) fail(error, 'Could not queue the message')

@@ -1,7 +1,7 @@
 // Messages. Sent: the log of everything that "went out". Weekly texts: the
 // week's short text to each student. Scheduled reminders: reminders that are
 // due under the firm's rules, which are set in Settings.
-// Approved messages wait 60 seconds, then go out through the allowlist, and can
+// Approved messages wait 10 seconds, then go out through the allowlist, and can
 // still be copied and sent by hand; the page says so at the top.
 
 import { ChevronRight } from 'lucide-react'
@@ -15,6 +15,7 @@ import { OpenInMessages } from '../../components/OpenInMessages'
 import { MotionList, Reveal, useReveal } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
+import { UNDO_SECONDS } from '../../../shared/outbox'
 import { formatTimestamp } from '../../lib/dates'
 import { canDeliver, messageStatusLabel, notConnectedLine } from '../../lib/delivery'
 import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
@@ -64,7 +65,7 @@ export default function Messages() {
       />
       <Reveal open={how.open} id={how.id} className="-mt-3">
         <p className="rounded-card border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-          <strong className="text-ink">Approved messages wait 60 seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
+          <strong className="text-ink">Approved messages wait {UNDO_SECONDS} seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
         </p>
       </Reveal>
       <Tabs tabs={tabs} label="Messages" />
@@ -320,7 +321,7 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
               onOpen={() => {
                 setHandError(undefined)
                 again(HAND_SENT_NOTE)
-                toast('Opening your Messages app. You can undo the queued message for 60 seconds.')
+                toast(`Opening your Messages app. You can undo the queued message for ${UNDO_SECONDS} seconds.`)
               }}
             />
           )}

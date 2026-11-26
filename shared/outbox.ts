@@ -3,7 +3,8 @@
 
 import { phoneStatusLabel } from './phoneGateway.js'
 
-export const UNDO_SECONDS = 60
+/** How long an approved message waits. queue_message in the database sets the real time. */
+export const UNDO_SECONDS = 10
 
 export const QUEUE_CHANNELS = ['email', 'wechat', 'line', 'text'] as const
 export const QUEUE_LANGUAGES = ['en', 'zh-Hans', 'zh-Hant'] as const

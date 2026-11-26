@@ -1,6 +1,6 @@
 // A reminder about one task, drafted by the AI for one person in their
 // language and for their preferred channel. The counselor reads it, edits if
-// needed, and approves. An approved message waits 60 seconds, then goes out
+// needed, and approves. An approved message waits 10 seconds, then goes out
 // through the allowlist. It can still be copied and sent by hand.
 //
 // A reminder to the student can come with a parent copy: a second, separate
@@ -14,6 +14,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { reminderDraft, type ReminderMessage, type ReminderRecipient } from '../services/ai'
 import { useData, useStore } from '../store/store'
 import type { Student, Task } from '../types'
+import { UNDO_SECONDS } from '../../shared/outbox'
 import { canDeliver, notConnectedLine } from '../lib/delivery'
 import { copyText, textWithStudentLink } from '../lib/studentLinks'
 import { AiErrorNote, AiTag, Button, CheckRow, PlaceholderNote, SectionLabel, SendLabel, Thinking, textareaClass, useToast } from './ui'
@@ -91,7 +92,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
       taskId: task.id,
       note: d.toKind === 'parent' && to.kind === 'student' ? 'Parent copy of a reminder' : undefined,
     }, d.toKind === 'student' ? d.usedNote : undefined)
-    toast(canDeliver(d.channel) ? 'Approved. Sending in 60 seconds.' : `Copied. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`)
+    toast(canDeliver(d.channel) ? `Approved. Sending in ${UNDO_SECONDS} seconds.` : `Copied. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`)
     const left = drafts.filter((x, j) => j !== i && !x.sent).length
     if (left === 0 && loading === 0) onDone()
     else setDrafts((all) => all.map((x, j) => (j === i ? { ...x, sent: true } : x)))
@@ -155,7 +156,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             <div className="flex flex-wrap items-center gap-2">
               {d.sent ? (
                 <span className="motion-fade text-[13px] font-semibold text-good">
-                  {canDeliver(d.channel) ? `Approved. Sending to ${d.toName} in 60 seconds.` : `Copied and approved. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`}
+                  {canDeliver(d.channel) ? `Approved. Sending to ${d.toName} in ${UNDO_SECONDS} seconds.` : `Copied and approved. Paste it into ${CHANNEL_LABEL[d.channel]} to ${d.toName}.`}
                 </span>
               ) : !canDeliver(d.channel) ? (
                 <>
@@ -194,8 +195,8 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
           {(() => {
             const channel = drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))
             return canDeliver(channel)
-              ? `Goes by ${CHANNEL_LABEL[channel]}. Each message is approved and logged on its own. Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.`
-              : `${notConnectedLine(channel)} Each message is approved and logged on its own, and can be undone for 60 seconds.`
+              ? `Goes by ${CHANNEL_LABEL[channel]}. Each message is approved and logged on its own. Approved messages wait ${UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.`
+              : `${notConnectedLine(channel)} Each message is approved and logged on its own, and can be undone for ${UNDO_SECONDS} seconds.`
           })()}
         </span>
       </div>

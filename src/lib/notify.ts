@@ -14,7 +14,7 @@ export function notify(message: string): void {
   listeners.forEach((listener) => listener({ kind: 'text', message }))
 }
 
-/** A 60-second undo toast for a message the database just queued. */
+/** An undo toast for a message the database just queued. */
 export function notifyQueued(messageId: string, sendAfter: string): void {
   listeners.forEach((listener) => listener({ kind: 'queue', messageId, sendAfter }))
 }

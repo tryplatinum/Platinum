@@ -95,7 +95,7 @@ Status: **Working** (in use end to end), **Partial** (works with a stated piece 
 | Student detail | Tabs for profile, tasks (owned by student, parent or counselor), college list, documents, essays, meetings, reports | Store actions diffed into one `apply_changes` transaction | `src/screens/counselor/StudentPage.tsx`, `student/*.tsx`, `src/components/TaskRows.tsx` | Working |
 | Meetings and paste-in notes | Schedule a meeting, log one by pasting notes or a transcript; calendar view | No recording or calendar sync. Notes are stored on the meeting | `src/screens/counselor/Meetings.tsx`, `src/components/forms.tsx` | Working |
 | Meeting drafts loop | After logging notes: a review with recap, tasks, profile changes, things to remember, parent updates | `draftFromMeeting` on `/api/ai`. Drafts are `pending`; approval creates the real rows. The "drafts are ready" activity line comes from `log_meeting_drafts_ready` | `src/services/workflows.ts`, `src/components/meeting/MeetingReview.tsx`, `server/prompts.ts` | Working |
-| Inbox and Undo | `/app`: every pending draft and assistant proposal, files to file or check, and college list drafts, as a list of short rows with the open one shown whole beside it (in place of it on a phone). `?item=` holds what is open. A 60-second Undo toast after approving a send. A draft on WeChat or LINE, which are not connected, offers Copy instead of a send | Approve calls `queue_message`, which holds the row 60 seconds; Undo calls `cancel_message` | `src/screens/counselor/Approvals.tsx`, `src/lib/inbox.ts`, `src/lib/delivery.ts`, `src/store/store.ts`, `src/data/repo.ts` | Working |
+| Inbox and Undo | `/app`: every pending draft and assistant proposal, files to file or check, and college list drafts, as a list of short rows with the open one shown whole beside it (in place of it on a phone). `?item=` holds what is open. An Undo toast for the length of the hold (`UNDO_SECONDS`, 10 seconds) after approving a send. A draft on WeChat or LINE, which are not connected, offers Copy instead of a send | Approve calls `queue_message`, which holds the row for the hold; Undo calls `cancel_message` | `src/screens/counselor/Approvals.tsx`, `src/lib/inbox.ts`, `src/lib/delivery.ts`, `src/store/store.ts`, `src/data/repo.ts` | Working |
 | Activity | Firm-wide log, newest first, filters, Load more | `activity` table; counselor lines carry `actor_user`; AI and system lines come from functions or the server | `src/screens/counselor/Activity.tsx` | Working |
 | Parent updates and reports | Bilingual drafts in English, Simplified or Traditional Chinese, per `Parent.language` | `parentReport` and meeting drafts; facts computed in code. Chinese has not been reviewed by a native speaker | `src/screens/counselor/student/ReportsTab.tsx`, `src/lib/facts.ts`, `src/components/Bilingual.tsx` | Working |
 | Weekly texts | Messages → Weekly texts: one short text per student per week, Draft all, Copy, Open in Messages | `weeklyText` feature; facts and link from `reminders.ts`; model picks which task leads. English only | `src/screens/counselor/WeeklyTexts.tsx`, `src/lib/reminders.ts` | Working |
@@ -156,7 +156,7 @@ While it waits, the panel polls `GET /api/agent?progress=<requestId>` for a step
 
 ### How proposals reach the Inbox
 
-`insertProposal` (`server/agent/proposals.ts`) first finds the student with the counselor's own client in the counselor's firm, then inserts a `pending` row in `agent_proposals` with the service role. The browser loads proposals with the rest of the firm's data, and Approvals lists them as "From the assistant" with rationale and sources. Editing calls `edit_agent_proposal`; approving or discarding calls `decide_agent_proposal`. On approval the store acts on the kind: a message or parent update goes to `sendMessage` (so `queue_message` and the 60-second Undo), a task is added, a profile change is applied, meeting times are recorded in Activity (`src/store/store.ts`, `approveAgentProposal`).
+`insertProposal` (`server/agent/proposals.ts`) first finds the student with the counselor's own client in the counselor's firm, then inserts a `pending` row in `agent_proposals` with the service role. The browser loads proposals with the rest of the firm's data, and Approvals lists them as "From the assistant" with rationale and sources. Editing calls `edit_agent_proposal`; approving or discarding calls `decide_agent_proposal`. On approval the store acts on the kind: a message or parent update goes to `sendMessage` (so `queue_message` and the 10-second Undo), a task is added, a profile change is applied, meeting times are recorded in Activity (`src/store/store.ts`, `approveAgentProposal`).
 
 ### Thinking settings
 
@@ -194,8 +194,8 @@ About 2.5 s of each request is database work before the first model call.
 
 1. **Draft.** An AI draft (meeting review, reminder, weekly text, parent report) or an assistant proposal. Nothing is queued yet.
 2. **Approval.** A counselor presses approve or send. Pressing Copy or Open in Messages on a weekly text also counts, and records the text as "Sent from your own phone".
-3. **`queue_message`.** A database function and the only way into `outbox`. It checks the caller belongs to the student's firm, that the parent and task belong to that student, and the channel, language, kind and body. It stores `approved_by` as the caller and sets `send_after` 60 seconds ahead, with status `queued`.
-4. **Undo window.** For 60 seconds the toast offers Undo, which calls `cancel_message` (status `cancelled`).
+3. **`queue_message`.** A database function and the only way into `outbox`. It checks the caller belongs to the student's firm, that the parent and task belong to that student, and the channel, language, kind and body. It stores `approved_by` as the caller and sets `send_after` `UNDO_SECONDS` seconds ahead, with status `queued`.
+4. **Undo window.** For 10 seconds the toast offers Undo, which calls `cancel_message` (status `cancelled`).
 5. **Dispatcher.** The browser calls `POST /api/dispatch` when the window ends and on app load. `dispatchFirm` claims each due row (`queued` → `sending`) so two callers cannot send it twice.
 6. **Address and allowlist.** `resolveAddress` picks the phone or email from the student or parent record (LINE and WeChat are refused). `allowlistAllows` checks it against `SEND_ALLOWLIST`; an empty list allows nothing. A refused row is marked `failed` with "recipient not on allowlist".
 7. **Student link.** If a message to a student contains `{{student_link}}`, the dispatcher mints a fresh 30-day link, stores only its hash, and fills the address into the outgoing copy. The stored outbox row keeps the placeholder.
@@ -328,8 +328,8 @@ Storage: bucket `documents` is private. Object policies require the first path s
 | `is_firm_member`, `is_firm_owner` | Used by every policy |
 | `create_firm` | Makes a firm with the caller as owner and seeds folders |
 | `apply_changes` | The store's one write path: a batch of upserts and deletes in one transaction, as the caller. Refuses the outbox |
-| `queue_message` | The only insert into `outbox`; records the approver and holds 60 seconds |
-| `cancel_message` | Cancels a queued row inside its 60 seconds |
+| `queue_message` | The only insert into `outbox`; records the approver and holds 10 seconds |
+| `cancel_message` | Cancels a queued row inside its 10 seconds |
 | `student_link_write` | The student's task write; server only |
 | `file_document` | Files a stored document into a folder for a student |
 | `document_is_owner_only`, `document_is_readable`, `document_type_is_open` | The owner-only rule |
@@ -344,7 +344,7 @@ Storage: bucket `documents` is private. Object policies require the first path s
 ## 11. Protections in place
 
 - **Approval enforced in the database.** `outbox` has no write policies; `queue_message` is the only insert and records the approver. `apply_changes` refuses any batch that names the outbox. An AI-drafted report cannot be marked sent without an approval.
-- **Undo.** Every approved message waits 60 seconds and can be cancelled.
+- **Undo.** Every approved message waits 10 seconds and can be cancelled.
 - **Allowlist.** The dispatcher checks `SEND_ALLOWLIST` before choosing a transport. An empty list sends nothing. Phone claims and the wake address are checked again.
 - **Only the dispatcher calls a transport.** The one other send is the fixed "Wake." email to the counselor's own allowlisted Gmail.
 - **Row level security on every table**, with explicit revokes for `anon` and narrow grants for signed-in people. Server-only tables have no grants at all.
@@ -465,6 +465,7 @@ Before reporting work done: `typecheck`, `lint`, `test:notes`. Do not run `test:
 | `20261202000001_phone_gateway.sql` | Phone devices, jobs, events, `claim_phone_send_job`, `outbox.delivery_detail` |
 | `20261203000001_phone_pairing.sql` | Setup codes, 90-day keys, 10-minute lease, finished jobs drop their text |
 | `20261204000001_links_agent_activity_grants.sql` | Required link expiry, narrower assistant grants, proposal functions, daily budget, activity authors |
+| `20261205000001_undo_ten_seconds.sql` | `queue_message` holds a message 10 seconds, not 60 |
 
 ## 15. Known limitations and roadmap
 

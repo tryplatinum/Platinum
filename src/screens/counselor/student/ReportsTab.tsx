@@ -14,6 +14,7 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../../lib/language'
 import { parentReport } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
 import type { ParentReport, ReportSettings, Student } from '../../../types'
+import { UNDO_SECONDS } from '../../../../shared/outbox'
 
 const SCHEDULES: { value: ReportSettings['schedule']; label: string }[] = [
   { value: 'after_meetings', label: 'After each meeting' },
@@ -200,7 +201,7 @@ function SentRow({ report, student }: { report: ParentReport; student: Student }
           <Bilingual language={report.language} en={report.bodyEn} local={report.bodyLocal} recipient={parent?.name} />
           <p className="text-xs text-muted">
             <ApprovalStamp approval={report.approval} />{' '}
-            {canDeliver(report.channel) ? 'Approved messages wait 60 seconds, then go out through the allowlist. You can still copy one and send it by hand.' : `${CHANNEL_LABEL[report.channel]} is not connected, so Platinum did not send this. It was copied to send by hand.`}
+            {canDeliver(report.channel) ? `Approved messages wait ${UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand.` : `${CHANNEL_LABEL[report.channel]} is not connected, so Platinum did not send this. It was copied to send by hand.`}
           </p>
         </div>
       )}
