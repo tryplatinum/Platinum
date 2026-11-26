@@ -26,12 +26,16 @@ export const notConnectedLine = (channel: Channel): string => `${CHANNEL_LABEL[c
 
 /**
  * The status line of a logged message. On a channel Platinum cannot send on,
- * it never says queued, sending or failed: the row is the record of an
- * approval, and the message goes out by hand or not at all.
+ * it never says queued or sending: the counselor copied the text and sends it
+ * themselves. Once the hold is over the dispatcher records it as sent, with the
+ * note "Sent from your own phone", as it does a weekly text sent by hand. A row
+ * that failed there is one nobody copied: a rule queued it, or it is from before
+ * the dispatcher recorded these.
  */
 export function messageStatusLabel(message: { channel: Channel; status: QueueStatus; sendAfter: string; error?: string; detail?: string }, now = Date.now()): string {
-  if (canDeliver(message.channel) || message.status === 'cancelled') return outboxStatusLabel(message, now)
+  if (canDeliver(message.channel) || message.status === 'cancelled' || message.status === 'sent') return outboxStatusLabel(message, now)
   const left = message.status === 'queued' ? Math.ceil((Date.parse(message.sendAfter) - now) / 1000) : 0
   if (left > 0) return `Approved to send by hand. Undo for ${left}s`
-  return `By hand: ${CHANNEL_LABEL[message.channel]} is not connected`
+  if (message.status === 'failed') return `Not sent: ${CHANNEL_LABEL[message.channel]} is not connected`
+  return 'Approved to send by hand'
 }
