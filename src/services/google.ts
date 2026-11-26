@@ -51,7 +51,7 @@ export async function callGoogle<T>(action: string, body: Record<string, unknown
 
 // ── Status ──────────────────────────────────────────────────────────────────
 
-const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, calendar: false, reconnect: false }
 
 let status: GoogleStatus | undefined
 let loading: Promise<void> | undefined
@@ -96,7 +96,7 @@ export function useGoogleStatus(): GoogleStatus | undefined {
 export const driveReady = (s: GoogleStatus | undefined) => Boolean(s?.available && s.connected && s.drive && !s.reconnect)
 
 /** Sends the person to Google's consent screen. They come back to /app?google=…. */
-export async function startGoogleConnect(options: { gmail?: boolean } = {}): Promise<void> {
+export async function startGoogleConnect(options: { gmail?: boolean; calendar?: boolean } = {}): Promise<void> {
   const { url } = await callGoogle<{ url: string }>('connect', options)
   window.location.assign(url)
 }

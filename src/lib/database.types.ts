@@ -996,6 +996,8 @@ export type Database = {
           date: string
           duration_min: number
           firm_id: string
+          google_event_id: string | null
+          google_sync: string | null
           id: string
           location: string | null
           recap: Json | null
@@ -1015,6 +1017,8 @@ export type Database = {
           date: string
           duration_min?: number
           firm_id: string
+          google_event_id?: string | null
+          google_sync?: string | null
           id?: string
           location?: string | null
           recap?: Json | null
@@ -1034,6 +1038,8 @@ export type Database = {
           date?: string
           duration_min?: number
           firm_id?: string
+          google_event_id?: string | null
+          google_sync?: string | null
           id?: string
           location?: string | null
           recap?: Json | null

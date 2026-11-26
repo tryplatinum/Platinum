@@ -8,6 +8,7 @@
 // memory, to ask Google for an access token. Neither token is ever returned,
 // logged or put in an error message.
 
+import { CALENDAR_SCOPE } from '../../shared/calendar.js'
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE, aboutReply, tokenFailure, tokenReply, type GoogleStatus } from '../../shared/google.js'
 import { serviceClient, serviceConfigured, type Caller } from '../supabase.js'
 import { AUTH_URL, DRIVE_API, REVOKE_URL, TOKEN_URL, clientId, clientSecret, fakeMode, google, googleConfigured, redirectUri, tokenKey } from './config.js'
@@ -54,10 +55,10 @@ async function rowOf(userId: string) {
 // ── Status ──────────────────────────────────────────────────────────────────
 
 export async function connectionStatus(caller: SignedIn): Promise<GoogleStatus> {
-  if (!googleAvailable()) return { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+  if (!googleAvailable()) return { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, calendar: false, reconnect: false }
   const row = await rowOf(caller.userId)
   // A connection made while in another firm is not this firm's.
-  if (!row || row.firm_id !== caller.firmId) return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+  if (!row || row.firm_id !== caller.firmId) return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, calendar: false, reconnect: false }
   const drive = row.scopes.includes(DRIVE_SCOPE)
   return {
     available: true,
@@ -67,6 +68,7 @@ export async function connectionStatus(caller: SignedIn): Promise<GoogleStatus> 
     // An older grant could read every file. It is not used for Drive.
     driveReconnect: !drive,
     gmail: row.scopes.includes(GMAIL_SEND_SCOPE),
+    calendar: row.scopes.includes(CALENDAR_SCOPE),
     reconnect: row.last_error === 'reconnect',
   }
 }
@@ -92,21 +94,29 @@ export function readCookie(request: Request, name: string): string | undefined {
  * Google always returns a refresh token. Asking for Gmail keeps the Drive
  * permission already given (incremental authorization).
  */
-export function startConnect(caller: SignedIn, request: Request, options: { gmail?: boolean }): { url: string; setCookie: string } {
+/**
+ * `keep` is what this connection already has: a consent replaces the grant, so
+ * what was on is asked for again and stays on. Each add-on is recorded only when
+ * it was asked for this time or was already on (see finishConnect).
+ */
+export function startConnect(caller: SignedIn, request: Request, options: { gmail?: boolean; calendar?: boolean; keep?: readonly string[] }): { url: string; setCookie: string } {
   requireAvailable()
   const nonce = newNonce()
-  const state = signState({ userId: caller.userId, firmId: caller.firmId, gmail: Boolean(options.gmail) }, nonce, tokenKey())
+  const gmail = Boolean(options.gmail) || Boolean(options.keep?.includes(GMAIL_SEND_SCOPE))
+  const calendar = Boolean(options.calendar) || Boolean(options.keep?.includes(CALENDAR_SCOPE))
+  const state = signState({ userId: caller.userId, firmId: caller.firmId, gmail: Boolean(options.gmail), calendar: Boolean(options.calendar) }, nonce, tokenKey())
   const back = redirectUri(request)
   let url: string
   if (fakeMode()) {
     // No Google: straight back to our own callback, as if consent had been given.
-    url = `${back}?${new URLSearchParams({ code: options.gmail ? 'fake-code-gmail' : 'fake-code', state })}`
+    url = `${back}?${new URLSearchParams({ code: `fake-code${gmail ? '-gmail' : ''}${calendar ? '-calendar' : ''}`, state })}`
   } else {
     url = `${AUTH_URL}?${new URLSearchParams({
       client_id: clientId(),
       redirect_uri: back,
       response_type: 'code',
-      scope: options.gmail ? `${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE}` : DRIVE_SCOPE,
+      // Drive first; Gmail and the calendar only when asked for, or already on. Never bundled into the first consent.
+      scope: [DRIVE_SCOPE, gmail && GMAIL_SEND_SCOPE, calendar && CALENDAR_SCOPE].filter(Boolean).join(' '),
       access_type: 'offline',
       prompt: 'consent',
       // Do not keep an older Drive permission. Gmail is asked for on its own when it is wanted.
@@ -117,7 +127,7 @@ export function startConnect(caller: SignedIn, request: Request, options: { gmai
   return { url, setCookie: cookie(request, nonce, STATE_SECONDS) }
 }
 
-export type ConnectOutcome = 'connected' | 'gmail_on' | 'declined' | 'unchanged' | 'failed'
+export type ConnectOutcome = 'connected' | 'gmail_on' | 'calendar_on' | 'declined' | 'unchanged' | 'failed'
 
 /**
  * Google sends the person back here. There is no signed-in request at this
@@ -157,7 +167,9 @@ export async function finishConnect(request: Request): Promise<{ outcome: Connec
   // Sending from Gmail is recorded only when the person asked for it this time, or already had it on this
   // connection. Google can hand back a permission given long ago; that alone never turns sending on.
   const mayHaveGmail = claims.gmail || Boolean(existing && existing.firm_id === claims.firmId && existing.scopes.includes(GMAIL_SEND_SCOPE))
-  const scopes = [DRIVE_SCOPE, GMAIL_SEND_SCOPE].filter((scope) => granted.includes(scope) && (scope !== GMAIL_SEND_SCOPE || mayHaveGmail))
+  // The same rule for the calendar: asked for this time, or already on.
+  const mayHaveCalendar = claims.calendar === true || Boolean(existing && existing.firm_id === claims.firmId && existing.scopes.includes(CALENDAR_SCOPE))
+  const scopes = [DRIVE_SCOPE, GMAIL_SEND_SCOPE, CALENDAR_SCOPE].filter((scope) => granted.includes(scope) && (scope !== GMAIL_SEND_SCOPE || mayHaveGmail) && (scope !== CALENDAR_SCOPE || mayHaveCalendar))
   // The invented Google never replaces a real connection (a dev server pointed at a shared database).
   if (fakeMode() && existing && existing.google_address !== FAKE_ADDRESS) return done('failed')
   // Drive was unticked on Google's screen. An existing connection is left exactly as it was.
@@ -183,6 +195,7 @@ export async function finishConnect(request: Request): Promise<{ outcome: Connec
   cached.delete(claims.userId)
   // Folders this person linked can sync again.
   await serviceClient().from('student_drive_folders').update({ status: 'idle', last_error: null }).eq('firm_id', claims.firmId).eq('linked_by', claims.userId).eq('status', 'reconnect')
+  if (claims.calendar) return done(scopes.includes(CALENDAR_SCOPE) ? 'calendar_on' : 'unchanged')
   if (claims.gmail) return done(scopes.includes(GMAIL_SEND_SCOPE) ? 'gmail_on' : 'unchanged')
   return done('connected')
 }
@@ -204,7 +217,30 @@ export async function disconnect(caller: SignedIn): Promise<GoogleStatus> {
     if (error) throw new Error(`deleting the Google connection failed: ${error.message}`)
     cached.delete(caller.userId)
   }
-  return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+  return { available: true, connected: false, drive: false, driveReconnect: false, gmail: false, calendar: false, reconnect: false }
+}
+
+/**
+ * Turns the calendar off for this connection: Platinum stops reading and
+ * writing it at once. The permission itself stays at Google until the whole
+ * connection is disconnected, because Google has no way to give back one part.
+ * Meetings are not touched.
+ */
+export async function calendarOff(caller: SignedIn): Promise<GoogleStatus> {
+  requireAvailable()
+  const row = await rowOf(caller.userId)
+  if (row && row.firm_id === caller.firmId && row.scopes.includes(CALENDAR_SCOPE)) {
+    const { error } = await connections().update({ scopes: row.scopes.filter((s) => s !== CALENDAR_SCOPE) }).eq('user_id', caller.userId)
+    if (error) throw new Error(`turning the calendar off failed: ${error.message}`)
+    cached.delete(caller.userId)
+  }
+  return connectionStatus(caller)
+}
+
+/** What this connection already has, so a new consent can ask for it again. */
+export async function scopesOf(caller: SignedIn): Promise<string[]> {
+  const row = await rowOf(caller.userId)
+  return row && row.firm_id === caller.firmId ? row.scopes : []
 }
 
 // ── Access tokens ───────────────────────────────────────────────────────────
@@ -237,7 +273,7 @@ export async function accessTokenFor(who: Who, scope: string = DRIVE_SCOPE): Pro
   }
   if (row.last_error === 'reconnect') throw new GoogleError('reconnect', RECONNECT_MESSAGE, 409)
   if (!row.scopes.includes(scope)) {
-    const message = scope === GMAIL_SEND_SCOPE ? 'Sending from Gmail is not turned on for this Google account.' : scope === DRIVE_SCOPE ? DRIVE_RECONNECT_MESSAGE : RECONNECT_MESSAGE
+    const message = scope === CALENDAR_SCOPE ? 'The calendar is not turned on for this Google account.' : scope === GMAIL_SEND_SCOPE ? 'Sending from Gmail is not turned on for this Google account.' : scope === DRIVE_SCOPE ? DRIVE_RECONNECT_MESSAGE : RECONNECT_MESSAGE
     throw new GoogleError('reconnect', message, 409)
   }
 
