@@ -35,7 +35,7 @@ function NavItem({ to, label, icon: Icon, end = false, badge = 0 }: { to: string
     >
       <Icon {...ICON} className="shrink-0" />
       <span className="min-w-0 flex-1 whitespace-nowrap">{label}</span>
-      {badge > 0 && <Count value={badge} label={`${badge} waiting for review`} className="inline-block rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary" />}
+      {badge > 0 && <Count value={badge} label={`${badge} to review`} className="inline-block rounded-full bg-primary px-1.5 text-xs font-semibold text-on-primary" />}
     </NavLink>
   )
 }

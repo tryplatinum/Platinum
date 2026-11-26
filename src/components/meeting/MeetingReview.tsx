@@ -170,7 +170,7 @@ function Section({ k, n, title, right, children }: { k: SectionKey; n: number; t
             <ChevronRight size={20} strokeWidth={1.75} className="motion-chevron shrink-0 text-muted" aria-hidden />
             <span>
               {n}. {title}
-              {!open && left > 0 && <span className="nums font-sans text-sm font-medium text-muted"> · {left} waiting</span>}
+              {!open && left > 0 && <span className="nums font-sans text-sm font-medium text-muted"> · {left} to review</span>}
             </span>
           </button>
         </h3>

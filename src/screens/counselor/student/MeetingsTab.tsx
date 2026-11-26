@@ -30,7 +30,7 @@ export default function MeetingsTab({ student }: { student: Student }) {
         {recent ? (
           <Card className="flex flex-col gap-4 p-5">
             <div>
-              <SectionLabel>Most recent meeting{reviewing ? ' · waiting for your review' : ''}</SectionLabel>
+              <SectionLabel>Most recent meeting{reviewing ? ' · to review' : ''}</SectionLabel>
               <h2 className="mt-0.5 text-xl font-bold">{meetingHeading(recent)}</h2>
               <p className="text-[13px] text-muted">
                 {recent.durationMin} minutes{recent.location && ` on ${recent.location}`}

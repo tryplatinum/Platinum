@@ -359,7 +359,15 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
   const approvable = items.filter((i) => i.kind !== 'weekly_text' && !sentByHand(i))
   const left = items.length - approvable.length
   const sends = approvable.filter((i) => i.isSend).length
-  const leftLine = `${left} ${left === 1 ? 'is' : 'are'} left for you to copy and send by hand.`
+  // What "Approve 11 of 13" leaves behind, by name.
+  const byHand = items.filter((i) => i.kind !== 'weekly_text' && sentByHand(i)).length
+  const weeklyLeft = left - byHand
+  const leftLine = [
+    byHand > 0 && `${byHand} ${byHand === 1 ? 'is' : 'are'} for WeChat or LINE and ${byHand === 1 ? 'stays' : 'stay'} here for you to copy.`,
+    weeklyLeft > 0 && `${weeklyLeft} weekly ${weeklyLeft === 1 ? 'text stays' : 'texts stay'} here for you to send by hand.`,
+  ]
+    .filter(Boolean)
+    .join(' ')
   if (items.length < 2 || approvable.length === 0) return null
 
   const approveAll = async () => {
@@ -582,7 +590,7 @@ function EditPanel({ item, onClose }: { item: ApprovalItem; onClose: () => void 
     if (!note) return null
     return (
       <EditBox onClose={onClose} row>
-        <Field label="Thing to remember" className="min-w-[14rem] flex-1">
+        <Field label="Note to self" className="min-w-[14rem] flex-1">
           <input className={inputClass} maxLength={300} value={note.text} onChange={(e) => store.updateDraftNote(meeting.id, note.id, { text: e.target.value })} />
         </Field>
         <Field label="Date of the event, if there is one">

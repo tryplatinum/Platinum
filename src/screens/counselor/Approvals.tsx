@@ -35,6 +35,9 @@ const KINDS: { value: string; label: string }[] = [
   { value: LISTS, label: 'College list drafts' },
 ]
 
+/** What these kinds were called in addresses before they were renamed. */
+const OLD_KIND: Record<string, string> = { recap: 'recap-for-student', 'thing-to-remember': 'note-to-self', report: 'parent-report', 'parent-copy': 'weekly-text-to-parent' }
+
 /** Groups a counselor has closed. Kept for the session, so coming back finds the Inbox as it was left. */
 const closedGroups = new Set<string>()
 
@@ -63,7 +66,8 @@ export default function Inbox() {
   const data = useData()
   const [params, setParams] = useSearchParams()
   const studentId = params.get('student') || undefined
-  const askedKind = params.get('kind')
+  // An address written before a kind was renamed still filters to it.
+  const askedKind = OLD_KIND[params.get('kind') ?? ''] ?? params.get('kind')
   const kind = KINDS.some((k) => k.value === askedKind) ? askedKind : ''
   const asked = params.get('item') || undefined
   const student = studentId ? findStudent(data, studentId) : undefined
@@ -242,13 +246,13 @@ export default function Inbox() {
   )
 
   const nothing = (
-    <Empty title={filtered ? 'Nothing waiting matches these filters.' : 'Nothing waiting for review. Drafts from meetings, reports, reminders and the assistant appear here for you to approve.'}>
+    <Empty title={filtered ? 'Nothing to review matches these filters.' : 'Nothing to review. Drafts from meetings, reports, reminders and the assistant appear here for you to approve.'}>
       {filtered ? <Button onClick={clearFilters}>Clear filters</Button> : <LinkButton to="/app/today">Back to Today</LinkButton>}
     </Empty>
   )
 
   const list = (
-    <MotionList as="div" stagger label="Waiting for review" itemClassName="border-b border-line last:border-b-0">
+    <MotionList as="div" stagger label="To review" itemClassName="border-b border-line last:border-b-0">
       {groups.map((g) => (
         <Group key={g.id} group={g} open={!closed.has(g.id)} onToggle={() => toggle(g.id)} selected={selected?.key} onOpen={open} />
       ))}
@@ -282,7 +286,7 @@ export default function Inbox() {
             Back to Inbox
           </Button>
           <span className="nums text-[13px] text-muted">
-            {at + 1} of {keys.length} waiting
+            {at + 1} of {keys.length} to review
           </span>
         </div>
         <OnTheirWay />
@@ -297,7 +301,7 @@ export default function Inbox() {
 
   return (
     <div ref={frame} className={cx('flex min-w-0 flex-col gap-4', two && 'h-[calc(100dvh-57px-3rem)] min-h-[26rem] lg:h-[calc(100dvh-4rem)]')}>
-      <PageHeader title="Inbox" above={student ? `Filtered to ${fullName(student)}` : undefined} sub={count === 0 ? 'Nothing waiting for review.' : `${count} waiting for review`} />
+      <PageHeader title="Inbox" above={student ? `Filtered to ${fullName(student)}` : undefined} sub={count === 0 ? 'Nothing to review.' : `${count} to review`} />
       <OnTheirWay />
 
       {two ? (

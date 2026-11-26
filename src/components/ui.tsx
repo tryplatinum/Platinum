@@ -4,6 +4,7 @@
 // Every click target is at least 44px high. Status is always shown with words,
 // never by colour alone. /app/styleguide renders everything here in each state.
 
+import { ATTENTION_RULE } from '../../shared/attention'
 import { ChevronRight, Inbox, LoaderCircle, Send, X, type LucideIcon } from 'lucide-react'
 import { notify, onNotify, type Notice } from '../lib/notify'
 import { messageStatusLabel } from '../lib/delivery'
@@ -327,7 +328,12 @@ const STATUS_TEXT: Record<StudentStatus, string> = { behind: 'text-bad', slippin
 
 /** How a student is doing. The status itself comes from lib/derive.ts. */
 export function StatusPill({ status }: { status: StudentStatus }) {
-  return <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>
+  // The rule behind the tag, in the words shared/attention.ts builds from its own numbers.
+  return (
+    <span title={ATTENTION_RULE[status]} aria-description={ATTENTION_RULE[status]} className="inline-flex">
+      <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>
+    </span>
+  )
 }
 
 const OWNER_TONE: Record<OwnerType, Tone> = { student: 'neutral', parent: 'warn', counselor: 'accent' }

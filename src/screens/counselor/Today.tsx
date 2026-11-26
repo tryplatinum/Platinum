@@ -70,8 +70,8 @@ export default function Today() {
         <>
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <StatTile to="/app/meetings" value={today} label={today === 1 ? 'Meeting today' : 'Meetings today'} />
-            <StatTile to="/app" value={waiting} label="Waiting for you" />
-            <StatTile to="/app/students" value={slipping.length} label="Slipping" tone={slipping.some((s) => s.status === 'behind') ? 'bad' : slipping.length > 0 ? 'warn' : undefined} />
+            <StatTile to="/app" value={waiting} label="To review" />
+            <StatTile to="/app/students" value={slipping.length} label="Needs attention" tone={slipping.some((s) => s.status === 'behind') ? 'bad' : slipping.length > 0 ? 'warn' : undefined} />
           </div>
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
             <WaitingCard waiting={waiting} inbox={inbox} />
@@ -81,7 +81,7 @@ export default function Today() {
                 <CardHeader
                   size="section"
                   className="px-4 py-2 sm:px-5"
-                  title="Slipping"
+                  title="Needs attention"
                   count={slipping.length}
                   action={
                     <Link to="/app/students" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
@@ -90,7 +90,7 @@ export default function Today() {
                   }
                 />
                 <div className="border-t border-line">
-                  {slipping.length === 0 ? <Empty title="Nobody is behind or slipping." /> : <StudentCards rows={slipping.slice(0, SLIPPING_SHOWN)} brief />}
+                  {slipping.length === 0 ? <Empty title="Nobody needs attention: no student is behind or slipping." /> : <StudentCards rows={slipping.slice(0, SLIPPING_SHOWN)} brief />}
                   {slipping.length > SLIPPING_SHOWN && (
                     <p className="border-t border-line px-4 py-1 text-sm text-muted sm:px-5">
                       {slipping.length - SLIPPING_SHOWN} more.{' '}
@@ -266,7 +266,7 @@ function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<ty
       <CardHeader
         size="section"
         className="px-4 py-2 sm:px-5"
-        title="Waiting for you"
+        title="To review"
         count={waiting}
         action={
           <Link to="/app" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
@@ -277,7 +277,7 @@ function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<ty
       <OnTheirWay className="border-t border-line px-4 py-3 sm:px-5" />
       {waiting === 0 && (
         <div className="border-t border-line">
-          <Empty title="Nothing is waiting for you." />
+          <Empty title="Nothing to review." />
         </div>
       )}
       <MotionList itemClassName="border-t border-line" label="The oldest drafts, one for each student">
@@ -287,7 +287,7 @@ function WaitingCard({ waiting, inbox }: { waiting: number; inbox: ReturnType<ty
       </MotionList>
       {waiting > shown.length && (
         <p className="border-t border-line px-4 py-1 text-sm text-muted sm:px-5">
-          {shown.length > 0 && 'The oldest, one for each student. '}
+          {shown.length > 0 && 'Oldest first, one per student. '}
           {rest.length > 0 && `Also ${rest.join(' and ')}. `}
           <Link to="/app" className="tap-link font-semibold text-accent hover:underline">
             {shown.length > 0 ? `All ${waiting} in the Inbox` : 'See them in the Inbox'}

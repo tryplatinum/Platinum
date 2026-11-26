@@ -153,7 +153,7 @@ function DraftCard({ report, student, count }: { report: ParentReport; student: 
     <Card className="flex flex-col gap-4 border-accent-line p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <SectionLabel className="text-accent">Waiting for your approval · {count}</SectionLabel>
+          <SectionLabel className="text-accent">To review · {count}</SectionLabel>
           <h2 className="mt-0.5 text-lg font-semibold">{report.subject}</h2>
           <p className="text-[13px] text-muted">Drafted from tasks and deadlines</p>
         </div>

@@ -75,7 +75,7 @@ export default function StudentPage() {
               <>
                 {' · '}
                 <Link to={`/app?student=${student.id}`} className="tap-link font-medium text-accent hover:underline">
-                  Waiting for review ({waiting})
+                  To review ({waiting})
                 </Link>
               </>
             )}

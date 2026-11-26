@@ -196,7 +196,7 @@ export function ReminderComposer({ student, task, onDone }: { student: Student; 
             const channel = drafts[0]?.channel ?? (to.kind === 'parent' ? to.parent.channel : (student.preferredChannel ?? 'text'))
             return canDeliver(channel)
               ? `Goes by ${CHANNEL_LABEL[channel]}. Each message is approved and logged on its own. Approved messages wait ${UNDO_SECONDS} seconds, then go out through the allowlist. You can still copy one and send it by hand from Messages.`
-              : `${notConnectedLine(channel)} Each message is approved and logged on its own, and can be undone for ${UNDO_SECONDS} seconds.`
+              : notConnectedLine(channel)
           })()}
         </span>
       </div>

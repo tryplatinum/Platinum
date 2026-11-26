@@ -7,18 +7,17 @@
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { Button, Card, CardHeader, Empty, Pill, TabPanel, Tabs, PageHeader, cx, inputBase, usePageTitle, useTab, useToast, type TabItem } from '../../components/ui'
+import { Button, Card, CardHeader, Empty, LinkButton, Pill, TabPanel, Tabs, PageHeader, cx, inputBase, usePageTitle, useTab, useToast, type TabItem } from '../../components/ui'
 import { previewStudentLink } from '../../../shared/dispatch'
 import { HAND_SENT_NOTE, NOT_CONFIRMED, PHONE_REASON, canSendByHand } from '../../../shared/phoneGateway'
-import { ApprovalCard } from '../../components/ApprovalCard'
 import { OpenInMessages } from '../../components/OpenInMessages'
-import { MotionList, Reveal, useReveal } from '../../components/motion'
+import { Reveal, useReveal } from '../../components/motion'
 import { callPhone, phoneReason } from '../../services/phone'
 import { copyText, textWithStudentLink } from '../../lib/studentLinks'
 import { UNDO_SECONDS } from '../../../shared/outbox'
 import { formatTimestamp } from '../../lib/dates'
 import { canDeliver, messageStatusLabel, notConnectedLine } from '../../lib/delivery'
-import { activeStudents, findStudent, fullName, reminderApprovals, weeklyTextRows } from '../../lib/derive'
+import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
 import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
@@ -167,7 +166,7 @@ function Recipient({ m }: { m: Pick<OutboxMessage, 'toName' | 'toKind' | 'channe
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="text-sm font-semibold">{m.toName}</span>
       <span className="text-[13px] text-muted">
-        {m.toKind === 'parent' ? 'parent of ' : 'student'}
+        {m.toKind === 'parent' ? 'Parent of ' : 'Student'}
         {m.toKind === 'parent' && student && (
           <Link to={`/app/students/${student.id}`} className="tap-link font-medium text-accent hover:underline">
             {student.firstName}
@@ -276,8 +275,8 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
         <Recipient m={m} />
         <span className="flex flex-wrap items-center gap-2">
           <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'neutral'}>{KIND_LABEL[m.kind]}</Pill>
-          <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Automatic rule'}</Pill>
-          {m.note && <Pill>{m.note}</Pill>}
+          <Pill tone={m.trigger === 'approved' ? 'good' : 'accent'}>{m.trigger === 'approved' ? 'You approved' : 'Sent by a reminder rule'}</Pill>
+          {m.note && <Pill>{m.note.replace('Legacy simulated send.', 'Sample message, not sent.')}</Pill>}
           <OutboxStatus message={m} />
           <span className="text-[13px] text-muted">{formatTimestamp(m.sentAt)}</span>
           {m.status === 'failed' && !sentByHand && canDeliver(m.channel) && (
@@ -358,7 +357,6 @@ function LogRow({ message: m, startOpen = false }: { message: OutboxMessage; sta
 // ── Scheduled reminders ───────────────────────────────────────────────────────────────────
 
 function Queue({ queue }: { queue: ReminderDraft[] }) {
-  const data = useData()
   const sendMessage = useStore((s) => s.sendMessage)
   const toast = useToast()
   const waiting = queue.filter((r) => r.mode === 'needs_approval')
@@ -392,29 +390,26 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
 
   return (
     <>
+      {/* Approval lives in the Inbox. Here it is a count and the way there. */}
       <Card>
-        <CardHeader size="section" className="px-5 py-4" title="Waiting for you" count={waiting.length} sub="Rules set to “Ask me first”. Fixed wording, in each person’s language." />
-        {waiting.length === 0 && (
-          <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing is waiting for your approval.</p>
-        )}
-        <MotionList itemClassName="border-t border-line">
-          {reminderApprovals(data, waiting).map((item) => {
-            const m = waiting.find((r) => r.key === item.reminderKey)?.message
-            return (
-              <ApprovalCard key={item.key} item={item} showStudent>
-                {m && (
-                  <div className="flex flex-col gap-2">
-                    <Body body={m.body} bodyEn={m.bodyEn} language={m.language} />
-                    <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-                      <Pill tone={m.kind === 'reminder_late' ? 'bad' : 'warn'}>{KIND_LABEL[m.kind]}</Pill>
-                      {item.sourceLine}
-                    </p>
-                  </div>
-                )}
-              </ApprovalCard>
+        <CardHeader
+          size="section"
+          className="px-5 py-4"
+          title="To review"
+          count={waiting.length}
+          sub={
+            waiting.length === 0
+              ? 'No reminder is waiting for your approval. Rules set to “Ask me first” put theirs in the Inbox.'
+              : `${waiting.length} ${waiting.length === 1 ? 'reminder is' : 'reminders are'} in the Inbox for you to approve, from rules set to “Ask me first”.`
+          }
+          action={
+            waiting.length > 0 && (
+              <LinkButton to="/app?kind=reminder" aria-label="Review reminders in the Inbox">
+                Review in the Inbox
+              </LinkButton>
             )
-          })}
-        </MotionList>
+          }
+        />
       </Card>
       <Card>
         <CardHeader

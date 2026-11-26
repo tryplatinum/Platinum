@@ -10,6 +10,7 @@
 //
 // The student link is checked against the real database in test:isolation.
 
+import { ATTENTION_RULE, BEHIND_DAYS_LATE, BEHIND_LATE_TASKS, MEETING_GAP_DAYS, classifyAttention } from '../shared/attention'
 import { readFileSync } from 'node:fs'
 import { INPUTS } from '../shared/contract.js'
 import { STUDENT_UPLOAD_SECONDS, uploadWindowClosed } from '../shared/files.js'
@@ -151,6 +152,15 @@ check('the student link never selects a meeting’s AI drafts', !/select\('[^']*
   check('a student upload may finish within five minutes of its URL', STUDENT_UPLOAD_SECONDS === 300 && !uploadWindowClosed(started, at(0)) && !uploadWindowClosed(started, at(300)))
   check('…and is refused after, or when its start time cannot be read', uploadWindowClosed(started, at(301)) && uploadWindowClosed('not a time', at(0)))
   check('finishing a student upload checks that window before reading the file', /uploadWindowClosed\(row\.created_at\)/.test(link) && link.indexOf('uploadWindowClosed(row.created_at)') < link.indexOf('confirmUpload(db, row)'))
+}
+
+// ── The words on the Behind and Slipping tags come from the rule's own numbers ──
+{
+  const base = { lateCount: 0, maxDaysLate: 0, daysSinceMeeting: 5, daysSinceOnboarded: 200 }
+  check('behind starts at the number of late tasks the tooltip names', classifyAttention({ ...base, lateCount: BEHIND_LATE_TASKS, maxDaysLate: 1 }) === 'behind' && classifyAttention({ ...base, lateCount: BEHIND_LATE_TASKS - 1, maxDaysLate: 1 }) === 'slipping' && ATTENTION_RULE.behind.includes(`${BEHIND_LATE_TASKS} or more late tasks`))
+  check('…and at the days late it names', classifyAttention({ ...base, lateCount: 1, maxDaysLate: BEHIND_DAYS_LATE }) === 'behind' && classifyAttention({ ...base, lateCount: 1, maxDaysLate: BEHIND_DAYS_LATE - 1 }) === 'slipping' && ATTENTION_RULE.behind.includes(`${BEHIND_DAYS_LATE} or more days late`))
+  check('slipping starts after the meeting gap it names', classifyAttention({ ...base, daysSinceMeeting: MEETING_GAP_DAYS + 1 }) === 'slipping' && classifyAttention({ ...base, daysSinceMeeting: MEETING_GAP_DAYS }) === 'on_track' && ATTENTION_RULE.slipping.includes(`more than ${MEETING_GAP_DAYS} days`))
+  check('every tag has its rule in words', (['behind', 'slipping', 'on_track', 'new'] as const).every((k) => ATTENTION_RULE[k].length > 20))
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed')

@@ -1,5 +1,19 @@
 # Build log
 
+## Up to date with main, then wording and four flow fixes (branch `ui-ux-redesign`, PR 33)
+
+**Merged, not rebased.** `main` (PR 31, the 10-second hold) into `ui-ux-fixes`, then `ui-ux-fixes` into `ui-ux-redesign`. Main's behaviour was kept (`UNDO_SECONDS` in `shared/outbox.ts`, now 10) with each branch's layout and wording. No sentence, toast, dialog, comment or doc gives a number of seconds for the send hold: each reads `UNDO_SECONDS`. The 60 seconds on file download links is a different thing and stays. With 10 seconds, Undo was timed in the preview on a laptop and at 375 by 812 and 375 by 560: it is on screen, on top and 44px high within a tenth of a second of the press, and still cancels when pressed four seconds later.
+
+**The 10-second migration is still not on the database.** `20261205000001_undo_ten_seconds.sql` runs clean in PGlite at the end of the whole chain, and a dry run against the linked project lists only that file. The push itself was refused by the permission check on this machine, so nothing was pushed in this run. A backup was taken first and is outside the repository. Until someone runs `npm run db:push`, the screen says 10 and the database still holds a message for 60: the countdown follows the database.
+
+**Flow.**
+- A reminder is approved in one place, the Inbox. Messages, Scheduled reminders shows "To review", a count, and "Review in the Inbox" (`/app?kind=reminder`). "Automatic" and "Run the daily send now" are as they were.
+- The reminder box for a WeChat or LINE parent says only "WeChat is not connected. Copy it and send it yourself." The sentence about approval, the log and Undo is shown only when Platinum sends the message itself.
+- "Approve 11 of 13" names what it leaves: "2 are for WeChat or LINE and stay here for you to copy.", and the same for weekly texts.
+- The Undo toast on a real run: **not checked.** It needs a signed-in session against the real database, which this run did not have. In the preview it holds for the whole 10 seconds on a laptop and a phone.
+
+**Wording.** "Needs attention" is the title of what was "Slipping" on Today; the Behind and Slipping tags keep their names and carry a tooltip and `aria-description` built in `shared/attention.ts` from the numbers `classifyAttention` uses (`ATTENTION_RULE`; `test:notes` checks the words against the thresholds). Drafts for the counselor are "To review" everywhere (Today, the student header, Students, the Inbox's count, the sidebar badge's label, the meeting review, Scheduled reminders); "Waiting on" still means who owes a task. Kind pills: "Note to self", "Weekly text to parent", "Recap for student", "Parent report"; `?kind=` with the old words still filters (`OLD_KIND` in `Approvals.tsx`). "Sample message, not sent." for "Legacy simulated send." (the seed, and shown that way for rows already stored). "Student" and "Parent of" start with a capital in the Sent log. "Sent by a reminder rule" for "Automatic rule". "Oldest first, one per student."
+
 ## Design pass (branch `ui-ux-redesign`, added to PR 33)
 
 Front end only. No migration, nothing in `supabase/`, `api/`, `server/` or `shared/`, and `src/store/store.ts` is untouched. Every send still goes through `sendMessage`, `queue_message` and the hold before sending (`UNDO_SECONDS`); Undo still calls `cancel_message`.

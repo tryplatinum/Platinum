@@ -33,7 +33,7 @@ export default function Students() {
           <>
             {formatDateLong(todayISO())} · {plural(all.length, 'student')} · {behind} behind · {plural(late, 'late task')} ·{' '}
             <Link to="/app" className="tap-link font-medium text-accent hover:underline">
-              {waiting} waiting
+              {waiting} to review
             </Link>
           </>
         }

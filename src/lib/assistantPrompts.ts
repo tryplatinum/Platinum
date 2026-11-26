@@ -2,13 +2,13 @@
 // are fixed sentences: nothing is asked of a model to make them, and choosing
 // one only puts it in the box.
 
-const GENERAL = ['Who needs attention this week?', "What's waiting for approval?", 'Who is behind?'] as const
+const GENERAL = ['Who needs attention this week?', "What do I have to review?", 'Who is behind?'] as const
 
 const BY_PAGE: [prefix: string, prompts: readonly string[]][] = [
-  ['/app/today', ['Who should I chase first today?', "What's waiting for approval?", 'Who am I meeting this week?', 'Who is behind?']],
+  ['/app/today', ['Who should I chase first today?', "What do I have to review?", 'Who am I meeting this week?', 'Who is behind?']],
   ['/app/students', ['Who is behind?', 'Who needs attention this week?', 'Who has a deadline in the next two weeks?']],
   ['/app/meetings', ['Who am I meeting this week?', 'Which meetings still need notes?', 'Who has no meeting scheduled?']],
-  ['/app/messages', ['Which reminders are due?', 'Who has not heard from me this week?', "What's waiting for approval?"]],
+  ['/app/messages', ['Which reminders are due?', 'Who has not heard from me this week?', "What do I have to review?"]],
   ['/app/documents', ['Which files are waiting to be filed?', 'Who is missing a document a task asks for?', 'Who is behind?']],
 ]
 
