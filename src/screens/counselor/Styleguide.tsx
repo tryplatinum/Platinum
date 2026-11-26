@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { InboxLine } from '../../components/InboxLine'
 import { Logo, Spark } from '../../components/Logo'
 import { Count, MotionList, Reveal, TimeLeft, useLeaving, useReveal } from '../../components/motion'
+import { TEMPLATE_KINDS, TEMPLATE_KIND_LABEL } from '../../../shared/templates'
 import { BY_HAND_CHANNELS } from '../../lib/delivery'
 import { CHANNEL_LABEL } from '../../lib/language'
 import {
@@ -351,6 +352,15 @@ export default function Styleguide() {
           </div>
         </Card>
         <p className="text-[13px] text-muted">The Inbox’s row, also used on Today: what it is and who it goes to, then one line of the message. It only opens the draft. Nothing is approved from the short form.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {TEMPLATE_KINDS.map((k) => (
+            <Pill key={k}>{TEMPLATE_KIND_LABEL[k]}</Pill>
+          ))}
+        </div>
+        <p role="alert" className="text-[13px] font-semibold text-bad">
+          Date of the next meeting is still blank: fill it in or take it out. It cannot be approved until then.
+        </p>
+        <p className="text-[13px] text-muted">Templates: the three kinds, and the line a draft shows when a blank could not be filled. That line takes the approve button away; a caution about language is amber and does not.</p>
         <PhoneFold label="A long card" count={10}>
           <Card className="p-4 text-sm">On a phone this starts closed under its name. Where there is room it is simply shown.</Card>
         </PhoneFold>
