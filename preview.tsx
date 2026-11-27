@@ -62,7 +62,7 @@ const signIns: StudentSignIn[] = seed.students
 const wanted = params.get('signin')
 if (wanted) {
   const first = signIns[0]
-  const email = 'emily.chen@students.example'
+  const email = `${student.firstName.toLowerCase()}.${student.lastName.toLowerCase()}@students.example`
   Object.assign(first, { state: wanted === 'expired' ? 'invited' : wanted === 'young' ? 'none' : wanted, email: wanted === 'none' || wanted === 'young' ? undefined : email, invitationId: wanted === 'invited' || wanted === 'expired' ? 's0' : undefined, expiresAt: wanted === 'invited' ? at(6) : wanted === 'expired' ? at(-1) : undefined, expired: wanted === 'expired', tooYoung: wanted === 'young' })
 }
 

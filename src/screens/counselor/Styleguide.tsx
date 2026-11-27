@@ -56,6 +56,8 @@ import {
 import { todayISO } from '../../lib/dates'
 import { GUARDIAN_CONSENT, STUDENT_AGE } from '../../../shared/account'
 import { PASSWORD_HINT, PasswordInput } from './SignIn'
+import { InvitationLink, SignInPill } from '../../components/account/StudentSignIn'
+import type { StudentSignIn } from '../../../shared/account'
 import type { Review } from '../../types'
 
 const COLORS = [
@@ -81,6 +83,14 @@ const COLORS = [
   ['bad-soft', 'bg-bad-soft', ''],
   ['bad-tint', 'bg-bad-tint', 'late rows, error notes'],
 ] as const
+
+const SIGN_IN_SAMPLES: StudentSignIn[] = [
+  { studentId: 'a', name: 'Kevin Zhang', state: 'none', tooYoung: false },
+  { studentId: 'b', name: 'Kevin Zhang', state: 'invited', tooYoung: false, expired: false },
+  { studentId: 'c', name: 'Kevin Zhang', state: 'invited', tooYoung: false, expired: true },
+  { studentId: 'd', name: 'Kevin Zhang', state: 'on', tooYoung: false },
+  { studentId: 'e', name: 'Kevin Zhang', state: 'off', tooYoung: false },
+]
 
 const TABS: TabItem<'one' | 'two' | 'three'>[] = [
   { key: 'one', label: 'Overview' },
@@ -635,6 +645,21 @@ export default function Styleguide() {
           <CheckRow checked={tick} onChange={setTick}>
             {GUARDIAN_CONSENT.text('Kevin')}
           </CheckRow>
+        </div>
+      </Block>
+
+      <Block title="Sign-ins and invitations">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          A student’s sign-in has four states, each a pill with its own actions. An invitation’s link is shown once, in the tinted box, with Copy as the one filled button and a line saying Platinum does not send it. Destructive actions
+          (Remove, Revoke, Leave firm) are outlined in red and ask first with <code>ConfirmDialog</code>.
+        </p>
+        <Row>
+          {SIGN_IN_SAMPLES.map((s) => (
+            <SignInPill key={s.studentId} signIn={s} />
+          ))}
+        </Row>
+        <div className="max-w-md">
+          <InvitationLink made={{ id: 'sample', email: 'kevin.zhang@students.example', expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(), secret: 'A'.repeat(43) }} />
         </div>
       </Block>
 

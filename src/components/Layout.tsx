@@ -6,7 +6,7 @@
 // Six places in the sidebar, Today first. Activity, Settings and Sign out sit
 // in its footer. The Inbox badge is the only count.
 
-import { ArrowLeft, CalendarDays, ClipboardList, FolderOpen, Inbox, LayoutTemplate, LogOut, Menu, Send, Settings, Sun, Users, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, Building2, CalendarDays, ClipboardList, FolderOpen, Inbox, LayoutTemplate, LogOut, Menu, Send, Settings, Sun, Users, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { activeStudents, findStudent, fullName } from '../lib/derive'
@@ -43,6 +43,8 @@ function NavItem({ to, label, icon: Icon, end = false, badge = 0 }: { to: string
 export function CounselorLayout() {
   const data = useData()
   const email = useStore((s) => (s.account.status === 'ready' ? s.account.email : ''))
+  // The link is shown to owners only. That is tidiness: the server and the database refuse everyone else.
+  const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const panel = useAgentPanel()
@@ -147,6 +149,7 @@ export function CounselorLayout() {
             <div className="flex flex-col gap-1 border-t border-line pt-3">
               <NavItem to="/app/activity" label="Activity" icon={ClipboardList} />
               <NavItem to="/app/templates" label="Templates" icon={LayoutTemplate} />
+              {owner && <NavItem to="/app/firm" label="Firm" icon={Building2} />}
               <NavItem to="/app/settings" label="Settings" icon={Settings} />
               <button type="button" className={cx(NAV_ITEM, 'w-full text-left font-medium hover:bg-chip hover:text-heading')} onClick={() => void signOut()}>
                 <LogOut {...ICON} className="shrink-0" />

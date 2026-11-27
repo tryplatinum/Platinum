@@ -10,10 +10,11 @@
 
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
-import { RequireFirm } from './components/RequireFirm'
+import { RequireFirm, RequireOwner } from './components/RequireFirm'
 import Activity from './screens/counselor/Activity'
 import Inbox from './screens/counselor/Approvals'
 import Documents from './screens/counselor/Documents'
+import Firm from './screens/counselor/Firm'
 import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import PhoneSetup from './screens/PhoneSetup'
@@ -83,6 +84,10 @@ export default function App() {
           <Route path="documents" element={<Documents />} />
           <Route path="templates" element={<Templates />} />
           <Route path="settings" element={<Settings />} />
+          {/* Owners only. A counselor who opens it goes to Today; the server refuses them in any case. */}
+          <Route element={<RequireOwner />}>
+            <Route path="firm" element={<Firm />} />
+          </Route>
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
           <Route path="students/:studentId/meetings/:meetingId/brief" element={<MeetingRedirect />} />

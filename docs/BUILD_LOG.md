@@ -73,6 +73,20 @@ No migration. Front end, plus fixes from the review of Part B in the unpushed `2
 
 **Checked** by hand from `preview.html`, 22 states at 375 and 1440, light and dark (`docs/accounts/c*.png`): no console error and no sideways scroll in any. `preview.tsx` now stands in for Supabase Auth and `/api/account`, with switches listed at its top. **Not run:** real Supabase Auth, a real confirmation or reset email, Safari, a phone.
 
+### Part D: the owner screen
+
+No migration. `src/screens/counselor/Firm.tsx` at `/app/firm`, behind `RequireOwner` (a counselor goes to Today), with a "Firm" link in the sidebar footer above Settings for owners only. Hiding it is tidiness; the server and the database refuse every action.
+
+- **Counts** in the header: counselors (every member), active students, students with a sign-in (on or turned off).
+- **Team**: name, address, role, joined, a "You" mark. Make owner and Remove on a counselor; Step down and Leave firm on yourself; nothing on another owner. Remove first asks the server what removal will do and says only that (`removalWords`). Leave asks for the word LEAVE. The only owner trying to step down or leave gets the server's refusal as an amber note that says what to do.
+- **Invitations**: an email makes a link, shown once with its expiry and "Platinum does not email this". Waiting invitations list with New link and Revoke; an expired one is marked. Asking for a second invitation for an address offers New link in place.
+- **Student sign-ins**: every active student with the state pill, address and expiry, filtered by state, with Invite, New link, Revoke, Turn off, Turn on.
+- **For counselors**: a "Sign-in" button beside "Student link" on the student page opens the same panel for that one student (`src/components/account/StudentSignIn.tsx`): the consent tick, the link to copy, and a QR code (`src/components/account/QrCode.tsx`, drawn in the browser with `qrcode-generator`).
+
+No student-to-counselor assignment was added and nothing is counted per counselor.
+
+**Checked** by hand from `preview.html`: 25 states at 375 and 1440, light and dark (`docs/accounts/d*.png`), no console error and no sideways scroll. **Not run:** a real database.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.
