@@ -54,6 +54,8 @@ import {
   type TabItem,
 } from '../../components/ui'
 import { todayISO } from '../../lib/dates'
+import { GUARDIAN_CONSENT, STUDENT_AGE } from '../../../shared/account'
+import { PASSWORD_HINT, PasswordInput } from './SignIn'
 import type { Review } from '../../types'
 
 const COLORS = [
@@ -228,6 +230,8 @@ function SampleRow({ name, onDecide }: { name: string; onDecide: () => void }) {
 }
 
 export default function Styleguide() {
+  const [password, setPassword] = useState('')
+  const [tick, setTick] = useState(false)
   const toast = useToast()
   usePageTitle('Styleguide')
   const ai = useAi()
@@ -615,6 +619,24 @@ export default function Styleguide() {
       </Block>
 
       <Motion />
+
+      <Block title="Account screens">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          Sign in, Start a firm, the join page and the “no firm yet” screen are one card under the logo (<code>Splash</code>), with one filled button. A password field shows and hides, names the rule before it is broken, and
+          tells a password manager whether it is a current or a new password.
+        </p>
+        <div className="grid max-w-md gap-3">
+          <Field label="Choose a password" hint={PASSWORD_HINT}>
+            <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+          </Field>
+          <CheckRow checked={tick} onChange={setTick}>
+            {STUDENT_AGE.text}
+          </CheckRow>
+          <CheckRow checked={tick} onChange={setTick}>
+            {GUARDIAN_CONSENT.text('Kevin')}
+          </CheckRow>
+        </div>
+      </Block>
 
       {modal && (
         <Modal title="A modal" onClose={() => setModal(false)}>

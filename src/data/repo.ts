@@ -779,6 +779,16 @@ export async function myMembership(userId: ID): Promise<Membership | undefined> 
   return data ? { firmId: data.firm_id, role: data.role as Membership['role'] } : undefined
 }
 
+/**
+ * Whether this sign-in is a student's, and if so whether a counselor has turned
+ * it off. A student can read their own account row and nothing else.
+ */
+export async function myStudentAccount(userId: ID): Promise<{ off: boolean } | undefined> {
+  const { data, error } = await supabase.from('student_accounts').select('disabled_at').eq('user_id', userId).maybeSingle()
+  if (error) fail(error, 'Could not check your account')
+  return data ? { off: Boolean(data.disabled_at) } : undefined
+}
+
 /** Creates a firm with the signed-in person as its owner. */
 export async function createFirm(name: string, displayName: string): Promise<ID> {
   const { data, error } = await supabase.rpc('create_firm', { name, display_name: displayName })

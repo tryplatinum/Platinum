@@ -488,13 +488,15 @@ const LINK_TOKEN = 'L'.repeat(43)
   const MAYA = '00000000-0000-4000-8000-0000000000b1'
   const MAYA_USER = '00000000-0000-4000-8000-0000000000b2'
   const byMember = await call({ action: 'delete_my_signin' }, 'counselor-token')
-  check('a counselor has no student sign-in to delete, and nothing is deleted', byMember.status === 403 && db.people.has(COUNSELOR) && db.table('firm_members').some((m) => m.user_id === COUNSELOR))
+  check('a member of a firm cannot delete their sign-in this way, and nothing is deleted', byMember.status === 403 && db.people.has(COUNSELOR) && db.table('firm_members').some((m) => m.user_id === COUNSELOR))
   const nobody = await call({ action: 'delete_my_signin' })
   check('nor does someone who is not signed in', nobody.status === 401)
   const mine = await call({ action: 'delete_my_signin', userId: EMILY_USER, studentId: STUDENT }, 'maya-token')
   check('a student deletes their own sign-in: the auth user and the account row go', mine.status === 200 && !db.people.has(MAYA_USER) && !db.table('student_accounts').some((a) => a.user_id === MAYA_USER), mine.text)
   check('whose sign-in is deleted comes from the verified sign-in, not the body', db.people.has(EMILY_USER) && db.table('student_accounts').some((a) => a.user_id === EMILY_USER))
   check('the firm’s record of the student stays', db.table('students').some((s) => s.id === MAYA) && db.table('activity').some((a) => a.student_id === MAYA && a.text === 'Maya deleted their sign-in.'))
+  const leftover = await call({ action: 'delete_my_signin' }, 'newcomer-token')
+  check('someone who belongs to nothing can delete the sign-in that is left over', leftover.status === 200 && !db.people.has(NEWCOMER))
   const after = await studentGet(new Request('http://localhost/api/student', { headers: { 'x-forwarded-for': '10.9.5.1', authorization: 'Bearer maya-token' } }))
   check('their old token opens nothing afterwards', after.status === 401)
 }

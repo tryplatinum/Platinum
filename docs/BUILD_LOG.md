@@ -54,6 +54,25 @@ One branch, one pull request, a commit or more per part. **No migration in this 
 
 **Checked.** `test:accounts` is now 95 checks and `test:accounts:db` 119. New: the same page byte for byte by link and by sign-in; a turned-off or archived sign-in refused on the next request; 16 requests across the 9 counselor routes with a student's token, all 401 or 403; a student session against all 37 tables; deleting a sign-in. **Not run:** a real database, real Supabase Auth.
 
+### Part C: sign-in, sign-up and join screens
+
+No migration. Front end, plus fixes from the review of Part B in the unpushed `20261209000001` and the server.
+
+- **One place decides where a signed-in person belongs:** `homeOf(account)` in `src/store/session.ts`. Member: `/app/today`. Student: `/me`. Neither: `/start`. `RequireFirm`, `/signin`, `/signup`, `/setup`, `/start`, `/join`, `/me` and `/reset-password` all apply it. A page asked for before sign-in is honoured for members only, and only when it is an `/app` or `/student` address.
+- **`Account` gained `student`** (with `off` when a counselor turned the sign-in off). `enter()` reads the membership, then the student's own `student_accounts` row, then falls to `needs_firm`. A signed-in student's page is held like a link's (`mode: 'student_link'`, no `linkToken`); `src/services/studentLink.ts` sends the link token when there is one and the session's token when there is not.
+- **`/signin`** is for everyone. The sign-up toggle is gone; "Start a firm" goes to `/signup`.
+- **`/signup`**: name, email, password, firm name. With a session straight away the firm is made and the person lands on Today as owner. When Supabase wants the address confirmed first, the firm's name and the person's name are kept in `sessionStorage` (`pending-firm`) and `/setup` is filled in with them at the first sign-in.
+- **`/join#<secret>`** (`src/screens/Join.tsx`): the secret is read from the fragment, kept in memory for the tab, and removed from the address at once with a replacing navigation. Preview, then "Create a password" or "I have a sign-in", then accept. States: loading, dead link (one message for all four causes, and for no link at all), could not be checked (Try again), confirm your email first (open the invitation link again afterwards), another address (Sign out), a sign-in already in use, and done.
+- **`/start`**: "Start a firm", "I was invited", Sign out, and Delete this sign-in (behind `ConfirmDialog`).
+- **`/me`** exists with the student home on it and the turned-off screen. Its header and Account page are Part E.
+- `signUp` now sends the confirmation link back to `/signin` (it was `/app`).
+
+**From the review of Part B.** `invite_student` re-checks membership after the firm lock; the guardian tick can be left out only by "New link"; the grade is checked again at accept; a consent row's wording version must start `guardian-` or `age-`; the service role has only select and insert on consent rows, and a delete is allowed only once the firm row is gone; a student cannot read who turned their sign-in off; one student's sign-in is answered even when archived, so it can still be turned off; the address shown for a sign-in is read from the sign-in itself; a person who belongs to nothing can delete their leftover sign-in (a student whose record the firm deleted).
+
+**Choices the brief did not settle.** The join page asks the person to type the invited address (the preview shows it masked). A counselor gives their name on the join page, because `firm_members` needs one. `/start` is a new address; `/setup` still works and links to it.
+
+**Checked** by hand from `preview.html`, 22 states at 375 and 1440, light and dark (`docs/accounts/c*.png`): no console error and no sideways scroll in any. `preview.tsx` now stands in for Supabase Auth and `/api/account`, with switches listed at its top. **Not run:** real Supabase Auth, a real confirmation or reset email, Safari, a phone.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

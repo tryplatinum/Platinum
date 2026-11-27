@@ -307,24 +307,24 @@ const emilySecret = secret()
   check('the class that graduates when the school year ends is 12th grade', gradeFor(2027, '2026-11-27') === 12 && gradeFor(2027, '2027-06-30') === 12 && gradeFor(2027, '2027-07-01') === 13 && gradeFor(2030, '2026-11-27') === 9 && gradeFor(2031, '2026-11-27') === 8)
   check('below 9th grade may not have a sign-in; 9th grade may', !maySignIn(2031, '2026-11-27') && maySignIn(2030, '2026-11-27') && maySignIn(2031, '2027-07-01'))
 
-  const young = await refused(kai, `select public.invite_student($1, 'theo@students.example', $2, 'guardian-test')`, [youngStudent, hash(secret())])
+  const young = await refused(kai, `select public.invite_student($1, 'theo@students.example', $2, 'guardian-test-1')`, [youngStudent, hash(secret())])
   check('a student below 9th grade cannot be invited', young?.code === 'PI006' && /student link/.test(young.message), young?.message)
   const noTick = await refused(kai, `select public.invite_student($1, 'emily.chen@students.example', $2)`, [student, hash(secret())])
   check('a first student invitation needs the parent or guardian tick', noTick?.code === 'PI008', noTick?.message)
-  const foreign = await refused(otherOwner, `select public.invite_student($1, 'emily.chen@students.example', $2, 'guardian-test')`, [student, hash(secret())])
+  const foreign = await refused(otherOwner, `select public.invite_student($1, 'emily.chen@students.example', $2, 'guardian-test-1')`, [student, hash(secret())])
   check('a member of another firm cannot invite this firm’s student', foreign?.code === '42501', foreign?.message)
 
   const firstTry = secret()
-  const made = await refused(kai, `select public.invite_student($1, ' Emily.Chen@students.example', $2, 'guardian-test')`, [student, hash(firstTry)])
+  const made = await refused(kai, `select public.invite_student($1, ' Emily.Chen@students.example', $2, 'guardian-test-1')`, [student, hash(firstTry)])
   check('any member, not only an owner, invites a student', made === undefined, made?.message)
   const tick = await service(`select kind, wording_version, by_user, at from public.student_account_consents where firm_id = $1 and student_id = $2`, [firm, student])
   const row = tick.rows[0] as { kind: string; wording_version: string; by_user: string; at: string } | undefined
-  check('the tick is recorded: who, when, and which wording', tick.rows.length === 1 && row?.kind === 'guardian_knows' && row.wording_version === 'guardian-test' && row.by_user === kai && Boolean(row.at))
-  const sameStudent = await refused(owner, `select public.invite_student($1, 'another@students.example', $2, 'guardian-test')`, [student, hash(secret())])
+  check('the tick is recorded: who, when, and which wording', tick.rows.length === 1 && row?.kind === 'guardian_knows' && row.wording_version === 'guardian-test-1' && row.by_user === kai && Boolean(row.at))
+  const sameStudent = await refused(owner, `select public.invite_student($1, 'another@students.example', $2, 'guardian-test-1')`, [student, hash(secret())])
   check('a student with an invitation waiting is not invited again', sameStudent?.code === 'PI005', sameStudent?.message)
   const spare = randomUUID()
   await service(`insert into public.students (id, firm_id, first_name, last_name, grad_year) values ($1, $2, 'Maya', 'Ruiz', 2028)`, [spare, firm])
-  const sameAddress = await refused(owner, `select public.invite_student($1, 'emily.chen@students.example', $2, 'guardian-test')`, [spare, hash(secret())])
+  const sameAddress = await refused(owner, `select public.invite_student($1, 'emily.chen@students.example', $2, 'guardian-test-1')`, [spare, hash(secret())])
   check('nor is an address that has one waiting', sameAddress?.code === 'PI005', sameAddress?.message)
 
   const waiting = await service(`select id from public.invitations where token_hash = $1`, [hash(firstTry)])
@@ -334,9 +334,9 @@ const emilySecret = secret()
   check('and records no second tick', ticks.rows.length === 1)
 }
 
-const acceptStudent = (secretValue: string, who: string, age: string | null = 'age-test') => serviceRefused(`select public.accept_student_invitation($1, $2, $3)`, [hash(secretValue), who, age])
+const acceptStudent = (secretValue: string, who: string, age: string | null = 'age-test-1') => serviceRefused(`select public.accept_student_invitation($1, $2, $3)`, [hash(secretValue), who, age])
 {
-  const direct = await refused(emily, `select public.accept_student_invitation($1, $2, 'age-test')`, [hash(emilySecret), emily])
+  const direct = await refused(emily, `select public.accept_student_invitation($1, $2, 'age-test-1')`, [hash(emilySecret), emily])
   check('a signed-in person cannot call the student accept function themselves', direct?.code === '42501', direct?.message)
   const noAge = await acceptStudent(emilySecret, emily, null)
   check('a student invitation is not accepted without the “13 or older” tick', noAge?.code === 'PI008', noAge?.message)
@@ -350,10 +350,10 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   const member = await service(`select 1 from public.firm_members where user_id = $1`, [emily])
   check('a student is never a firm_members row', member.rows.length === 0)
   const age = await service(`select wording_version, by_user from public.student_account_consents where firm_id = $1 and student_id = $2 and kind = 'student_age'`, [firm, student])
-  check('the student’s own tick is recorded with its wording', age.rows.length === 1 && (age.rows[0] as { wording_version: string; by_user: string }).wording_version === 'age-test' && (age.rows[0] as { by_user: string }).by_user === emily)
+  check('the student’s own tick is recorded with its wording', age.rows.length === 1 && (age.rows[0] as { wording_version: string; by_user: string }).wording_version === 'age-test-1' && (age.rows[0] as { by_user: string }).by_user === emily)
   const again = await acceptStudent(emilySecret, emily)
   check('a student invitation is used once', again?.code === 'PI001', again?.message)
-  const second = await refused(kai, `select public.invite_student($1, 'emily.second@students.example', $2, 'guardian-test')`, [student, hash(secret())])
+  const second = await refused(kai, `select public.invite_student($1, 'emily.second@students.example', $2, 'guardian-test-1')`, [student, hash(secret())])
   check('a student who has a sign-in is not invited again', second?.code === 'PI007', second?.message)
 }
 
@@ -369,7 +369,7 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   check('a student cannot accept a counselor’s invitation', join?.code === 'PI004', join?.message)
   await rpc(owner, `select public.revoke_invitation(id) from public.invitations where email = 'emily.chen@students.example' and kind = 'counselor' and revoked_at is null`)
   const forMember = secret()
-  await rpc(owner, `select public.invite_student(id, 'kai@northgate.example', $2, 'guardian-test') from public.students where firm_id = $1 and first_name = 'Maya'`, [firm, hash(forMember)])
+  await rpc(owner, `select public.invite_student(id, 'kai@northgate.example', $2, 'guardian-test-1') from public.students where firm_id = $1 and first_name = 'Maya'`, [firm, hash(forMember)])
   const byMember = await acceptStudent(forMember, kai)
   check('a member of a firm cannot accept a student invitation, even one sent to their own address', byMember?.code === 'PI004', byMember?.message)
   await rpc(owner, `select public.revoke_invitation(id) from public.invitations where email = 'kai@northgate.example' and kind = 'student' and revoked_at is null`)
@@ -385,8 +385,8 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   const maya = await person('maya.ruiz@students.example')
   const mayaStudent = (await service(`select id from public.students where firm_id = $1 and first_name = 'Maya'`, [firm])).rows[0] as { id: string }
   const s = secret()
-  await rpc(kai, `select public.invite_student($1, 'maya.ruiz@students.example', $2, 'guardian-test')`, [mayaStudent.id, hash(s)])
-  await service(`select public.accept_student_invitation($1, $2, 'age-test')`, [hash(s), maya])
+  await rpc(kai, `select public.invite_student($1, 'maya.ruiz@students.example', $2, 'guardian-test-1')`, [mayaStudent.id, hash(s)])
+  await service(`select public.accept_student_invitation($1, $2, 'age-test-1')`, [hash(s), maya])
   await service(`insert into public.parents (firm_id, student_id, name, relationship, language, channel) values ($1, $2, 'Chen Chih-hao', 'Father', 'zh-Hant', 'email')`, [firm, student])
   await service(`insert into public.tasks (firm_id, student_id, title, category, owner, due_date, status, source) values ($1, $2, 'Revise the personal statement', 'essay', 'student', current_date, 'todo', 'counselor')`, [firm, student])
   await service(`insert into public.meetings (firm_id, student_id, title, date, time, status) values ($1, $2, 'Check-in', current_date, '16:00', 'scheduled')`, [firm, student])
@@ -404,12 +404,13 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   for (const t of tables) before.set(t, (await one<{ n: number }>(db, `select count(*)::int as n from public."${t}"`)).n)
   for (const t of tables) {
     const read = await refusal(async () => {
-      const rows = await rpc(emily, `select * from public."${t}"`)
+      // A student may read their own account row, but not who turned it off.
+      const rows = await rpc(emily, t === 'student_accounts' ? `select user_id, firm_id, student_id, disabled_at from public.student_accounts` : `select * from public."${t}"`)
       if (t === 'student_accounts') {
         if (rows.rows.length !== 1 || (rows.rows[0] as { user_id: string }).user_id !== emily) seen.push(`${t}: ${rows.rows.length} rows`)
       } else if (!OPEN.includes(t) && rows.rows.length > 0) seen.push(`${t}: ${rows.rows.length} rows`)
     })
-    if (read && read.code !== '42501') seen.push(`${t}: ${read.message}`)
+    if (read && (read.code !== '42501' || t === 'student_accounts')) seen.push(`${t}: ${read.message}`)
     const column = (await one<{ c: string }>(db, `select column_name as c from information_schema.columns where table_schema = 'public' and table_name = $1 order by ordinal_position limit 1`, [t])).c
     for (const [what, sql] of [
       ['insert', `insert into public."${t}" default values`],
@@ -426,6 +427,8 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   for (const t of tables) if ((await one<{ n: number }>(db, `select count(*)::int as n from public."${t}"`)).n !== before.get(t)) wrote.push(`${t} changed`)
   check(`a student session selects zero rows from every one of ${tables.length} tables but its own account row and the college directory`, seen.length === 0, seen.join('; '))
   check('and cannot insert, update or delete anywhere', wrote.length === 0, wrote.join('; '))
+  const whoTurnedItOff = await refused(emily, `select disabled_by from public.student_accounts`)
+  check('a student cannot read which member turned a sign-in off', whoTurnedItOff?.code === '42501', whoTurnedItOff?.message)
   const directory = await refusal(() => rpc(emily, `select 1 from public.college_directory limit 1`))
   check('the shared college directory stays readable', directory === undefined, directory?.message)
   const files = await rpc(emily, `select 1 from storage.objects`)
@@ -434,7 +437,7 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   for (const [name, sql, params] of [
     ['queue a message', `select public.queue_message($1::jsonb)`, [JSON.stringify({ studentId: student, toKind: 'student', toName: 'Emily', channel: 'email', language: 'en', kind: 'reminder_upcoming', body: 'Hi' })]],
     ['save an edit', `select public.apply_changes($1, '{}'::jsonb)`, [firm]],
-    ['invite a student', `select public.invite_student($1, 'x@students.example', $2, 'guardian-test')`, [youngStudent, hash(secret())]],
+    ['invite a student', `select public.invite_student($1, 'x@students.example', $2, 'guardian-test-1')`, [youngStudent, hash(secret())]],
     ['invite a counselor', `select public.invite_counselor('x@northgate.example', $1)`, [hash(secret())]],
     ['turn a sign-in off', `select public.set_student_account_disabled($1, true)`, [mayaStudent.id]],
     ['turn their own sign-in back on', `select public.set_student_account_disabled($1, false)`, [student]],

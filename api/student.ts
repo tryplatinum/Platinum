@@ -61,7 +61,7 @@ async function open(request: Request): Promise<Link | Response> {
   if (!serviceConfigured()) return fail('Student links are not set up on this server.', 503)
   if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return tooMany()
   // A link token, when one is sent, is the whole credential, exactly as before. A sign-in is only looked at without one.
-  if (request.headers.get(STUDENT_TOKEN_HEADER) === null && request.headers.get('authorization')) return openAccount(request)
+  if (request.headers.get(STUDENT_TOKEN_HEADER) === null && /^Bearer\s+\S/i.test(request.headers.get('authorization') ?? '')) return openAccount(request)
   const token = STUDENT_TOKEN.safeParse(request.headers.get(STUDENT_TOKEN_HEADER))
   if (!token.success) return notFound()
   if (rateLimited(`token:${hashToken(token.data)}`, MAX_PER_TOKEN)) return fail('Too many requests. Wait a few minutes and try again.', 429)

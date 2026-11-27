@@ -1,4 +1,7 @@
 // Every route in the app.
+//   /signin, /signup, /setup, /start, /reset-password   signing in, for all three kinds of account
+//   /join#<secret>    where an invitation link lands
+//   /me               a student's own page, with a student sign-in
 //   /app/…            counselor screens, behind sign-in and a firm (RequireFirm)
 //   /app/styleguide   every shared component in each state; not in the navigation
 //   /student/:id      the counselor's preview of a student's page, also behind sign-in
@@ -16,7 +19,9 @@ import Messages from './screens/counselor/Messages'
 import PhoneSetup from './screens/PhoneSetup'
 import Settings from './screens/counselor/Settings'
 import Templates from './screens/counselor/Templates'
-import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
+import SignIn, { FirmSetup, ResetPassword, SignUp, Start } from './screens/counselor/SignIn'
+import Join from './screens/Join'
+import { StudentAccountLayout } from './screens/student/Me'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
 import Today from './screens/counselor/Today'
@@ -48,12 +53,20 @@ export default function App() {
   return (
     <Routes>
       <Route path="/signin" element={<SignIn />} />
+      <Route path="/signup" element={<SignUp />} />
       <Route path="/setup" element={<FirmSetup />} />
+      <Route path="/start" element={<Start />} />
+      <Route path="/join" element={<Join />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route path="/phone-setup" element={<PhoneSetup />} />
 
       <Route path="/s/:token" element={<StudentLinkLayout />}>
+        <Route index element={<StudentHome />} />
+      </Route>
+
+      {/* A student's sign-in: the same screens as the link, fed by their session. */}
+      <Route path="/me" element={<StudentAccountLayout />}>
         <Route index element={<StudentHome />} />
       </Route>
 

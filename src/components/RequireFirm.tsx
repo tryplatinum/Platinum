@@ -1,10 +1,15 @@
 // The gate in front of every counselor screen: a session, a firm, and that
-// firm's data loaded. Sends people to sign-in or firm setup and remembers the
-// page they asked for.
+// firm's data loaded. Sends people to sign-in and remembers the page they
+// asked for. A student goes to their own page, and someone signed in with no
+// firm goes to the screen that asks what they came for. Where each kind of
+// account belongs is homeOf in store/session.ts; this only applies it.
+//
+// This is navigation, not protection: the database refuses a student, or a
+// stranger, every counselor table whatever the screen does.
 
 import { useEffect, type ReactNode } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { leaveStudentLink, retrySession, signOut } from '../store/session'
+import { homeOf, leaveStudentLink, retrySession, signOut } from '../store/session'
 import { useStore } from '../store/store'
 import { Logo } from './Logo'
 import { Button, Skeleton } from './ui'
@@ -64,6 +69,12 @@ function WorkspaceLoading() {
   )
 }
 
+/** The gate in front of the owner's screens. A counselor who opens one goes to Today. The server and the database refuse them regardless. */
+export function RequireOwner() {
+  const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
+  return owner ? <Outlet /> : <Navigate to="/app/today" replace />
+}
+
 export function RequireFirm() {
   const account = useStore((s) => s.account)
   const load = useStore((s) => s.load)
@@ -88,7 +99,8 @@ export function RequireFirm() {
 
   if (account.status === 'loading') return loading
   if (account.status === 'signed_out') return <Navigate to="/signin" replace state={{ from }} />
-  if (account.status === 'needs_firm') return <Navigate to="/setup" replace state={{ from }} />
+  // A student's home is their own page; someone with no firm is asked what they came for.
+  if (account.status === 'student' || account.status === 'needs_firm') return <Navigate to={homeOf(account)!} replace />
   if (account.status === 'error') return <Problem message={account.message} onRetry={() => void retrySession()} />
   if (load === 'error') return <Problem message={loadError ?? 'Unknown error.'} onRetry={() => void reload()} />
   // Signed in, and the rows are on their way: the shape of the page, so nothing jumps when they arrive.

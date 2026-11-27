@@ -8,12 +8,13 @@
 //
 // Only the store (store/files.ts) and the student's page use this file.
 
-import { STUDENT_ENDPOINT, STUDENT_TOKEN_HEADER } from '../../shared/constants'
+import { STUDENT_ENDPOINT } from '../../shared/constants'
 import { DOCUMENTS_BUCKET, DOCUMENTS_ENDPOINT, FILE_TYPES_LABEL, MAX_FILE_BYTES, RESUMABLE_ABOVE_BYTES, declaredMime } from '../../shared/files'
 import type { StudentUploadTicket } from '../../shared/student'
 import type { Database } from '../lib/database.types'
 import { todayISO } from '../lib/dates'
 import { accessToken } from '../store/session'
+import { studentHeaders } from './studentLink'
 
 export type DocumentRow = Database['public']['Tables']['documents']['Row']
 
@@ -162,10 +163,11 @@ export async function uploadToStorage(path: string, file: Blob, mime: string, on
 
 type StudentReply = { ok: true; upload?: StudentUploadTicket; added?: { name: string } } | { ok: false; message: string }
 
-async function studentCall(token: string, body: Record<string, unknown>): Promise<Extract<StudentReply, { ok: true }>> {
+async function studentCall(token: string | undefined, body: Record<string, unknown>): Promise<Extract<StudentReply, { ok: true }>> {
   let res: Response
   try {
-    res = await fetch(STUDENT_ENDPOINT, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', [STUDENT_TOKEN_HEADER]: token }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
+    // The link's token, or the signed-in student's session when there is no link.
+    res = await fetch(STUDENT_ENDPOINT, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', ...(await studentHeaders(token)) }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
   } catch {
     throw new FileFailure('There is no connection right now. Try again in a moment.')
   }
@@ -176,11 +178,11 @@ async function studentCall(token: string, body: Record<string, unknown>): Promis
 }
 
 /**
- * Adds one file from a student link: ask the server for a one-time upload
+ * Adds one file from a student link, or from a student's sign-in when there is no link token: ask the server for a one-time upload
  * token, send the file straight to storage with it, then tell the server it is
  * there. Returns the file's name. The link gets nothing else back.
  */
-export async function studentLinkUpload(linkToken: string, original: File, onProgress: Progress): Promise<string> {
+export async function studentLinkUpload(linkToken: string | undefined, original: File, onProgress: Progress): Promise<string> {
   // The photo is stored exactly as taken. The server makes its own reduced copy for sorting.
   const file = original
   const mime = checkFile(file)

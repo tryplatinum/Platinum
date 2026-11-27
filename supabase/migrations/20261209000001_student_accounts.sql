@@ -50,7 +50,8 @@ create policy student_accounts_select on public.student_accounts for select to a
   using (user_id = (select auth.uid()) or public.is_firm_member(firm_id));
 
 revoke all on table public.student_accounts from public, anon, authenticated;
-grant select on table public.student_accounts to authenticated;
+-- Every column but who turned it off: the student reads their own row.
+grant select (user_id, firm_id, student_id, invitation_id, created_at, disabled_at) on table public.student_accounts to authenticated;
 grant all on table public.student_accounts to service_role;
 
 -- ── One kind of account per sign-in ─────────────────────────────────────────
@@ -125,7 +126,7 @@ create table public.student_account_consents (
   -- account and agrees to it." student_age: the student ticked "I am 13 or older".
   kind text not null check (kind in ('guardian_knows', 'student_age')),
   -- Which wording was on the screen. The sentences live in shared/account.ts.
-  wording_version text not null check (char_length(wording_version) between 1 and 40),
+  wording_version text not null check (char_length(wording_version) between 1 and 40 and wording_version ~ '^(guardian|age)-'),
   -- The member, or the student, who ticked it.
   by_user uuid not null,
   at timestamptz not null default now()
@@ -139,17 +140,19 @@ create policy student_account_consents_select on public.student_account_consents
 
 revoke all on table public.student_account_consents from public, anon, authenticated;
 grant select on table public.student_account_consents to authenticated;
-grant all on table public.student_account_consents to service_role;
+-- Not "all": the service role has no update, delete or truncate here either.
+grant select, insert on table public.student_account_consents to service_role;
 
--- Insert only, for every role. A row goes only when its firm is deleted whole,
--- which arrives here as a cascade (one trigger deeper than a direct delete).
+-- Insert only, for every role. A row goes only when its firm is deleted whole:
+-- the cascade arrives here after the firm row is gone.
 create function public.consents_are_insert_only()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
-  if tg_op = 'DELETE' and pg_trigger_depth() > 1 then
+  if tg_op = 'DELETE' and not exists (select 1 from public.firms f where f.id = old.firm_id) then
     return old;
   end if;
   raise exception 'A consent record is never changed or removed.' using errcode = '42501';
@@ -209,6 +212,10 @@ begin
     raise exception 'You are not a member of a firm.' using errcode = '42501';
   end if;
   perform 1 from public.firms f where f.id = firm for update;
+  -- Still a member, now that any removal in progress has finished.
+  if not exists (select 1 from public.firm_members m where m.user_id = caller and m.firm_id = firm) then
+    raise exception 'You are not a member of a firm.' using errcode = '42501';
+  end if;
 
   select * into who from public.students s where s.id = student and s.firm_id = firm;
   if who.id is null then
@@ -243,11 +250,12 @@ begin
     raise exception 'An invitation is already waiting for that address or that student. Make a new link for it instead.' using errcode = 'PI005';
   end if;
 
+  -- The tick may be left out only by "New link", and only when it is already on record.
   if nullif(btrim(coalesce(consent_version, '')), '') is null
-     and not exists (
+     and (replace is null or not exists (
        select 1 from public.student_account_consents c
        where c.firm_id = firm and c.student_id = student and c.kind = 'guardian_knows'
-     ) then
+     )) then
     raise exception 'Tick that a parent or guardian of % knows about this account and agrees to it.', who.first_name using errcode = 'PI008';
   end if;
 
@@ -290,7 +298,8 @@ begin
   end if;
   select * into who from public.students s where s.firm_id = inv.firm_id and s.id = inv.student_id;
   -- A student who was archived, or given a sign-in another way, since the invitation was made.
-  if who.id is null or who.archived
+  -- Or whose graduation year was corrected to below 9th grade.
+  if who.id is null or who.archived or public.student_grade(who.grad_year) < 9
      or exists (select 1 from public.student_accounts a where a.firm_id = inv.firm_id and a.student_id = inv.student_id) then
     raise exception 'This invitation does not work.' using errcode = 'PI001';
   end if;

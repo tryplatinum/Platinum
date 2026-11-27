@@ -291,24 +291,26 @@ export async function inviteStudent(caller: Member, input: { studentId: string; 
  * Everything is read as the caller, so it is their own firm's and nothing else.
  */
 export async function studentSignIns(caller: Member, studentId?: string, waiting?: PendingInvitation[]): Promise<StudentSignIn[]> {
-  const students = caller.client.from('students').select('id, first_name, last_name, grad_year').eq('firm_id', caller.firmId).eq('archived', false).order('seq')
-  const accounts = caller.client.from('student_accounts').select('student_id, invitation_id, disabled_at').eq('firm_id', caller.firmId)
-  const [studentRows, accountRows, invitations] = await Promise.all([studentId ? students.eq('id', studentId) : students, studentId ? accounts.eq('student_id', studentId) : accounts, waiting ?? pendingInvitations(caller)])
+  const students = caller.client.from('students').select('id, first_name, last_name, grad_year').eq('firm_id', caller.firmId).order('seq')
+  const accounts = caller.client.from('student_accounts').select('user_id, student_id, invitation_id, disabled_at').eq('firm_id', caller.firmId)
+  // The list is of active students. One student asked for by id is answered archived or not, so a sign-in can still be turned off.
+  const [studentRows, accountRows, invitations] = await Promise.all([studentId ? students.eq('id', studentId) : students.eq('archived', false), studentId ? accounts.eq('student_id', studentId) : accounts, waiting ?? pendingInvitations(caller)])
   if (studentRows.error || accountRows.error) throw new Error(`reading sign-ins failed: ${(studentRows.error ?? accountRows.error)!.message}`)
 
-  // The address a sign-in was made with is the address of the invitation it came from.
-  const made = accountRows.data.flatMap((a) => (a.invitation_id ? [a.invitation_id] : []))
+  // The address a sign-in uses now, from the sign-in itself: one of this firm's student accounts at a time.
   const addresses = new Map<string, string>()
-  if (made.length) {
-    const from = await caller.client.from('invitations').select('id, email').eq('firm_id', caller.firmId).in('id', made)
-    if (from.error) throw new Error(`reading sign-in addresses failed: ${from.error.message}`)
-    for (const i of from.data) addresses.set(i.id, i.email)
-  }
+  const admin = serviceClient().auth.admin
+  await Promise.all(
+    accountRows.data.map(async (a) => {
+      const user = await admin.getUserById(a.user_id)
+      if (user.data.user?.email) addresses.set(a.user_id, user.data.user.email)
+    }),
+  )
   const day = today()
   return studentRows.data.map((s): StudentSignIn => {
     const base = { studentId: s.id, name: `${s.first_name} ${s.last_name}`.trim(), tooYoung: !maySignIn(s.grad_year, day) }
     const account = accountRows.data.find((a) => a.student_id === s.id)
-    if (account) return { ...base, state: account.disabled_at ? 'off' : 'on', email: account.invitation_id ? addresses.get(account.invitation_id) : undefined }
+    if (account) return { ...base, state: account.disabled_at ? 'off' : 'on', email: addresses.get(account.user_id) }
     const invitation = invitations.find((i) => i.kind === 'student' && i.studentId === s.id)
     if (invitation) return { ...base, state: 'invited', email: invitation.email, invitationId: invitation.id, expiresAt: invitation.expiresAt, expired: invitation.expired }
     return { ...base, state: 'none' }
@@ -332,13 +334,22 @@ export async function setStudentSignIn(caller: Member, studentId: string, on: bo
 /**
  * A student deletes their own sign-in: the account row and the auth user. The
  * firm's record of the student (tasks, meetings, files) is not touched, and
- * the student link still works. Refused for anyone who is not a student.
+ * the student link still works. Refused for a member of a firm.
  */
 export async function deleteMySignIn(person: Known): Promise<void> {
   const db = serviceClient()
   const account = await db.from('student_accounts').select('firm_id, student_id').eq('user_id', person.userId).maybeSingle()
   if (account.error) throw new Error(`reading the sign-in failed: ${account.error.message}`)
-  if (!account.data) throw new AccountError('forbidden', 'This is not a student sign-in.', 403)
+  if (!account.data) {
+    // Not a student's. A member of a firm leaves the firm instead. Someone who belongs to nothing
+    // (a student whose record the firm deleted, say) may delete the sign-in that is left over.
+    const member = await db.from('firm_members').select('user_id').eq('user_id', person.userId).maybeSingle()
+    if (member.error) throw new Error(`reading the membership failed: ${member.error.message}`)
+    if (member.data) throw new AccountError('forbidden', 'This sign-in belongs to a firm. Leave the firm first.', 403)
+    const leftover = await db.auth.admin.deleteUser(person.userId)
+    if (leftover.error) throw new Error(`deleting the sign-in failed: ${leftover.error.message}`)
+    return
+  }
   const student = await db.from('students').select('first_name').eq('firm_id', account.data.firm_id).eq('id', account.data.student_id).maybeSingle()
   // The auth user first: if that fails, nothing has changed. Deleting it takes the account row with it.
   const gone = await db.auth.admin.deleteUser(person.userId)
