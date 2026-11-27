@@ -16,7 +16,7 @@ startTheme()
 
 function mayBeSignedIn(): boolean {
   try {
-    for (let i = 0; i < localStorage.length; i++) if (/^sb-.+-auth-token/.test(localStorage.key(i) ?? '')) return true
+    for (let i = 0; i < localStorage.length; i++) if (/^sb-.+-auth-token(\.\d+)?$/.test(localStorage.key(i) ?? '')) return true
   } catch {
     // Storage is blocked: nobody can be signed in.
   }

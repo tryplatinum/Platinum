@@ -36,7 +36,10 @@ Tab from the top of the page, at 1440 and 375:
 - Enter or Space on Approve starts the countdown and moves focus to Undo; Undo moves it back to Approve. Focus is never left on nothing.
 - Left and Right move between the eight workspace areas, as tabs do.
 - Focusing a draft line draws its line to the notes; focusing a highlighted fact shows where it came from. Neither needs a pointer.
-- Whatever takes focus is scrolled clear of the header and of the notes held at the top of a phone. One exception measured: the "What you use today" box, three lines tall, can be partly below the screen's edge when it takes focus; it is visible and can be typed in.
+- Whatever takes focus is scrolled clear of the header and of the notes held at the top of a phone. One exception measured, at 375: the "What you use today" box, three lines tall, can be partly below the screen's edge when it takes focus; it is visible and can be typed in.
+- A header link, a chapter dot or the phone's chapter menu moves focus to the chapter it jumps to, so the next Tab carries on from there. "Request early access" lands on the form itself.
+- A control that takes focus before its scene has reached it is shown at once, with the card around it.
+- Pressing the college in the College lists panel moves it to the next band and keeps focus on it.
 
 ## Measurements
 
@@ -44,21 +47,22 @@ The production build, phone profile: 390 wide, 4x CPU slowdown, 1.6 Mbps down wi
 
 | | Light | Dark |
 | --- | --- | --- |
-| First contentful paint | 1.37 s | 0.83 s (second load, cached) |
-| Largest contentful paint | 1.74 s | 1.84 s |
-| Blocking time on load (long tasks over 50 ms) | 157 ms | 0 ms |
+| First contentful paint | 1.34 s | 0.83 s (second load, cached) |
+| Largest contentful paint | 1.72 s | 1.80 s |
+| Blocking time on load (long tasks over 50 ms) | 125 ms | 130 ms |
 | Layout shift on load | 0 | 0 |
 | Layout shift after scrolling the whole page | 0 | 0 |
-| Frames while scrolling the whole page | median 16.7 ms, 95th 50 ms, 22 of 294 over 34 ms | the same |
-| Requests | 11, 183 kB | cached |
+| Frames while scrolling the whole page | median 16.7 ms, 95th 16.8 ms, 0 of 294 over 34 ms | the same |
+| Requests | 11, 184 kB | cached |
 | Requests to another origin | 0 | 0 |
 | Requests for workspace code | 0 | 0 |
 
-The frame times are with the CPU slowed four times on a laptop; the median is a full 60 frames a second and about one frame in thirteen is slow, at the moments a scene's step changes. A real mid-range phone was not used.
+The frame times are with the CPU slowed four times on a laptop: every frame of the scroll was within a 60-frames-a-second budget. A real mid-range phone was not used, so this is an estimate of one, not a measurement on one.
 
 Accessibility, checked by script on every visible text and control in both themes:
 
 - No visible text below 4.5:1 (3:1 for large text). Cards that have not reached their step yet are dimmed on purpose and were not counted; they are at full strength once reached, and always with reduced motion.
+- A tap on a draft line or a fact holds its highlight until the next tap anywhere else, including in Safari, where a tapped button does not take focus.
 - 52 controls, none without a name; no form field without a label; every target at least 44px tall except the skip link, which appears only on focus.
 - One `h1`, headings in order, `lang="en"` with `lang` set on Chinese text, no image without `alt`.
 - `noindex` is kept. The title, description and share image are set in `index.html`.

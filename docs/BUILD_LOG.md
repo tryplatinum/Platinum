@@ -148,6 +148,22 @@ Not changed: `/reset-password` still shows its form to anyone already signed in 
 
 **Checked** in headless Chrome from the preview and the build: 50 states at each of 1440, 768 and 375 in light and dark, scroll sequences, a reduced-motion pass and a keyboard pass (`docs/landing/README.md`). **Not run:** Safari, Firefox, a real phone, a screen reader.
 
+### Part G: fixes from the review
+
+A read-only review of the landing page found nothing wrong with its isolation from the workspace, its scrolling, its form or its requests. What it found, now fixed:
+
+- A card that mounts after the page (the hero's Inbox card, when a wide window is made narrow) now arrives: each `Reveal` watches itself.
+- With reduced motion on a phone the notes no longer disappear during Families.
+- `/` for a signed-in person whose account lookup failed goes to the workspace's "could not load" screen, not the landing page.
+- The line from a draft to the notes is redrawn at most once a frame and only when it has moved. `--page` is written on the thread alone, `--p` is gone, and a scene far from the screen is not measured.
+- A tap elsewhere lets go of a highlighted line or fact (Safari does not focus a tapped button).
+- Jumps move focus to the chapter; "Request early access" lands on the form; a jump on a short screen now counts the chapter as current.
+- A control that takes focus before its scene reaches it is shown. The college keeps focus when it changes band. Approve and Undo keep focus without taking it from a visitor who has moved on.
+- The gate's and the log's dots say "Done" or "Not yet" to a screen reader. The header marks the current chapter.
+- A scene that grows after load is checked again before it is pinned.
+
+Left as it is: the form's last line, "We will reply by email. No newsletter.", is settled copy and sits under a notice that nothing is sent; a failed chunk load shows a blank page, as for the app; the back button after signing in can show the landing page from the browser's cache until it is reloaded; turning reduced motion on in the middle of a visit takes effect at the next load.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

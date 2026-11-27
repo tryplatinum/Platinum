@@ -25,7 +25,6 @@
   --lp-paper-line: #d9e1ec;
   --lp-mark: #fbe7a8;
   --lp-header: 56px;
-  --page: 0;
   position: relative;
   min-height: 100%;
   background: var(--color-canvas);
@@ -232,6 +231,7 @@
 
 /* ── The thread: reading progress, with the spark travelling it ──────────── */
 .lp-thread {
+  --page: 0;
   position: fixed;
   z-index: 30;
   top: var(--lp-header);
@@ -350,10 +350,15 @@
   min-width: 0;
 }
 .lp-ch {
-  --p: 0;
   position: relative;
+  /* Its tone sits behind its own content, and above the page. */
+  isolation: isolate;
   padding: 56px 0;
+  /* A jump lands a chapter clear of the header and of the notes held at the top of a phone. */
   scroll-margin-top: calc(var(--lp-header) + 150px);
+}
+.lp-form {
+  scroll-margin-top: calc(var(--lp-header) + 166px);
 }
 .lp-ch + .lp-ch {
   border-top: 1px solid var(--color-line);
@@ -458,6 +463,10 @@
   }
   .lp-ch {
     padding: 96px 0;
+    scroll-margin-top: calc(var(--lp-header) + 8px);
+  }
+  .lp-form {
+    scroll-margin-top: calc(var(--lp-header) + 24px);
   }
   /* A scene holds still while its steps play, only when the screen is tall enough to show all of it. */
   .lp-ch--pin[data-pin='true'] {
@@ -1540,6 +1549,17 @@
   opacity: 0.6;
 }
 
+/* A control that takes focus before its scene has reached it is shown, with everything around it. */
+.lp-step:focus-within,
+.lp-rule:focus-within,
+.lp-step:focus-within .lp-draft-line,
+.lp-ws:focus-within .lp-ws-tab,
+.lp-ws:focus-within .lp-ws-panel,
+.lp-ws:focus-within .lp-ws-flying .lp-chip {
+  opacity: 1;
+  transform: none;
+}
+
 /* Reduced motion: every scene at its end state, nothing travelling, nothing staggered. */
 @media (prefers-reduced-motion: reduce) {
   .lp *,
@@ -1561,11 +1581,14 @@
   .lp-notes-wrap {
     transform: none !important;
   }
-  .lp[data-ch='families'] .lp-notes {
-    visibility: hidden;
-  }
-  .lp[data-ch='families'] .lp-record {
-    transform: none;
+  /* The notes turn over only where there is a record on the back: on a laptop. */
+  @media (min-width: 1024px) {
+    .lp[data-ch='families'] .lp-notes {
+      visibility: hidden;
+    }
+    .lp[data-ch='families'] .lp-record {
+      transform: none;
+    }
   }
   .lp-thread-spark {
     display: none;

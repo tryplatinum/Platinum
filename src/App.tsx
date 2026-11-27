@@ -63,6 +63,8 @@ function Front() {
   const home = homeOf(account)
   if (home) return <Navigate to={home} replace />
   if (account.status === 'loading') return <Splash>{null}</Splash>
+  // Signed in, but the account could not be looked up: the workspace's own screen says so and offers to try again.
+  if (account.status === 'error') return <Navigate to="/app/today" replace />
   return (
     <Suspense fallback={<Splash>{null}</Splash>}>
       <Landing />

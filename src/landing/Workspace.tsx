@@ -8,7 +8,7 @@
 // chapter's data-step): the four drafts arrive first, then the areas, then the
 // open panel. Everything is drawn here; no screenshot is used.
 
-import { useId, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { AREAS, DRAFTS, DRAFT_HOME, type AreaId } from './story'
 
 const BANDS = ['Reach', 'Target', 'Likely'] as const
@@ -28,6 +28,13 @@ function Live({ area }: { area: AreaId }) {
   const [band, setBand] = useState(0)
   const [flag, setFlag] = useState(false)
   const toggle = (key: string) => setDone((d) => ({ ...d, [key]: !d[key] }))
+  // The college is drawn again in its new band. Focus goes with it.
+  const college = useRef<HTMLButtonElement>(null)
+  const moved = useRef(false)
+  useEffect(() => {
+    if (moved.current) college.current?.focus({ preventScroll: true })
+    moved.current = false
+  }, [band])
 
   switch (area) {
     case 'today':
@@ -83,7 +90,15 @@ function Live({ area }: { area: AreaId }) {
               <div key={name} className="lp-band">
                 <b>{name}</b>
                 {band === i && (
-                  <button type="button" className="lp-btn lp-btn--small" onClick={() => setBand((band + 1) % BANDS.length)} aria-label={`NYU Tandon is under ${name}. Move it to ${BANDS[(band + 1) % BANDS.length]}.`}>
+                  <button
+                    ref={college}
+                    type="button"
+                    className="lp-btn lp-btn--small"
+                    onClick={() => {
+                      moved.current = true
+                      setBand((band + 1) % BANDS.length)
+                    }}
+                    aria-label={`NYU Tandon is under ${name}. Move it to ${BANDS[(band + 1) % BANDS.length]}.`}>
                     NYU Tandon
                   </button>
                 )}
@@ -125,7 +140,7 @@ function Live({ area }: { area: AreaId }) {
     case 'student':
       return (
         <div className="lp-ws-live">
-          <div className="lp-phone" aria-label="Emily’s page, on her phone">
+          <div className="lp-phone" role="group" aria-label="Emily’s page, on her phone">
             <div className="lp-phone-title">Hi Emily</div>
             <Check done={Boolean(done.phone)} onToggle={() => toggle('phone')}>
               Upload the November transcript
@@ -208,15 +223,14 @@ export function Workspace() {
         </p>
         <Live key={open} area={open} />
       </div>
-      {/* All eight, as plain text, for anyone who does not use the tabs. */}
-      <div className="lp-sr">
-        {AREAS.map((a) => (
-          <div key={a.id}>
-            {a.name}
-            {a.text}
-          </div>
+      {/* The seven that are not open, as plain text, for anyone who does not use the tabs. */}
+      <ul className="lp-sr">
+        {AREAS.filter((a) => a.id !== open).map((a) => (
+          <li key={a.id}>
+            {a.name}: {a.text}
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   )
 }

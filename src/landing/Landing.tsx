@@ -48,16 +48,26 @@ function useMedia(query: string): boolean {
   return matches
 }
 
-/** Scrolls to a chapter. Native scrolling, smooth unless the visitor asked for less motion. */
+/**
+ * Scrolls to a chapter and moves focus there, so the next Tab carries on from
+ * it. Native scrolling, smooth unless the visitor asked for less motion.
+ * "Request early access" goes to the form itself, not the top of its chapter.
+ */
 function goTo(id: string): void {
-  document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' })
+  const target = document.getElementById(id === 'early' ? 'early-form' : id)
+  if (!target) return
+  target.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' })
+  const land = id === 'early' ? target : (document.getElementById(`${id}-title`) ?? target)
+  land.tabIndex = -1
+  land.focus({ preventScroll: true })
 }
 
-function Anchor({ to, className, children }: { to: ChapterId; className?: string; children: ReactNode }) {
+function Anchor({ to, className, current, children }: { to: ChapterId; className?: string; current?: boolean; children: ReactNode }) {
   return (
     <a
       href={`#${to}`}
       className={className}
+      aria-current={current ? 'true' : undefined}
       onClick={(e) => {
         e.preventDefault()
         goTo(to)
@@ -88,7 +98,7 @@ const NO_STEPS = Object.fromEntries(CHAPTERS.map((c) => [c.id, 0])) as Record<Ch
 
 /**
  * Reads the scroll position, at most once a frame, and writes it down:
- * `--page` on the root for the thread, `--p` and `data-step` on each chapter.
+ * `--page` on the thread, and `data-step` on each chapter near the screen.
  * Scenes are CSS reading those, so they play backwards when scrolled back and
  * are right wherever the page is opened. With reduced motion every scene is
  * held at its end, and only which chapter is on screen is followed.
@@ -104,65 +114,75 @@ function useStory(root: RefObject<HTMLDivElement | null>): Pick<Story, 'chapter'
     const still = reducedMotion()
     let frame = 0
 
+    const thread = el.querySelector<HTMLElement>('.lp-thread')
     const measure = () => {
+      if (frame) cancelAnimationFrame(frame)
       frame = 0
       const vh = window.innerHeight
       const room = document.documentElement.scrollHeight - vh
-      el.style.setProperty('--page', (room > 0 ? clamp(window.scrollY / room) : 0).toFixed(4))
+      // Written where it is used, so the rest of the page is not restyled every frame.
+      thread?.style.setProperty('--page', (room > 0 ? clamp(window.scrollY / room) : 0).toFixed(4))
       let current = sections[0].dataset.chapter as ChapterId
       const next = { ...NO_STEPS }
+      // A chapter is the current one once its top is in the upper part of the screen: where a jump lands it, or higher.
+      const line = Math.max(vh * 0.45, 260)
       for (const section of sections) {
         const id = section.dataset.chapter as ChapterId
         const steps = Number(section.dataset.steps ?? 0)
         const rect = section.getBoundingClientRect()
+        if (rect.top <= line) current = id
+        // Nothing is worked out for a scene that is nowhere near the screen: it keeps the step it left with.
+        // (With reduced motion every scene is set to its end, wherever it is.)
+        if (!still && (rect.bottom < -vh || rect.top > vh * 2)) {
+          next[id] = Number(section.dataset.step ?? 0)
+          continue
+        }
         // 0 when the scene's top comes into the lower part of the screen, 1 when its end does.
         const p = still ? 1 : clamp((vh * 0.7 - rect.top) / Math.max(1, rect.height - vh * 0.3))
         const at = still ? steps : Math.min(steps, Math.floor(p * (steps + 1)))
-        section.style.setProperty('--p', p.toFixed(3))
         if (section.dataset.step !== String(at)) section.dataset.step = String(at)
         next[id] = at
-        if (rect.top <= vh * 0.45) current = id
       }
       setChapter((was) => (was === current ? was : current))
       setStep((was) => (CHAPTERS.every((c) => was[c.id] === next[c.id]) ? was : next))
     }
-    function ask() {
+    const ask = () => {
       if (!frame) frame = requestAnimationFrame(measure)
     }
-
     // A scene holds still while its steps play only when all of it fits on the screen; otherwise it simply scrolls.
     const fit = () => {
       const room = window.innerHeight - 56 - 56
       for (const section of sections) {
         if (!section.classList.contains('lp-ch--pin')) continue
         const body = section.querySelector<HTMLElement>('.lp-ch-body')
-        section.dataset.pin = String(!still && window.innerWidth >= 1024 && Boolean(body) && body!.offsetHeight <= room)
+        const pin = String(!still && window.innerWidth >= 1024 && Boolean(body) && body!.offsetHeight <= room)
+        if (section.dataset.pin !== pin) section.dataset.pin = pin
       }
+    }
+    const refit = () => {
+      fit()
       ask()
     }
     fit()
     measure()
-    // Type and cards arrive once, when they first come into view.
-    const arriving = [...el.querySelectorAll<HTMLElement>('.lp-rv')]
-    const seen = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          ;(entry.target as HTMLElement).dataset.in = 'true'
-          seen.unobserve(entry.target)
-        }
-      },
-      { rootMargin: '0px 0px -8% 0px' },
-    )
-    for (const item of arriving) seen.observe(item)
+    // A scene that grows (a margin note, a brief, a form error) is looked at again.
+    const grown = new ResizeObserver(refit)
+    for (const section of sections) {
+      const body = section.querySelector('.lp-ch-body')
+      if (body) grown.observe(body)
+    }
+    // The app's own scroll padding is for its sticky bars; here each chapter sets its own margin.
+    const padding = document.documentElement.style.scrollPaddingTop
+    document.documentElement.style.scrollPaddingTop = '0px'
 
     // With reduced motion the scenes are already at their end; the page still has to know which chapter is on screen.
     window.addEventListener('scroll', ask, { passive: true })
-    window.addEventListener('resize', fit)
+    window.addEventListener('resize', refit)
     return () => {
-      seen.disconnect()
+      grown.disconnect()
+      document.documentElement.style.scrollPaddingTop = padding
       window.removeEventListener('scroll', ask)
-      window.removeEventListener('resize', fit)
+      window.removeEventListener('resize', refit)
       if (frame) cancelAnimationFrame(frame)
     }
   }, [root])
@@ -193,16 +213,19 @@ function useHold(): Hold {
     }, 200)
     return () => clearInterval(timer)
   }, [state])
-  return {
-    state,
-    left,
-    approve: () => {
-      setLeft(UNDO_SECONDS)
-      setState('holding')
-    },
-    undo: () => setState('draft'),
-    reset: () => setState('draft'),
-  }
+  return useMemo(
+    () => ({
+      state,
+      left,
+      approve: () => {
+        setLeft(UNDO_SECONDS)
+        setState('holding')
+      },
+      undo: () => setState('draft'),
+      reset: () => setState('draft'),
+    }),
+    [state, left],
+  )
 }
 
 /** The row under a draft: Approve, then the countdown with Undo, then Sent. `what` names it for a screen reader. */
@@ -212,8 +235,11 @@ function HoldRow({ hold, what, approveLabel = 'Approve' }: { hold: Hold; what: s
   const acted = useRef(false)
   useEffect(() => {
     if (!acted.current) return
-    const lost = !document.activeElement || document.activeElement === document.body || row.current?.contains(document.activeElement)
-    if (lost) row.current?.querySelector('button')?.focus({ preventScroll: true })
+    // Right after a press the pressed button is gone and focus is on nothing. Ten seconds later, when it sends by
+    // itself, focus is moved only if it is still here: the visitor may be reading somewhere else by then.
+    const active = document.activeElement
+    const here = Boolean(active && row.current?.contains(active))
+    if (here || (hold.state !== 'sent' && (!active || active === document.body))) row.current?.querySelector('button')?.focus({ preventScroll: true })
     if (hold.state !== 'holding') acted.current = false
   }, [hold.state])
   return (
@@ -242,7 +268,7 @@ function HoldRow({ hold, what, approveLabel = 'Approve' }: { hold: Hold; what: s
       )}
       {/* Said once per change, not once a second. */}
       <p className="lp-sr" role="status">
-        {hold.state === 'holding' ? `Approved. The ${what} sends in ${UNDO_SECONDS} seconds. Undo is available until then.` : hold.state === 'sent' ? `The ${what} was sent. This is a demonstration: nothing left this page.` : ''}
+        {hold.state === 'holding' ? `Approved. The ${what} sends in ${UNDO_SECONDS} seconds. Undo is available until then.` : hold.state === 'sent' ? `The ${what} was sent. This is a demonstration: nothing left this page.` : `The ${what} is a draft, waiting for approval.`}
       </p>
     </div>
   )
@@ -356,14 +382,17 @@ function Stage({ wide, demo }: { wide: boolean; demo: Hold }) {
               <p className="lp-h">What the gate checks</p>
               <ul>
                 <li>
-                  <span className="lp-dot" data-ok={gate.state !== 'draft'} />A person approved it
+                  <span className="lp-dot" data-ok={gate.state !== 'draft'} />
+                  <span className="lp-sr">{gate.state !== 'draft' ? 'Done: ' : 'Not yet: '}</span>A person approved it
                 </li>
                 <li>
                   <span className="lp-dot" data-ok="true" />
+                  <span className="lp-sr">Done: </span>
                   Every fact matches the record
                 </li>
                 <li>
                   <span className="lp-dot" data-ok="true" />
+                  <span className="lp-sr">Done: </span>
                   No essay text was written
                 </li>
               </ul>
@@ -377,6 +406,7 @@ function Stage({ wide, demo }: { wide: boolean; demo: Hold }) {
                 </li>
                 <li>
                   <span className="lp-dot" data-ok={gate.state === 'sent'} />
+                  <span className="lp-sr">{gate.state === 'sent' ? 'Done: ' : 'Not yet: '}</span>
                   {gate.state === 'sent' ? 'Sent a parent update to Chen Chih-hao' : 'Parent update is waiting for approval. Nothing was sent.'}
                 </li>
               </ul>
@@ -432,26 +462,32 @@ function Trace({ from, hot }: { from: Element | null; hot?: string }) {
       setShape(undefined)
       return
     }
+    let frame = 0
     const draw = () => {
+      frame = 0
       const target = [...document.querySelectorAll<HTMLElement>(`[data-phrase="${hot}"]`)].find((el) => el.getClientRects().length > 0)
-      if (!target) return setShape(undefined)
+      if (!target || !from.isConnected) return setShape(undefined)
       const a = from.getBoundingClientRect()
       const b = target.getBoundingClientRect()
       // From the side of the draft line nearest the notes, to the start of the phrase.
       const sideways = b.left > a.right
-      const x1 = sideways ? a.right : a.left + a.width / 2
-      const y1 = sideways ? a.top + a.height / 2 : a.top
-      const x2 = sideways ? b.left - 4 : b.left + b.width / 2
-      const y2 = sideways ? b.top + b.height / 2 : b.bottom + 2
+      const x1 = Math.round(sideways ? a.right : a.left + a.width / 2)
+      const y1 = Math.round(sideways ? a.top + a.height / 2 : a.top)
+      const x2 = Math.round(sideways ? b.left - 4 : b.left + b.width / 2)
+      const y2 = Math.round(sideways ? b.top + b.height / 2 : b.bottom + 2)
       const d = sideways ? `M${x1} ${y1} C${x1 + 60} ${y1} ${x2 - 60} ${y2} ${x2} ${y2}` : `M${x1} ${y1} C${x1} ${y1 - 50} ${x2} ${y2 + 50} ${x2} ${y2}`
-      setShape({ d, x: x2, y: y2 })
+      setShape((was) => (was?.d === d ? was : { d, x: x2, y: y2 }))
+    }
+    const ask = () => {
+      if (!frame) frame = requestAnimationFrame(draw)
     }
     draw()
-    window.addEventListener('scroll', draw, { passive: true })
-    window.addEventListener('resize', draw)
+    window.addEventListener('scroll', ask, { passive: true })
+    window.addEventListener('resize', ask)
     return () => {
-      window.removeEventListener('scroll', draw)
-      window.removeEventListener('resize', draw)
+      window.removeEventListener('scroll', ask)
+      window.removeEventListener('resize', ask)
+      if (frame) cancelAnimationFrame(frame)
     }
   }, [from, hot])
   return (
@@ -472,7 +508,8 @@ function usePointing(id: string) {
   return {
     'data-hot': hot === id,
     onPointerEnter: (e: React.PointerEvent) => e.pointerType === 'mouse' && setHot(id, e.currentTarget),
-    onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && setHot(undefined),
+    // Leaving with the mouse lets go, unless the keyboard is on something being pointed at.
+    onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && !document.activeElement?.matches('.lp-draft-line, .lp-fact') && setHot(undefined),
     onFocus: (e: React.FocusEvent) => setHot(id, e.currentTarget),
     onBlur: () => setHot(undefined),
     onClick: (e: React.MouseEvent) => setHot(id, e.currentTarget),
@@ -490,11 +527,28 @@ function Chapter({ id, steps = 0, pin, alt, hero, children }: { id: ChapterId; s
   )
 }
 
-const Reveal = ({ d = 0, children, className }: { d?: number; children: ReactNode; className?: string }) => (
-  <div className={`lp-rv${className ? ` ${className}` : ''}`} style={{ '--d': d } as React.CSSProperties}>
-    {children}
-  </div>
-)
+/** Type and cards arrive once, when they first come into view. Each watches itself, so one that mounts later still arrives. */
+function Reveal({ d = 0, children, className }: { d?: number; children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [seen, setSeen] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || seen) return
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setSeen(true)
+      },
+      { rootMargin: '0px 0px -8% 0px' },
+    )
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [seen])
+  return (
+    <div ref={ref} className={`lp-rv${className ? ` ${className}` : ''}`} data-in={seen} style={{ '--d': d } as React.CSSProperties}>
+      {children}
+    </div>
+  )
+}
 
 function Hero({ wide, demo }: { wide: boolean; demo: Hold }) {
   return (
@@ -552,7 +606,7 @@ function DraftLines() {
 function DraftLine({ line, order }: { line: { text: string; from: PhraseId }; order: number }) {
   const pointing = usePointing(line.from)
   return (
-    <button type="button" className="lp-draft-line" style={{ '--i': order } as React.CSSProperties} aria-pressed={pointing['data-hot']} {...pointing}>
+    <button type="button" className="lp-draft-line" style={{ '--i': order } as React.CSSProperties} {...pointing}>
       {line.text}
       <span className="lp-sr">. Shows where in the notes this came from.</span>
     </button>
@@ -888,7 +942,7 @@ function EarlyAccess() {
         {gate.state === 'sent' ? 'Emily’s update has been sent and logged. The story ends here.' : 'Emily’s update is still waiting at the gate, because nobody approved it. That is the point.'}
       </p>
       <Reveal d={3}>
-        <form className="lp-card lp-form" ref={box} onSubmit={submit} noValidate aria-labelledby="early-title">
+        <form id="early-form" className="lp-card lp-form" ref={box} onSubmit={submit} noValidate aria-labelledby="early-title">
           <Spark size={26} className="lp-form-spark" />
           <p className="lp-notice">Requests are not open yet. This form does not send or save anything today.</p>
           {field('name', 'Your name', 'text', 'name')}
@@ -936,6 +990,16 @@ export default function Landing() {
     setFrom(id ? (origin ?? null) : null)
   }, [])
   const story = useMemo<Story>(() => ({ chapter, step, hot, setHot, gate }), [chapter, step, hot, setHot, gate])
+
+  // A tap elsewhere lets go of whatever is being pointed at. (A tapped button does not take focus in Safari, so blur alone is not enough.)
+  useEffect(() => {
+    if (!hot) return
+    const away = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.lp-draft-line, .lp-fact')) setHot(undefined)
+    }
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [hot, setHot])
   const reached = CHAPTERS.findIndex((c) => c.id === chapter)
 
   useEffect(() => {
@@ -965,7 +1029,7 @@ export default function Landing() {
           </select>
           <nav className="lp-nav" aria-label="On this page">
             {CHAPTERS.slice(1, 5).map((c) => (
-              <Anchor key={c.id} to={c.id}>
+              <Anchor key={c.id} to={c.id} current={c.id === chapter}>
                 {c.label}
               </Anchor>
             ))}
