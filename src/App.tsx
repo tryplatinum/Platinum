@@ -1,4 +1,5 @@
 // Every route in the app.
+//   /                 the landing page for a signed-out visitor; a signed-in one goes to their home
 //   /signin, /signup, /setup, /start, /reset-password   signing in, for all three kinds of account
 //   /join#<secret>    where an invitation link lands
 //   /me               a student's own page, with a student sign-in
@@ -8,9 +9,12 @@
 //   /s#<secret>       the student's own page, opened from their secret link, no login (/s/<secret> still opens)
 //   /phone-setup      opened on the counselor's own phone from the QR code in Settings, no login
 
+import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { CounselorLayout, StudentLayout } from './components/Layout'
-import { RequireFirm, RequireOwner } from './components/RequireFirm'
+import { RequireFirm, RequireOwner, Splash } from './components/RequireFirm'
+import { homeOf } from './store/session'
+import { useStore } from './store/store'
 import Activity from './screens/counselor/Activity'
 import Inbox from './screens/counselor/Approvals'
 import Documents from './screens/counselor/Documents'
@@ -50,9 +54,26 @@ function StudentHomeRedirect() {
   return <Navigate to={`/student/${studentId}`} replace />
 }
 
+// The landing page is its own chunk. Here it is only for a visitor the entry took for signed in and who is not.
+const Landing = lazy(() => import('./landing/Landing'))
+
+/** "/": a signed-in visitor goes to their home; anyone else sees the landing page. */
+function Front() {
+  const account = useStore((s) => s.account)
+  const home = homeOf(account)
+  if (home) return <Navigate to={home} replace />
+  if (account.status === 'loading') return <Splash>{null}</Splash>
+  return (
+    <Suspense fallback={<Splash>{null}</Splash>}>
+      <Landing />
+    </Suspense>
+  )
+}
+
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Front />} />
       <Route path="/signin" element={<SignIn />} />
       <Route path="/signup" element={<SignUp />} />
       <Route path="/setup" element={<FirmSetup />} />

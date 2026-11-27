@@ -125,6 +125,29 @@ A read-only review of the four commits found no secret reaching a server, a log 
 
 Not changed: `/reset-password` still shows its form to anyone already signed in (as before this branch).
 
+### Part G: landing page
+
+`/` shows the landing page to a signed-out visitor and sends a signed-in one to their home. No migration, no server change, no new dependency.
+
+- **Its own chunk.** `src/main.tsx` is now a few lines: it starts the theme, and loads either `src/landing/entry.tsx` or the app (`src/appMain.tsx`, which is the old `main.tsx`). It decides by looking for Supabase's session key in `localStorage`, without loading Supabase. If that session turns out to be over, the app's `/` route shows the same page, lazily. The built landing chunk has no store, Supabase client or router in it.
+- **Files:** `src/landing/Landing.tsx` (the scroll reader, the notes, the chapters), `Workspace.tsx` (the eight areas), `story.ts` (the invented meeting and the settled copy), `landing.css` (all of the motion). `src/services/earlyAccess.ts` is the form's one way out.
+- **How it moves.** `useStory` reads the scroll position at most once a frame and writes `--page` on the root and `--p` and `data-step` on each chapter. Everything else is CSS reading those, so scenes play backwards when scrolled back and are right wherever the page is opened. Scrolling is the browser's own. Only transform and opacity are animated. A scene pins (sticky) only when all of it fits on the screen.
+- **The early access form sends nothing and stores nothing.** `requestEarlyAccess` answers "not open"; the form says so before and after submitting and never shows success. This is the one thing left to wire up.
+- `index.html` has a real title, description and share image (`public/brand/share.png`, made from the brand); `noindex` is kept.
+- `test:outbox` checks that the page counts down the same 10 seconds the database holds.
+
+**Where it differs from the brief.**
+- *No serif or handwriting font was downloaded.* Adding the font package would be a new dependency, which was not allowed in this run. The accent is the reader's own serif (Iowan, Palatino, Georgia) and the notes use the system's handwriting face, so both vary by device.
+- *The four drafts "fly" a short way*, into a row at the top of the student's page with a label saying where each lives; they do not travel across the screen from the chapter above.
+- *The update turns from English to Chinese letter by letter at one point in the scroll* (and back when scrolled back), not continuously with the scroll. The facts are highlighted in the sentence in each language and repeated in a row beneath that does not move.
+- *The notes page "changes at each chapter"* as: tilting with the pointer in the hero; phrases lighting up; shrinking with a "filed" tag; turning over to show the record; a tag for the gate; a tag for sent or still waiting.
+- *On a phone* the notes are a strip held at the top, the Inbox card is part of the hero, and the chapter index is the browser's own menu in the header.
+- *Lighthouse was not run* (not installed, and nothing was added). `docs/landing/README.md` has an equivalent phone-profile check with its numbers.
+
+**Sentences in the copy that the overview does not mark Working**, kept as written: "Approved emails send from your own Gmail address" and "Parent update, from your Gmail" (Gmail sending is off by default); "bring them in from Google Drive" (off by default); "Updates are drafted in English, Traditional Chinese or Simplified Chinese" (working, but the Chinese has not been reviewed by a native speaker); "One click to send a reminder" (one click drafts it; it still waits for approval); "Schedule, log and search every meeting" (no dedicated meeting search was found); "We will reply by email" (the form sends nothing yet).
+
+**Checked** in headless Chrome from the preview and the build: 50 states at each of 1440, 768 and 375 in light and dark, scroll sequences, a reduced-motion pass and a keyboard pass (`docs/landing/README.md`). **Not run:** Safari, Firefox, a real phone, a screen reader.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

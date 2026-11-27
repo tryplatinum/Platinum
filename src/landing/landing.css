@@ -1,0 +1,1579 @@
+/* The landing page. Everything here is prefixed lp- and uses the brand tokens
+   from src/index.css (navy, silver, porcelain; Manrope and Inter). Nothing is
+   recoloured for the dark theme by hand: the tokens change.
+
+   Motion rules, kept throughout:
+     - Scrolling is the browser's own. Nothing listens to the wheel.
+     - One script writes scroll progress into custom properties (--page on the
+       root, --p and data-step on each chapter). Every scene is CSS reading them,
+       so it plays backwards when scrolled back and is right wherever the
+       visitor lands.
+     - Only transform and opacity are animated.
+     - With reduced motion on, every scene shows its end state (the script sets
+       every chapter to its last step once and stops), and nothing moves.
+
+   The serif accent is the reader's own (Iowan, Palatino, Georgia): no font is
+   downloaded for it. The notes use the system's handwriting face. */
+
+.lp {
+  --lp-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Songti TC', 'Songti SC', serif;
+  --lp-hand: 'Noteworthy', 'Bradley Hand', 'Segoe Print', 'Kalam', 'Comic Sans MS', cursive;
+  --lp-ease: var(--ease-brand, cubic-bezier(0.22, 1, 0.36, 1));
+  --lp-silver: var(--color-silver, #adb7c7);
+  --lp-paper: #fffdf7;
+  --lp-paper-ink: #1b2a44;
+  --lp-paper-line: #d9e1ec;
+  --lp-mark: #fbe7a8;
+  --lp-header: 56px;
+  --page: 0;
+  position: relative;
+  min-height: 100%;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  overflow-x: clip;
+}
+:root[data-theme='dark'] .lp {
+  --lp-paper: #f4efe2;
+  --lp-mark: #f3d98a;
+}
+.lp *,
+.lp *::before,
+.lp *::after {
+  box-sizing: border-box;
+}
+.lp h1,
+.lp h2,
+.lp h3 {
+  font-family: var(--font-display);
+  color: var(--color-heading);
+  margin: 0;
+  text-wrap: balance;
+}
+.lp p,
+.lp ul,
+.lp ol {
+  margin: 0;
+}
+.lp ul,
+.lp ol {
+  padding: 0;
+  list-style: none;
+}
+.lp :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* Whatever takes focus is scrolled clear of the header and of the notes held at the top of a phone. */
+.lp a,
+.lp button,
+.lp input,
+.lp select,
+.lp textarea {
+  scroll-margin: 230px 0 96px;
+}
+.lp-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.lp-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-control, 8px);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: 600 14px/1 var(--font-sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 150ms var(--lp-ease),
+    background-color 150ms var(--lp-ease),
+    opacity 150ms var(--lp-ease);
+}
+.lp-btn:hover {
+  background: var(--color-surface-2);
+  transform: translateY(-1px);
+}
+.lp-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+.lp-btn[aria-disabled='true'],
+.lp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+.lp-btn--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.lp-btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+.lp-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-accent);
+}
+.lp-btn--small {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.lp-link {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.lp-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  height: var(--lp-header);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-canvas);
+}
+.lp-header img {
+  display: block;
+  border-radius: 8px;
+}
+.lp-home {
+  display: flex;
+  min-height: 44px;
+  flex: none;
+  align-items: center;
+}
+.lp-nav {
+  display: none;
+  gap: 4px;
+}
+.lp-nav a,
+.lp-signin {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--color-ink-soft);
+  font: 500 14px/1 var(--font-sans);
+  text-decoration: none;
+}
+.lp-nav a:hover,
+.lp-signin:hover {
+  color: var(--color-heading);
+  background: var(--color-surface-2);
+}
+.lp-nav a[aria-current='true'] {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+.lp-signin {
+  color: var(--color-muted);
+}
+.lp-header-end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.lp-header-end .lp-btn {
+  display: none;
+  white-space: nowrap;
+}
+.lp-signin {
+  white-space: nowrap;
+}
+/* On a phone the chapter index is the browser's own menu: small, and it works with everything. */
+.lp-jump {
+  min-width: 0;
+  flex: 1;
+  max-width: 190px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font: 600 14px/1 var(--font-sans);
+}
+@media (min-width: 1024px) {
+  .lp-nav {
+    display: flex;
+  }
+  .lp-header-end .lp-btn {
+    display: inline-flex;
+  }
+  .lp-jump {
+    display: none;
+  }
+}
+
+/* ── The thread: reading progress, with the spark travelling it ──────────── */
+.lp-thread {
+  position: fixed;
+  z-index: 30;
+  top: var(--lp-header);
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--color-line);
+  pointer-events: none;
+}
+.lp-thread-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--page));
+}
+.lp-thread-spark {
+  position: absolute;
+  top: -8px;
+  left: -9px;
+  transform: translateX(calc(var(--page) * 100vw));
+}
+.lp-index {
+  position: fixed;
+  z-index: 31;
+  display: none;
+}
+@media (min-width: 1024px) {
+  .lp-thread {
+    top: calc(var(--lp-header) + 28px);
+    bottom: 28px;
+    left: 22px;
+    right: auto;
+    width: 2px;
+    height: auto;
+    border-radius: 2px;
+  }
+  .lp-thread-fill {
+    transform-origin: 50% 0;
+    transform: scaleY(var(--page));
+  }
+  .lp-thread-spark {
+    top: -9px;
+    left: -8px;
+    transform: translateY(calc(var(--page) * (100vh - var(--lp-header) - 56px)));
+  }
+  .lp-index {
+    top: calc(var(--lp-header) + 28px);
+    bottom: 28px;
+    left: 0;
+    display: flex;
+    width: 46px;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .lp-index button {
+    position: relative;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .lp-index button::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--color-line-strong);
+    border-radius: 50%;
+    background: var(--color-canvas);
+    transition: transform 220ms var(--lp-ease);
+  }
+  .lp-index button[data-reached='true']::before {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+  }
+  .lp-index button[aria-current='true']::before {
+    transform: scale(1.5);
+  }
+  .lp-index button span {
+    position: absolute;
+    left: 40px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font: 600 12px/1 var(--font-sans);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    transition:
+      opacity 150ms var(--lp-ease),
+      transform 150ms var(--lp-ease);
+  }
+  .lp-index button:hover span,
+  .lp-index button:focus-visible span {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── The story: chapters beside the stage ────────────────────────────────── */
+.lp-story {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 40px);
+}
+.lp-chapters {
+  min-width: 0;
+}
+.lp-ch {
+  --p: 0;
+  position: relative;
+  padding: 56px 0;
+  scroll-margin-top: calc(var(--lp-header) + 150px);
+}
+.lp-ch + .lp-ch {
+  border-top: 1px solid var(--color-line);
+}
+.lp-ch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.lp-eyebrow {
+  color: var(--color-accent);
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lp h1 {
+  font-size: clamp(34px, 5.2vw, 56px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.lp h1 span {
+  display: block;
+  color: var(--color-accent);
+  font-family: var(--lp-serif);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.lp h2 {
+  font-size: clamp(26px, 3.2vw, 38px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+.lp h3 {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.lp-lede {
+  max-width: 34em;
+  color: var(--color-ink-soft);
+  font-size: 17px;
+  line-height: 1.6;
+}
+.lp-small {
+  max-width: 36em;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* The stage holds the one object the page follows. On a phone it stays at the
+   top of the screen, small; on a laptop it stays beside the chapters. */
+.lp-stage {
+  position: sticky;
+  top: calc(var(--lp-header) + 3px);
+  z-index: 20;
+  margin: 0 calc(clamp(16px, 4vw, 40px) * -1);
+  padding: 10px clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-canvas);
+}
+.lp-stage-inner {
+  position: relative;
+}
+@media (min-width: 1024px) {
+  .lp-story {
+    grid-template-columns: minmax(0, 1fr) 400px;
+    column-gap: 56px;
+    padding-left: 72px;
+  }
+  .lp-chapters {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .lp-stage {
+    grid-column: 2;
+    grid-row: 1;
+    top: calc(var(--lp-header) + 24px);
+    align-self: start;
+    height: calc(100vh - var(--lp-header) - 48px);
+    min-height: 520px;
+    margin: 24px 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .lp-stage-inner {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-top: 12px;
+    perspective: 1200px;
+  }
+  .lp-ch {
+    padding: 96px 0;
+  }
+  /* A scene holds still while its steps play, only when the screen is tall enough to show all of it. */
+  .lp-ch--pin[data-pin='true'] {
+    min-height: 190vh;
+  }
+  .lp-ch--pin[data-pin='true'] > .lp-ch-body {
+    position: sticky;
+    top: calc(var(--lp-header) + 32px);
+  }
+  .lp-ch--hero {
+    display: flex;
+    min-height: calc(100vh - var(--lp-header));
+    align-items: center;
+    padding: 48px 0;
+  }
+}
+
+/* ── The page of notes ───────────────────────────────────────────────────── */
+.lp-notes-wrap {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 500ms var(--lp-ease);
+}
+.lp-notes {
+  position: relative;
+  padding: 12px 14px 12px 34px;
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 23px, #e9b9b3 23px, #e9b9b3 24px, transparent 24px),
+    repeating-linear-gradient(180deg, transparent 0, transparent 21px, var(--lp-paper-line) 21px, var(--lp-paper-line) 22px),
+    var(--lp-paper);
+  background-position:
+    0 0,
+    0 10px,
+    0 0;
+  color: var(--lp-paper-ink);
+  box-shadow:
+    0 1px 0 rgb(17 40 75 / 0.08),
+    0 12px 28px rgb(17 40 75 / 0.14);
+  backface-visibility: hidden;
+}
+.lp-notes-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: #53647a;
+  font: 600 11px/22px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+.lp-notes-lines {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  font: 400 13px/22px var(--lp-hand);
+}
+.lp-notes-lines li {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lp-notes-lines li:nth-child(odd) {
+  transform: rotate(-0.4deg);
+}
+.lp-notes-lines li:nth-child(even) {
+  transform: rotate(0.3deg);
+}
+.lp-phrase {
+  position: relative;
+  z-index: 0;
+  border: 0;
+  padding: 0 2px;
+  margin: 0 -2px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+.lp-phrase::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 3px -1px 2px;
+  border-radius: 3px;
+  background: var(--lp-mark);
+  opacity: 0;
+  transform: scaleX(0.2);
+  transform-origin: 0 50%;
+  transition:
+    opacity 260ms var(--lp-ease),
+    transform 320ms var(--lp-ease);
+}
+.lp-phrase[data-lit='true']::before {
+  opacity: 0.9;
+  transform: none;
+}
+.lp-phrase[data-hot='true']::before {
+  opacity: 1;
+  transform: none;
+  background: #f6c75a;
+}
+.lp-notes-spark {
+  position: absolute;
+  right: 10px;
+  top: -10px;
+  transition:
+    transform 600ms var(--lp-ease),
+    opacity 300ms var(--lp-ease);
+}
+.lp-notes-tag {
+  position: absolute;
+  left: 34px;
+  bottom: -11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: 600 11px/1.2 var(--font-sans);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 260ms var(--lp-ease),
+    transform 320ms var(--lp-ease);
+}
+.lp-notes-tag[data-on='true'] {
+  opacity: 1;
+  transform: none;
+}
+/* The back of the page: the record the facts come from. Laptop only. */
+.lp-record {
+  display: none;
+}
+.lp-stage-extra {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .lp-notes {
+    padding: 22px 22px 26px 46px;
+    background-position:
+      12px 0,
+      0 20px,
+      0 0;
+  }
+  .lp-notes-head {
+    margin-bottom: 6px;
+    font-size: 12px;
+    line-height: 26px;
+  }
+  .lp-notes {
+    background:
+      linear-gradient(90deg, transparent 35px, #e9b9b3 35px, #e9b9b3 36px, transparent 36px),
+      repeating-linear-gradient(180deg, transparent 0, transparent 31px, var(--lp-paper-line) 31px, var(--lp-paper-line) 32px),
+      var(--lp-paper);
+    background-position:
+      0 0,
+      0 16px,
+      0 0;
+  }
+  .lp-notes-lines {
+    display: block;
+    font-size: 19px;
+    line-height: 32px;
+  }
+  .lp-notes-lines li {
+    white-space: normal;
+  }
+  .lp-notes-lines li:nth-child(3n) {
+    padding-left: 10px;
+  }
+  .lp-notes-wrap {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) rotate(var(--tilt, 0deg)) scale(var(--shrink, 1));
+  }
+  .lp[data-ch='top'] .lp-notes-wrap {
+    --tilt: -2.5deg;
+    transition-duration: 180ms;
+  }
+  .lp[data-ch='workspace'] .lp-notes-wrap {
+    --shrink: 0.82;
+    --tilt: 1.5deg;
+  }
+  .lp[data-ch='families'] .lp-notes-wrap {
+    --ry: 180deg;
+  }
+  .lp[data-ch='rules'] .lp-notes-wrap,
+  .lp[data-ch='early'] .lp-notes-wrap {
+    --shrink: 0.9;
+  }
+  .lp-record {
+    position: absolute;
+    inset: 0 0 auto 0;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 20px;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    backface-visibility: hidden;
+    transform: rotateY(180deg);
+    box-shadow: 0 12px 28px rgb(17 40 75 / 0.14);
+  }
+  .lp-record .lp-h {
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .lp-record li {
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--color-ink-soft);
+    font-size: 13px;
+    line-height: 1.35;
+    transition: background-color 180ms var(--lp-ease);
+  }
+  .lp-record li[data-hot='true'] {
+    background: var(--color-accent-soft);
+    color: var(--color-heading);
+    font-weight: 600;
+  }
+  .lp-stage-extra {
+    position: relative;
+    display: block;
+    flex: 1;
+    min-height: 0;
+    margin-top: 26px;
+  }
+  .lp-stage-extra > * {
+    position: absolute;
+    inset: 0 0 auto 0;
+    opacity: 0;
+    transform: translateY(14px);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity 320ms var(--lp-ease),
+      transform 420ms var(--lp-ease),
+      visibility 0s 320ms;
+  }
+  .lp-stage-extra > [data-on='true'] {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+}
+
+/* ── Cards used across the scenes ────────────────────────────────────────── */
+.lp-card {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card, 12px);
+  background: var(--color-surface);
+}
+.lp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-chip);
+  color: var(--color-ink-soft);
+  font: 600 12px/1.3 var(--font-sans);
+  white-space: nowrap;
+}
+.lp-chip--accent {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.lp-chip--good {
+  background: var(--color-good-soft, #e6f3ec);
+  color: var(--color-good, #28765d);
+}
+
+/* The Inbox card with its 10-second Undo. */
+.lp-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  box-shadow: 0 8px 24px var(--shadow-tint, rgb(17 40 75 / 0.07));
+}
+.lp-inbox-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-muted);
+  font: 600 12px/1.2 var(--font-sans);
+}
+.lp-h {
+  color: var(--color-heading);
+  font: 700 15px/1.3 var(--font-display);
+}
+.lp-inbox-meta {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.lp-inbox-body {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.lp-inbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lp-hold {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 8px;
+  background: var(--color-surface-2);
+  color: var(--color-heading);
+  font: 600 14px/1.3 var(--font-sans);
+}
+.lp-hold-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--color-accent);
+  transform-origin: 0 50%;
+  animation: lp-drain linear forwards;
+}
+@keyframes lp-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.lp-try {
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── After the meeting ───────────────────────────────────────────────────── */
+.lp-steps {
+  display: grid;
+  gap: 12px;
+}
+.lp-step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 16px;
+  opacity: 0.45;
+  transform: translateY(8px);
+  transition:
+    opacity 320ms var(--lp-ease),
+    transform 420ms var(--lp-ease);
+}
+.lp-step[data-on='true'] {
+  opacity: 1;
+  transform: none;
+}
+.lp-step-n {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  font: 700 13px/1 var(--font-display);
+}
+.lp-step > :not(.lp-step-n) {
+  grid-column: 2;
+}
+.lp-step p {
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lp-pasted {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--color-line-strong);
+  border-radius: 8px;
+  color: var(--color-ink-soft);
+  font: 400 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.lp-drafts {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+@media (min-width: 640px) {
+  .lp-drafts {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.lp-draft {
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent-line);
+  border-radius: 8px;
+  background: var(--color-accent-soft);
+}
+.lp-draft-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-heading);
+  font: 700 13px/1.4 var(--font-sans);
+}
+.lp-draft-name span {
+  color: var(--color-muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-align: right;
+}
+.lp-draft-line {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: 400 13px/1.4 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition:
+    opacity 300ms var(--lp-ease) calc(var(--i, 0) * 70ms),
+    transform 380ms var(--lp-ease) calc(var(--i, 0) * 70ms),
+    background-color 150ms var(--lp-ease);
+}
+.lp-step[data-on='true'] .lp-draft-line {
+  opacity: 1;
+  transform: none;
+}
+.lp-draft-line:hover,
+.lp-draft-line[data-hot='true'] {
+  background: var(--lp-mark);
+  color: #1b2a44;
+}
+.lp-outcomes {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lp-outcomes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-ink-soft);
+}
+/* The line drawn from a draft line back to its phrase in the notes. */
+.lp-trace {
+  position: fixed;
+  z-index: 35;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms var(--lp-ease);
+}
+.lp-trace[data-on='true'] {
+  opacity: 1;
+}
+.lp-trace path {
+  fill: none;
+  stroke: #d99a1c;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 4 5;
+}
+.lp-trace circle {
+  fill: #d99a1c;
+}
+
+/* ── The workspace ───────────────────────────────────────────────────────── */
+.lp-ws {
+  overflow: hidden;
+}
+.lp-ws-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-line);
+}
+.lp-ws-head strong {
+  color: var(--color-heading);
+  font: 700 15px/1.2 var(--font-display);
+}
+.lp-ws-flying {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+.lp-ws-flying .lp-chip {
+  opacity: 0;
+  transform: translate(calc(var(--fx, 0) * 1px), -34px) rotate(-4deg);
+  transition:
+    opacity 320ms var(--lp-ease) calc(var(--i) * 90ms),
+    transform 620ms var(--lp-ease) calc(var(--i) * 90ms);
+}
+.lp-ch[data-step]:not([data-step='0']) .lp-ws-flying .lp-chip {
+  opacity: 1;
+  transform: none;
+}
+.lp-ws-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 10px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lp-ws-tabs::-webkit-scrollbar {
+  display: none;
+}
+.lp-ws-tab {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-ink-soft);
+  font: 600 13px/1 var(--font-sans);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 300ms var(--lp-ease) calc(var(--i) * 60ms),
+    transform 380ms var(--lp-ease) calc(var(--i) * 60ms),
+    background-color 150ms var(--lp-ease);
+}
+.lp-ch[data-step='2'] .lp-ws-tab,
+.lp-ch[data-step='3'] .lp-ws-tab {
+  opacity: 1;
+  transform: none;
+}
+.lp-ws-tab:hover {
+  background: var(--color-surface-2);
+}
+.lp-ws-tab[aria-selected='true'] {
+  border-color: var(--color-accent-line);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.lp-ws-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  min-height: 250px;
+  align-content: start;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 320ms var(--lp-ease),
+    transform 420ms var(--lp-ease);
+}
+.lp-ch[data-step='3'] .lp-ws-panel,
+.lp-ws[data-used='true'] .lp-ws-panel {
+  opacity: 1;
+  transform: none;
+}
+/* Once the visitor has chosen an area, the page is theirs: nothing is taken away again by scrolling back. */
+.lp-ws[data-used='true'] .lp-ws-tab,
+.lp-ws[data-used='true'] .lp-ws-flying .lp-chip {
+  opacity: 1;
+  transform: none;
+}
+.lp-ws-panel > p {
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lp-ws-panel[data-fresh='true'] .lp-ws-live {
+  animation: lp-forward 260ms var(--lp-ease);
+}
+@keyframes lp-forward {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+.lp-ws-live {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-canvas);
+  font-size: 14px;
+}
+.lp-ws-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.lp-ws-row[data-done='true'] > span:first-of-type {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+.lp-check {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lp-check i {
+  display: grid;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 2px solid var(--color-line-strong);
+  border-radius: 50%;
+  transition:
+    background-color 150ms var(--lp-ease),
+    transform 150ms var(--lp-ease);
+}
+.lp-check[aria-pressed='true'] i {
+  border-color: var(--color-good, #28765d);
+  background: var(--color-good, #28765d);
+  transform: scale(1.08);
+}
+.lp-check[aria-pressed='true'] i::after {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border: solid #fff;
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.lp-bands {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.lp-band {
+  display: flex;
+  min-height: 92px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+.lp-band b {
+  color: var(--color-muted);
+  font: 700 11px/1.2 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lp-band .lp-btn {
+  justify-content: flex-start;
+  animation: lp-forward 260ms var(--lp-ease);
+}
+.lp-phone {
+  width: 190px;
+  margin: 0 auto;
+  padding: 10px;
+  border: 2px solid var(--color-line-strong);
+  border-radius: 22px;
+  background: var(--color-surface);
+}
+.lp-phone-title {
+  margin-bottom: 6px;
+  color: var(--color-heading);
+  font: 700 14px/1.3 var(--font-display);
+}
+.lp-areas {
+  display: grid;
+  gap: 4px;
+}
+/* The eight areas as plain text, for a reader who gets no script and for a screen reader. */
+
+/* ── Families ────────────────────────────────────────────────────────────── */
+.lp-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lp-langs .lp-btn[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+.lp-letter {
+  padding: 16px;
+}
+.lp-letter-label {
+  margin-bottom: 8px;
+  color: var(--color-muted);
+  font: 600 12px/1.2 var(--font-sans);
+}
+.lp-letter-stack {
+  display: grid;
+}
+.lp-letter-stack > p {
+  grid-area: 1 / 1;
+  font-size: 16px;
+  line-height: 1.85;
+  visibility: hidden;
+  transition: visibility 0s 500ms;
+}
+.lp-letter-stack > p[data-on='true'] {
+  visibility: visible;
+  transition-delay: 0s;
+}
+.lp-char {
+  opacity: 0;
+  transition: opacity 140ms linear calc(var(--i) * 3ms);
+}
+.lp-letter-stack > p[data-on='true'] .lp-char {
+  opacity: 1;
+  transition-delay: calc(140ms + var(--i) * 5ms);
+}
+.lp-fact {
+  position: relative;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--lp-mark);
+  color: #1b2a44;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms linear;
+}
+.lp-letter-stack > p[data-on='true'] .lp-fact {
+  opacity: 1;
+  transition-delay: 120ms;
+}
+.lp-fact-tip {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: 600 12px/1.3 var(--font-sans);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--lp-ease),
+    transform 150ms var(--lp-ease);
+}
+.lp-fact:hover .lp-fact-tip,
+.lp-fact:focus-visible .lp-fact-tip,
+.lp-fact[data-hot='true'] .lp-fact-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.lp-facts-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-line);
+}
+.lp-facts-rail .lp-chip[data-hot='true'] {
+  background: var(--lp-mark);
+  color: #1b2a44;
+}
+.lp-review {
+  padding: 14px 16px;
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-surface-2);
+  border-radius: 0 8px 8px 0;
+}
+.lp-review p {
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+/* ── AI rules: the gate ──────────────────────────────────────────────────── */
+.lp-rules {
+  display: grid;
+  gap: 12px;
+}
+.lp-rule {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  opacity: 0.4;
+  transform: translateY(10px);
+  transition:
+    opacity 320ms var(--lp-ease),
+    transform 420ms var(--lp-ease);
+}
+.lp-rule[data-on='true'] {
+  opacity: 1;
+  transform: none;
+}
+.lp-rule > p {
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lp-rule-test {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--color-canvas);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.lp-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lp-lock {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px dashed var(--color-line-strong);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font: 600 14px/1 var(--font-sans);
+}
+.lp-lock[data-open='true'] {
+  border-style: solid;
+  border-color: var(--color-good, #28765d);
+  color: var(--color-good, #28765d);
+}
+.lp-number {
+  width: 3.2em;
+  min-height: 44px;
+  margin: 0 4px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: 700 16px/1 var(--font-sans);
+  text-align: center;
+}
+.lp-number[data-snap='true'] {
+  animation: lp-snap 420ms var(--lp-ease);
+}
+@keyframes lp-snap {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  55% {
+    transform: translateX(4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+.lp-essay {
+  position: relative;
+  padding: 12px;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: 400 15px/1.7 var(--lp-serif);
+}
+.lp-essay mark {
+  background: var(--lp-mark);
+  color: #1b2a44;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.lp-margin-note {
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+  animation: lp-forward 260ms var(--lp-ease);
+}
+.lp-margin-note b {
+  display: block;
+  color: var(--color-accent-hover);
+  font: 700 11px/1.4 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Beside the notes on a laptop: the gate, and the activity log. */
+.lp-stage-gate,
+.lp-stage-log {
+  padding: 14px;
+}
+.lp-stage-gate .lp-h,
+.lp-stage-log .lp-h {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.lp-stage-gate li,
+.lp-stage-log li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--color-ink-soft);
+  font-size: 13px;
+}
+.lp-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--color-line-strong);
+  border-radius: 50%;
+}
+.lp-dot[data-ok='true'] {
+  border-color: var(--color-good, #28765d);
+  background: var(--color-good, #28765d);
+}
+
+/* ── Early access ────────────────────────────────────────────────────────── */
+.lp-offer {
+  display: grid;
+  gap: 8px;
+}
+.lp-offer li {
+  position: relative;
+  padding-left: 22px;
+  color: var(--color-ink-soft);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.lp-offer li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lp-silver);
+}
+.lp-form {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+.lp-form-spark {
+  position: absolute;
+  top: -12px;
+  right: 18px;
+  opacity: 0;
+  transform: translateY(-40px) rotate(-90deg) scale(0.6);
+  transition:
+    opacity 400ms var(--lp-ease),
+    transform 800ms var(--lp-ease);
+}
+.lp-ch[data-step]:not([data-step='0']) .lp-form-spark {
+  opacity: 1;
+  transform: none;
+}
+.lp-field {
+  display: grid;
+  gap: 4px;
+}
+.lp-field label {
+  color: var(--color-ink-soft);
+  font: 600 13px/1.3 var(--font-sans);
+}
+.lp-field input,
+.lp-field select,
+.lp-field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: 400 16px/1.4 var(--font-sans);
+}
+.lp-field [aria-invalid='true'] {
+  border-color: var(--color-bad);
+}
+.lp-error {
+  color: var(--color-bad);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.lp-notice {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-warn-soft, #fff3dc);
+  color: var(--color-warn, #986319);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lp-footer {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 32px clamp(16px, 4vw, 40px) 56px;
+  border-top: 1px solid var(--color-line);
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+@media (min-width: 1024px) {
+  .lp-footer {
+    padding-left: 72px;
+  }
+}
+
+/* ── Reveals: type and cards arrive once ─────────────────────────────────── */
+.lp-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 480ms var(--lp-ease) calc(var(--d, 0) * 80ms),
+    transform 620ms var(--lp-ease) calc(var(--d, 0) * 80ms);
+}
+.lp-rv[data-in='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* A chapter's tone: the background steps between canvas and surface as the story goes down. */
+.lp-tone {
+  position: absolute;
+  z-index: -1;
+  inset: 0 -100vw;
+  background: var(--color-surface);
+  opacity: 0;
+}
+.lp-ch--alt .lp-tone {
+  opacity: 0.6;
+}
+
+/* Reduced motion: every scene at its end state, nothing travelling, nothing staggered. */
+@media (prefers-reduced-motion: reduce) {
+  .lp *,
+  .lp *::before,
+  .lp *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+  }
+  .lp-hold-bar {
+    animation: none !important;
+    transform: none;
+  }
+  .lp-rv {
+    opacity: 1;
+    transform: none;
+  }
+  .lp-notes-wrap {
+    transform: none !important;
+  }
+  .lp[data-ch='families'] .lp-notes {
+    visibility: hidden;
+  }
+  .lp[data-ch='families'] .lp-record {
+    transform: none;
+  }
+  .lp-thread-spark {
+    display: none;
+  }
+  .lp-ch--pin[data-pin] {
+    min-height: 0 !important;
+  }
+  .lp-ch--pin[data-pin] > .lp-ch-body {
+    position: static !important;
+  }
+}

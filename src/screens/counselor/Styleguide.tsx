@@ -663,6 +663,14 @@ export default function Styleguide() {
         </div>
       </Block>
 
+      <Block title="Landing page">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          The page at <code>/</code> has its own stylesheet (<code>src/landing/landing.css</code>, every class prefixed <code>lp-</code>) and uses the same tokens as everything here, so it follows the theme without its own colours. It
+          adds two faces that are not downloaded: the reader’s own serif for one accent line, and the system’s handwriting face for the page of notes. Its motion is scroll position written into custom properties; only transform
+          and opacity move, and reduced motion shows every end state. Nothing from it is used in the workspace.
+        </p>
+      </Block>
+
       {modal && (
         <Modal title="A modal" onClose={() => setModal(false)}>
           <form

@@ -162,6 +162,7 @@ check('a new link expires in 30 days', Math.abs(Date.parse(studentLinkExpiry()) 
 
 check('a phone is masked to its last 4 digits', maskRecipient('+1 (555) 123-4567') === '…4567')
 check('an email is masked to its first letter and domain', maskRecipient('Ada.Example@example.com') === 'A…@example.com')
+check('the landing page counts down the same hold the database gives', new RegExp(`UNDO_SECONDS = ${UNDO_SECONDS}\\b`).test(readFileSync(new URL('../src/landing/story.ts', import.meta.url), 'utf8')))
 check('a student link is removed from text', withoutStudentLinks('failed at https://app.example/s/abc123 today') === 'failed at [student link] today')
 check('a student link in its new form, with the secret in the fragment, is removed from text too', withoutStudentLinks('failed at https://app.example/s#abc123 today') === 'failed at [student link] today')
 check('a new student link is /s#<secret>: the secret is in the fragment, never in the path or the query', studentLinkUrl('https://app.example/', 'abc123') === 'https://app.example/s#abc123' && new URL(studentLinkUrl('https://app.example', 'abc123')).pathname === '/s' && new URL(studentLinkUrl('https://app.example', 'abc123')).search === '')
