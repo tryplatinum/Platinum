@@ -48,7 +48,7 @@ as $$
 begin
   if exists (select 1 from public.firm_members m where m.firm_id = old.firm_id)
      and not exists (select 1 from public.firm_members m where m.firm_id = old.firm_id and m.role = 'owner') then
-    raise exception 'A firm needs at least one owner.' using errcode = '23514';
+    raise exception 'A firm needs at least one owner.' using errcode = 'PI010';
   end if;
   return null;
 end
@@ -125,7 +125,7 @@ begin
       raise exception 'An owner steps down themselves. You cannot change another owner''s role.' using errcode = '42501';
     end if;
     if (select count(*) from public.firm_members m where m.firm_id = firm and m.role = 'owner') < 2 then
-      raise exception 'You are the only owner. Make someone else an owner first.' using errcode = '23514';
+      raise exception 'You are the only owner. Make someone else an owner first.' using errcode = 'PI010';
     end if;
   end if;
   update public.firm_members m set role = new_role where m.firm_id = firm and m.user_id = member;
@@ -310,7 +310,7 @@ begin
     raise exception 'You are not a member of a firm.' using errcode = '42501';
   end if;
   if my_role = 'owner' and (select count(*) from public.firm_members m where m.firm_id = firm and m.role = 'owner') < 2 then
-    raise exception 'You are the only owner. Make someone else an owner first.' using errcode = '23514';
+    raise exception 'You are the only owner. Make someone else an owner first.' using errcode = 'PI010';
   end if;
   return public.end_membership_(firm, caller, caller);
 end
@@ -352,7 +352,8 @@ create index invitations_firm_idx on public.invitations (firm_id, created_at des
 alter table public.invitations enable row level security;
 create policy invitations_select on public.invitations for select to authenticated using (public.is_firm_member(firm_id));
 
--- Members read their firm's invitations, every column but the hash. Nobody
+-- Members, counselors included, read their firm's invitations and the invited
+-- addresses in them, every column but the hash. Nobody
 -- writes the table directly: there is no insert, update or delete grant.
 revoke all on table public.invitations from public, anon, authenticated;
 grant select (id, firm_id, kind, email, student_id, created_by, created_at, expires_at, accepted_at, accepted_by, revoked_at)
@@ -382,12 +383,15 @@ begin
     raise exception 'Only an owner can invite a counselor.' using errcode = '42501';
   end if;
   perform 1 from public.firms f where f.id = firm for update;
+  if not exists (select 1 from public.firm_members m where m.user_id = caller and m.firm_id = firm and m.role = 'owner') then
+    raise exception 'Only an owner can invite a counselor.' using errcode = '42501';
+  end if;
 
   if replace is not null then
     update public.invitations i set revoked_at = now()
     where i.id = replace and i.firm_id = firm and i.kind = 'counselor' and i.accepted_at is null and i.revoked_at is null;
     if not found then
-      raise exception 'That invitation is no longer waiting.' using errcode = 'PI001';
+      raise exception 'That invitation is no longer waiting.' using errcode = 'PI009';
     end if;
   end if;
   -- One that ran out stops counting as waiting.
@@ -442,7 +446,7 @@ begin
   update public.invitations i set revoked_at = now()
   where i.id = invitation and i.firm_id = firm and i.accepted_at is null and i.revoked_at is null;
   if not found then
-    raise exception 'That invitation is no longer waiting.' using errcode = 'PI001';
+    raise exception 'That invitation is no longer waiting.' using errcode = 'PI009';
   end if;
 end
 $$;
@@ -459,6 +463,10 @@ grant execute on function public.revoke_invitation(uuid) to authenticated;
 --   PI002  the person's address is not confirmed yet.
 --   PI003  the person's address is not the invited one.
 --   PI004  the person already belongs to a firm.
+--
+-- Elsewhere in this file: PI005 an invitation is already waiting, PI009 the
+-- invitation an owner acted on is no longer waiting, PI010 the firm would be
+-- left without an owner.
 create function public.claim_invitation_(hash text, person uuid, wanted text)
 returns public.invitations
 language plpgsql
@@ -470,6 +478,10 @@ declare
   address text;
   confirmed timestamptz;
 begin
+  -- The firm first, then the invitation: the order "New link" takes them in, so the two cannot deadlock.
+  perform 1 from public.firms f
+  where f.id = (select i.firm_id from public.invitations i where i.token_hash = hash and i.kind = wanted)
+  for update;
   select * into found_ from public.invitations i where i.token_hash = hash and i.kind = wanted for update;
   if found_.id is null or found_.accepted_at is not null or found_.revoked_at is not null or found_.expires_at <= now() then
     raise exception 'This invitation does not work.' using errcode = 'PI001';
@@ -513,7 +525,12 @@ begin
     raise exception 'Your name is missing.' using errcode = '22023';
   end if;
   inv := public.claim_invitation_(hash, person, 'counselor');
-  insert into public.firm_members (firm_id, user_id, role, display_name) values (inv.firm_id, person, 'counselor', name_);
+  begin
+    insert into public.firm_members (firm_id, user_id, role, display_name) values (inv.firm_id, person, 'counselor', name_);
+  exception when unique_violation then
+    -- They started a firm in another tab between the check and here.
+    raise exception 'This account already belongs to a firm.' using errcode = 'PI004';
+  end;
   update public.invitations i set accepted_at = now(), accepted_by = person where i.id = inv.id;
   insert into public.activity (firm_id, student_id, actor, actor_user, text)
   values (inv.firm_id, null, 'system', person, name_ || ' joined the firm as a counselor.');

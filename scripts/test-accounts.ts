@@ -12,8 +12,18 @@
 
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { ACCOUNT_REQUEST, INVITE_SECRET, joinLink, maskEmail, removalWords } from '../shared/account.js'
+import { ACCOUNT_REQUEST, GUARDIAN_CONSENT, INVITE_SECRET, STUDENT_AGE, joinLink, maskEmail, removalWords } from '../shared/account.js'
+import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
 import { POST as account } from '../api/account.js'
+import { GET as agentGet, POST as agentPost } from '../api/agent.js'
+import { POST as aiPost } from '../api/ai.js'
+import { POST as collegesPost } from '../api/colleges.js'
+import { POST as dispatchPost } from '../api/dispatch.js'
+import { POST as documentsPost } from '../api/documents.js'
+import { POST as googlePost } from '../api/google.js'
+import { POST as phonePost } from '../api/phone.js'
+import { GET as studentGet, POST as studentPost } from '../api/student.js'
+import { POST as translatePost } from '../api/translate.js'
 import { DEAD_INVITATION } from '../server/account.js'
 import { google } from '../server/google/config.js'
 import { fakeGoogle } from '../server/google/fakeDrive.js'
@@ -205,6 +215,12 @@ const invitation = (n: number, over: Record<string, unknown> = {}) => {
   const pending = await call({ action: 'invite_counselor', email: 'new@northgate.example' }, 'owner-token')
   check('an address with an invitation waiting is refused with a reason the screen can act on', pending.status === 409 && pending.body.code === 'pending_exists', pending.text)
 
+  db.rpc('revoke_invitation', () => {
+    throw { code: 'PI009', message: 'That invitation is no longer waiting.' }
+  })
+  const late = await call({ action: 'revoke_invitation', invitationId: '00000000-0000-4000-8000-000000000001' }, 'owner-token')
+  check('an owner acting on an invitation that was just used is told so in their own terms, not the invitee’s', late.status === 404 && late.body.message === 'That invitation is no longer waiting.', late.text)
+
   const replaced: Record<string, unknown>[] = []
   db.rpc('invite_counselor', (args) => {
     replaced.push(args)
@@ -239,7 +255,7 @@ const invitation = (n: number, over: Record<string, unknown> = {}) => {
   await call({ action: 'set_role', userId: COUNSELOR, role: 'owner' }, 'owner-token')
   check('changing a role is the database’s decision: the server passes it on', roleCalls.length === 1 && roleCalls[0].member === COUNSELOR && roleCalls[0].new_role === 'owner')
   db.rpc('set_member_role', () => {
-    throw { code: '23514', message: 'You are the only owner. Make someone else an owner first.' }
+    throw { code: 'PI010', message: 'You are the only owner. Make someone else an owner first.' }
   })
   const last = await call({ action: 'set_role', userId: OWNER, role: 'counselor' }, 'owner-token')
   check('the last owner stepping down is refused with the database’s own words', last.status === 409 && last.body.code === 'last_owner' && last.body.message === 'You are the only owner. Make someone else an owner first.')
@@ -278,9 +294,209 @@ const invitation = (n: number, over: Record<string, unknown> = {}) => {
   check('removing a counselor: the grant is revoked at Google', removed.status === 200 && googleCalls.slice(before).filter((p) => p === '/revoke').length === 1, googleCalls.slice(before).join())
   check('and the database is asked to do the rest in one go: membership, Google row, phone, queued messages, one activity line', removeCalls.length === 1 && removeCalls[0].member === COUNSELOR && JSON.stringify(removed.body.data) === JSON.stringify({ google: true, phone: true, cancelled: 2 }))
   check('the server itself wrote no activity line and no outbox row', (db.tables.get('activity') ?? []).length === 0 && (db.tables.get('outbox') ?? []).length === 0)
+  // What removal did to the membership is the database function’s work; here it is a stand-in, so the row is still in the table.
 
   const withOther = await call({ action: 'leave' }, 'owner-token')
   check('with another owner, an owner can leave', withOther.status === 200 && leaveCalls.length === 1)
+}
+
+// ── Student sign-ins: inviting ──────────────────────────────────────────────
+
+const YOUNG = '77777777-7777-4777-8777-777777777777'
+const EMILY_USER = '88888888-8888-4888-8888-888888888888'
+const LINK_TOKEN = 'L'.repeat(43)
+{
+  db.table('students').push({ id: YOUNG, firm_id: FIRM, first_name: 'Theo', last_name: 'Park', grad_year: new Date().getFullYear() + 8, archived: false })
+  const calls: Record<string, unknown>[] = []
+  db.rpc('invite_student', (args) => {
+    calls.push(args)
+    return { id: 'inv-student', email: args.email, expires_at: '2026-12-04T00:00:00.000Z' }
+  })
+  const noTick = await call({ action: 'invite_student', studentId: STUDENT, email: 'emily.chen@students.example' }, 'counselor-token')
+  const falseTick = await call({ action: 'invite_student', studentId: STUDENT, email: 'emily.chen@students.example', guardianKnows: false }, 'counselor-token')
+  check('a student invitation without the parent or guardian tick is refused', noTick.status === 400 && falseTick.status === 400 && calls.length === 0)
+  const young = await call({ action: 'invite_student', studentId: YOUNG, email: 'theo@students.example', guardianKnows: true }, 'counselor-token')
+  check('a student below 9th grade is refused, and the answer says to use the student link', young.status === 403 && young.body.code === 'too_young' && /student link/.test(young.body.message ?? '') && calls.length === 0, young.text)
+  const foreign = await call({ action: 'invite_student', studentId: '00000000-0000-4000-8000-00000000000f', email: 'x@students.example', guardianKnows: true }, 'counselor-token')
+  check('a student who is not in the caller’s firm is not found', foreign.status === 403 && calls.length === 0)
+  const made = await call({ action: 'invite_student', studentId: STUDENT, email: ' Emily.Chen@students.example', guardianKnows: true }, 'counselor-token')
+  const data = made.body.data as { secret: string }
+  check('a counselor, not only an owner, invites a student', made.status === 200 && INVITE_SECRET.safeParse(data.secret).success, made.text)
+  check('the tick is sent to the database with this screen’s wording version, and only the hash of the secret', calls.length === 1 && calls[0].consent_version === GUARDIAN_CONSENT.version && calls[0].token_hash === sha(data.secret) && calls[0].student === STUDENT && calls[0].email === 'emily.chen@students.example')
+  check('the wording a counselor ticks names the student', GUARDIAN_CONSENT.text('Emily') === 'A parent or guardian of Emily knows about this account and agrees to it.' && STUDENT_AGE.text === 'I am 13 or older')
+  db.rpc('invite_student', () => {
+    throw { code: 'PI007', message: 'Emily already has a sign-in.' }
+  })
+  const has = await call({ action: 'invite_student', studentId: STUDENT, email: 'emily.chen@students.example', guardianKnows: true }, 'owner-token')
+  check('a student who already has a sign-in is refused with a reason the screen can act on', has.status === 409 && has.body.code === 'has_signin')
+}
+
+// ── Student sign-ins: joining ───────────────────────────────────────────────
+{
+  const secret = invitation(20, { kind: 'student', email: 'emily.chen@students.example', student_id: STUDENT })
+  const preview = await call({ action: 'preview', secret })
+  const shown = preview.body.data as { kind: string; studentFirstName?: string; email: string }
+  check('a student invitation’s preview names the student by first name only', preview.status === 200 && shown.kind === 'student' && shown.studentFirstName === 'Emily' && !preview.text.includes('Chen') && shown.email === 'e•••@students.example', preview.text)
+
+  db.users.set('emily-token', EMILY_USER)
+  db.people.set(EMILY_USER, { email: 'emily.chen@students.example', confirmed: true })
+  const calls: Record<string, unknown>[] = []
+  db.rpc('accept_student_invitation', (args) => {
+    calls.push(args)
+    db.table('student_accounts').push({ user_id: args.person, firm_id: FIRM, student_id: STUDENT, invitation_id: 'inv-20', created_at: new Date().toISOString(), disabled_at: null, disabled_by: null })
+    return { kind: 'student', firm_id: FIRM, student_id: STUDENT }
+  })
+  const noAge = await call({ action: 'accept', secret }, 'emily-token')
+  check('a student cannot join without the “13 or older” tick', noAge.status === 400 && noAge.body.code === 'consent_missing' && calls.length === 0, noAge.text)
+  const joined = await call({ action: 'accept', secret, ageConfirmed: true, studentId: YOUNG }, 'emily-token')
+  check('with it, the student gets their sign-in', joined.status === 200 && (joined.body.data as { kind: string }).kind === 'student')
+  check('the database is given the hash, the verified person and this screen’s wording version, and nothing from the body', calls.length === 1 && calls[0].hash === sha(secret) && calls[0].person === EMILY_USER && calls[0].age_version === STUDENT_AGE.version && Object.keys(calls[0]).sort().join() === 'age_version,hash,person')
+}
+
+// ── /api/student: one page, two ways in ─────────────────────────────────────
+{
+  db.table('student_links').push({ id: 'link-1', firm_id: FIRM, student_id: STUDENT, token_hash: sha(LINK_TOKEN), revoked_at: null, expires_at: new Date(Date.now() + 86_400_000).toISOString() })
+  const day = new Date().toISOString().slice(0, 10)
+  db.table('tasks').push(
+    { id: '00000000-0000-4000-8000-0000000000a1', firm_id: FIRM, student_id: STUDENT, title: 'Revise the personal statement', detail: 'Second pass', category: 'essay', owner: 'student', due_date: day, status: 'todo', progress_note: null, completed_on: null, completed_by: null, created_on: day, attachments: [], expects_document: null },
+    { id: '00000000-0000-4000-8000-0000000000a2', firm_id: FIRM, student_id: STUDENT, title: 'Pay the deposit', detail: 'PRIVATE-PARENT-DETAIL', category: 'financial', owner: 'parent', due_date: day, status: 'todo', progress_note: 'PRIVATE-PARENT-NOTE', completed_on: null, completed_by: null, created_on: day, attachments: [], expects_document: null },
+    { id: '00000000-0000-4000-8000-0000000000a3', firm_id: FIRM, student_id: YOUNG, title: 'ANOTHER-STUDENTS-TASK', category: 'essay', owner: 'student', due_date: day, status: 'todo', created_on: day, attachments: [] },
+  )
+  db.table('parents').push({ id: 'p1', firm_id: FIRM, student_id: STUDENT, name: 'PRIVATE-PARENT-NAME', email: 'private-parent@example.com', phone: '+15555550123' })
+  Object.assign(db.table('students').find((s) => s.id === STUDENT)!, { counselor_notes: 'PRIVATE-COUNSELOR-NOTE', onboarded_on: day, email: 'private-student-email@example.com' })
+  db.table('colleges').push({ id: 'c1', firm_id: FIRM, student_id: STUDENT, name: 'Alder University', plan: 'RD', deadline: day, status: 'considering', fit: 'Target', note: 'PRIVATE-COLLEGE-NOTE' })
+
+  const get = (headers: Record<string, string>, address = `10.9.0.${from++ % 250}`) => studentGet(new Request('http://localhost/api/student', { headers: { 'x-forwarded-for': address, ...headers } }))
+  const byLink = await get({ [STUDENT_TOKEN_HEADER]: LINK_TOKEN })
+  const byAccount = await get({ authorization: 'Bearer emily-token' })
+  const linkText = await byLink.text()
+  const accountText = await byAccount.text()
+  check('a link and a sign-in of the same student get the same page, byte for byte', byLink.status === 200 && byAccount.status === 200 && linkText === accountText, `${byLink.status} ${byAccount.status}`)
+  const page = JSON.parse(accountText) as { data: { students: { firstName: string; lastName: string }[]; tasks: { title: string; detail?: string; progressNote?: string }[]; firm: { name: string } } }
+  check('the page is that student’s: first name, their tasks, the firm’s name', page.data.students.length === 1 && page.data.students[0].firstName === 'Emily' && page.data.students[0].lastName === '' && page.data.tasks.length === 2 && page.data.firm.name === 'Northgate College Counseling')
+  check('no parent’s details, counselor notes, another student, or a college note is in it', ['PRIVATE-PARENT-NAME', 'private-parent@example.com', '+15555550123', 'PRIVATE-COUNSELOR-NOTE', 'private-student-email', 'ANOTHER-STUDENTS-TASK', 'PRIVATE-COLLEGE-NOTE', 'PRIVATE-PARENT-DETAIL', 'PRIVATE-PARENT-NOTE', 'Chen'].every((mark) => !accountText.includes(mark)))
+  check('it lists no stored file and no way to download one', !/storage_path|signedUrl|signed_url|download/i.test(accountText))
+
+  const writes: Record<string, unknown>[] = []
+  db.rpc('student_link_write', (args) => {
+    writes.push(args)
+    return null
+  })
+  const post = (body: unknown, headers: Record<string, string>) => studentPost(new Request('http://localhost/api/student', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.9.1.${from++ % 250}`, ...headers }, body: JSON.stringify(body) }))
+  const done = await post({ action: 'progress', taskId: '00000000-0000-4000-8000-0000000000a1', status: 'done', today: day, studentId: YOUNG, firmId: OTHER_FIRM }, { authorization: 'Bearer emily-token' })
+  check('a signed-in student can do what the link can: mark their own task done', done.status === 200 && writes.length === 1 && writes[0].p_firm === FIRM && writes[0].p_student === STUDENT, String(done.status))
+  const notMine = await post({ action: 'progress', taskId: '00000000-0000-4000-8000-0000000000a2', status: 'done', today: day }, { authorization: 'Bearer emily-token' })
+  const others = await post({ action: 'progress', taskId: '00000000-0000-4000-8000-0000000000a3', status: 'done', today: day }, { authorization: 'Bearer emily-token' })
+  check('and nothing more: not a parent’s task, not another student’s', notMine.status === 404 && others.status === 404 && writes.length === 1)
+  const unknownAction = await post({ action: 'list_files' }, { authorization: 'Bearer emily-token' })
+  check('there is no action that lists or downloads files', unknownAction.status === 400)
+
+  const counselorHere = await get({ authorization: 'Bearer counselor-token' })
+  const counselorBody = JSON.parse(await counselorHere.text()) as { code?: string; data?: unknown }
+  check('a counselor’s sign-in gets no student page', counselorHere.status === 403 && counselorBody.code === 'not_a_student' && counselorBody.data === undefined)
+  const forged = await get({ authorization: 'Bearer nobody' })
+  check('a token Supabase does not know gets a 401 an app can act on', forged.status === 401 && (JSON.parse(await forged.text()) as { code?: string }).code === 'unauthorized')
+  const badLink = await get({ [STUDENT_TOKEN_HEADER]: 'X'.repeat(43) })
+  const badLinkBody = JSON.parse(await badLink.text()) as Record<string, unknown>
+  check('the link path is unchanged: an unknown link is the same 404, with no code', badLink.status === 404 && !('code' in badLinkBody) && badLinkBody.message === 'This link does not work. Ask your counselor for a new one.')
+  const both = await get({ [STUDENT_TOKEN_HEADER]: 'X'.repeat(43), authorization: 'Bearer emily-token' })
+  check('when a link token is sent it is the whole credential, as before', both.status === 404)
+
+  let limited = 0
+  for (let i = 0; i < 70; i++) if ((await get({ authorization: 'Bearer emily-token' })).status === 429) limited++
+  check('a sign-in’s requests are limited by user id, whatever address they come from', limited > 0 && limited < 70, String(limited))
+}
+
+// ── Turning a sign-in off ───────────────────────────────────────────────────
+{
+  // A second student with a sign-in, so the rate limit above does not hide these answers.
+  const MAYA = '00000000-0000-4000-8000-0000000000b1'
+  const MAYA_USER = '00000000-0000-4000-8000-0000000000b2'
+  db.table('students').push({ id: MAYA, firm_id: FIRM, first_name: 'Maya', last_name: 'Ruiz', grad_year: new Date().getFullYear() + 2, archived: false, onboarded_on: '2026-09-01' })
+  db.table('student_accounts').push({ user_id: MAYA_USER, firm_id: FIRM, student_id: MAYA, invitation_id: null, created_at: new Date().toISOString(), disabled_at: null, disabled_by: null })
+  db.users.set('maya-token', MAYA_USER)
+  db.people.set(MAYA_USER, { email: 'maya.ruiz@students.example', confirmed: true })
+  const get = () => studentGet(new Request('http://localhost/api/student', { headers: { 'x-forwarded-for': `10.9.2.${from++ % 250}`, authorization: 'Bearer maya-token' } }))
+  const account = () => db.table('student_accounts').find((a) => a.user_id === MAYA_USER)!
+  check('a sign-in that is on opens the page', (await get()).status === 200)
+
+  const calls: Record<string, unknown>[] = []
+  db.rpc('set_student_account_disabled', (args) => {
+    calls.push(args)
+    account().disabled_at = args.disabled ? new Date().toISOString() : null
+    return null
+  })
+  const off = await call({ action: 'set_student_signin', studentId: MAYA, on: false }, 'counselor-token')
+  check('any member turns it off', off.status === 200 && calls.length === 1 && calls[0].student === MAYA && calls[0].disabled === true && (off.body.data as { state: string }).state === 'off', off.text)
+  const refusedNow = await get()
+  const body = JSON.parse(await refusedNow.text()) as { code?: string; data?: unknown; message?: string }
+  check('the very next request is refused, with a reason an app can show', refusedNow.status === 403 && body.code === 'signin_off' && body.data === undefined, JSON.stringify(body))
+  const on = await call({ action: 'set_student_signin', studentId: MAYA, on: true }, 'owner-token')
+  check('and on again', on.status === 200 && (on.body.data as { state: string }).state === 'on' && (await get()).status === 200)
+  db.table('students').find((s) => s.id === MAYA)!.archived = true
+  const archived = await get()
+  check('a sign-in whose student is archived is refused the same way', archived.status === 403 && (JSON.parse(await archived.text()) as { code?: string }).code === 'signin_off')
+  db.table('students').find((s) => s.id === MAYA)!.archived = false
+
+  const states = await call({ action: 'firm' }, 'owner-token')
+  const list = (states.body.data as { students: { name: string; state: string; tooYoung: boolean; email?: string; expired?: boolean }[] }).students
+  const by = (name: string) => list.find((s) => s.name === name)
+  check('the owner sees every active student and the state of their sign-in', by('Emily Chen')?.state === 'on' && by('Emily Chen')?.email === 'emily.chen@students.example' && by('Maya Ruiz')?.state === 'on' && by('Theo Park')?.state === 'none' && by('Theo Park')?.tooYoung === true && by('Emily Chen')?.tooYoung === false, JSON.stringify(list))
+  db.table('invitations').push({ id: 'inv-theo', firm_id: FIRM, kind: 'student', email: 'theo@students.example', student_id: YOUNG, token_hash: sha('theo'), accepted_at: null, revoked_at: null, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86_400_000).toISOString() })
+  const one = await call({ action: 'student_signin', studentId: YOUNG }, 'counselor-token')
+  const invited = one.body.data as { state: string; email?: string; invitationId?: string; expired?: boolean }
+  check('a counselor sees one student’s sign-in: invited, to which address, until when', one.status === 200 && invited.state === 'invited' && invited.email === 'theo@students.example' && invited.invitationId === 'inv-theo' && invited.expired === false)
+  check('no answer about sign-ins holds a hash', !states.text.includes('token_hash') && !one.text.includes('token_hash') && !/[0-9a-f]{64}/.test(states.text + one.text))
+}
+
+// ── Every counselor route refuses a student ─────────────────────────────────
+{
+  const asStudent = (url: string, body?: unknown) =>
+    new Request(`http://localhost${url}`, { method: body === undefined ? 'GET' : 'POST', headers: { authorization: 'Bearer maya-token', 'content-type': 'application/json', 'x-forwarded-for': `10.9.3.${from++ % 250}` }, body: body === undefined ? undefined : JSON.stringify(body) })
+  process.env.ANTHROPIC_API_KEY = 'not-a-real-key'
+  const routes: [string, () => Response | Promise<Response>][] = [
+    ['POST /api/ai', () => aiPost(asStudent('/api/ai', { feature: 'readNotes', input: {} }))],
+    ['POST /api/agent', () => agentPost(asStudent('/api/agent', { message: 'What is overdue?' }))],
+    ['GET /api/agent', () => agentGet(asStudent('/api/agent?studentId=' + STUDENT))],
+    ['POST /api/translate', () => translatePost(asStudent('/api/translate', { proposalId: STUDENT }))],
+    ['POST /api/dispatch', () => dispatchPost(asStudent('/api/dispatch', {}))],
+    ['POST /api/documents', () => documentsPost(asStudent('/api/documents', { action: 'open', documentId: STUDENT }))],
+    ['POST /api/colleges', () => collegesPost(asStudent('/api/colleges', { action: 'search', query: 'alder' }))],
+    ['POST /api/google', () => googlePost(asStudent('/api/google', { action: 'status' }))],
+    ['POST /api/phone (status)', () => phonePost(asStudent('/api/phone', { action: 'status' }))],
+    ['POST /api/phone (claim)', () => phonePost(asStudent('/api/phone', { action: 'claim' }))],
+    ...(['firm', 'leave'] as const).map((action): [string, () => Promise<Response>] => [`POST /api/account (${action})`, () => account(asStudent('/api/account', { action }))]),
+    ['POST /api/account (invite_student)', () => account(asStudent('/api/account', { action: 'invite_student', studentId: STUDENT, email: 'x@students.example', guardianKnows: true }))],
+    ['POST /api/account (invite_counselor)', () => account(asStudent('/api/account', { action: 'invite_counselor', email: 'x@northgate.example' }))],
+    ['POST /api/account (set_student_signin)', () => account(asStudent('/api/account', { action: 'set_student_signin', studentId: STUDENT, on: true }))],
+    ['POST /api/account (remove_member)', () => account(asStudent('/api/account', { action: 'remove_member', userId: COUNSELOR }))],
+  ]
+  delete process.env.ANTHROPIC_API_KEY
+  const let_in: string[] = []
+  for (const [name, run] of routes) {
+    const response = await run()
+    const text = await response.text()
+    if (![401, 403].includes(response.status) || /"data"/.test(text)) let_in.push(`${name}: ${response.status}`)
+  }
+  check(`every counselor route refuses a student sign-in (${routes.length} requests across 9 routes)`, let_in.length === 0, let_in.join('; '))
+  const control = await account(new Request('http://localhost/api/account', { method: 'POST', headers: { authorization: 'Bearer owner-token', 'content-type': 'application/json', 'x-forwarded-for': '10.9.4.1' }, body: JSON.stringify({ action: 'firm' }) }))
+  check('the same request from an owner is served, so the refusals above are about who is asking', control.status === 200)
+}
+
+// ── A student deletes their own sign-in ─────────────────────────────────────
+{
+  const MAYA = '00000000-0000-4000-8000-0000000000b1'
+  const MAYA_USER = '00000000-0000-4000-8000-0000000000b2'
+  const byMember = await call({ action: 'delete_my_signin' }, 'counselor-token')
+  check('a counselor has no student sign-in to delete, and nothing is deleted', byMember.status === 403 && db.people.has(COUNSELOR) && db.table('firm_members').some((m) => m.user_id === COUNSELOR))
+  const nobody = await call({ action: 'delete_my_signin' })
+  check('nor does someone who is not signed in', nobody.status === 401)
+  const mine = await call({ action: 'delete_my_signin', userId: EMILY_USER, studentId: STUDENT }, 'maya-token')
+  check('a student deletes their own sign-in: the auth user and the account row go', mine.status === 200 && !db.people.has(MAYA_USER) && !db.table('student_accounts').some((a) => a.user_id === MAYA_USER), mine.text)
+  check('whose sign-in is deleted comes from the verified sign-in, not the body', db.people.has(EMILY_USER) && db.table('student_accounts').some((a) => a.user_id === EMILY_USER))
+  check('the firm’s record of the student stays', db.table('students').some((s) => s.id === MAYA) && db.table('activity').some((a) => a.student_id === MAYA && a.text === 'Maya deleted their sign-in.'))
+  const after = await studentGet(new Request('http://localhost/api/student', { headers: { 'x-forwarded-for': '10.9.5.1', authorization: 'Bearer maya-token' } }))
+  check('their old token opens nothing afterwards', after.status === 401)
 }
 
 // ── Nothing here sends anything ─────────────────────────────────────────────
@@ -288,7 +504,7 @@ const invitation = (n: number, over: Record<string, unknown> = {}) => {
   const source = readFileSync(new URL('../server/account.ts', import.meta.url), 'utf8') + readFileSync(new URL('../api/account.ts', import.meta.url), 'utf8')
   check('the account code imports no transport and no dispatcher', !/from '\.\.?\/(server\/)?(transport|dispatch)/.test(source) && !source.includes('queue_message'))
   check('no outbox row was made by any request in this run', (db.tables.get('outbox') ?? []).length === 0)
-  const secrets = [1, 2, 3, 4, 5, 999].map(secretOf)
+  const secrets = [1, 2, 3, 4, 5, 20, 999].map(secretOf)
   check('nothing printed holds a secret or a hash', printed.every((line) => !secrets.some((s) => line.includes(s) || line.includes(sha(s)))))
   const bad = await call('{not json')
   check('a body that is not JSON is refused', bad.status === 400)

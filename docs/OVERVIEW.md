@@ -226,6 +226,7 @@ For phone texts, `outbox.delivery_detail` adds the case: `phone_waiting` (handed
 | Counselor | Supabase email and password. The browser holds the session and sends the access token as `Authorization: Bearer` to every `/api` route | `src/store/session.ts`, `server/supabase.ts` |
 | Firm membership | `firm_members` row with role `owner` or `counselor`. One firm per account. `create_firm` is the only way a firm is made, and makes the caller its owner. Nobody writes the table directly: a person joins by accepting an invitation, and roles, removal, leaving and renaming yourself go through database functions. A firm with members always has an owner | `supabase/migrations/20261123000001_schema_and_policies.sql`, `20261208000001_roles_and_invitations.sql` |
 | Invitation | A link a person copies, `/join#<secret>`. 32 random bytes, only the SHA-256 hash stored, 7 days, used once. Platinum sends nothing. Accepting needs a sign-in whose confirmed address is the invited one, and happens on the server in one transaction | `server/account.ts`, `api/account.ts`, `shared/account.ts` |
+| Student sign-in | Optional, beside the link. A `student_accounts` row ties one Supabase sign-in to one student. Never a `firm_members` row and never passes `is_firm_member`, so no table is open to it. `/api/student` takes its `Authorization: Bearer` token, checks on every request that it is not turned off and the student is not archived, and then runs the link's own code | `server/studentLink.ts` (`findStudentAccount`), `api/student.ts`, `supabase/migrations/20261209000001_student_accounts.sql` |
 | Student | A link token: 32 random bytes, only its SHA-256 hash stored. Expires 30 days after it is made or rotated. Created from the student page, or minted by the dispatcher when a message needs one. Sent in the `x-student-token` header | `server/studentLink.ts`, `src/data/repo.ts`, `server/dispatch.ts` |
 | Phone | An 8-character setup code (hash stored, single use, 10 minutes) typed on `/phone-setup`, exchanged for a device key (hash stored, shown once, 90 days). Pairing revokes any earlier phone. The counselor can revoke it | `server/phoneGateway/counselor.ts`, `server/phoneGateway/device.ts`, `server/phoneGateway/keys.ts` |
 | Google | OAuth web flow with an HMAC-signed `state` tied to an HttpOnly cookie, ten-minute expiry. Refresh tokens encrypted with AES-256-GCM under `GOOGLE_TOKEN_KEY` | `server/google/connection.ts`, `server/google/secrets.ts` |
@@ -265,13 +266,13 @@ Consent uses `include_granted_scopes=false`, so an older, broader Drive grant is
 | `/api/agent` | GET | Thread history, or progress for a request id | Firm member | `identify()` | `api/agent.ts` |
 | `/api/translate` | POST | English for a pending assistant message | Firm member | `identify()` | `api/translate.ts` |
 | `/api/dispatch` | POST | Send the firm's due queued messages | Firm member | `identify()`; firm from the caller only | `api/dispatch.ts` |
-| `/api/student` | GET | The student page | Student | Link token header; same 404 for unknown, revoked and expired | `api/student.ts` |
-| `/api/student` | POST | Mark a task done, leave a note, attach a link, `start_upload`, `finish_upload` | Student | Link token; limits by token and address | `api/student.ts` |
+| `/api/student` | GET | The student page | Student | Link token header (same 404 for unknown, revoked and expired), or a student sign-in's Bearer token (401 `unauthorized`, 403 `signin_off`, 403 `not_a_student`). The same page either way | `api/student.ts` |
+| `/api/student` | POST | Mark a task done, leave a note, attach a link, `start_upload`, `finish_upload` | Student | Link token or student sign-in; limits by token or user id, and by address | `api/student.ts` |
 | `/api/documents` | POST | `start`, `finish`, `suggest`, `file`, `rename`, `open` (60-second signed URL), `delete`, `settle` | Firm member | `identify()`; user client so storage policies apply | `api/documents.ts` |
 | `/api/colleges` | POST | `search`, `get`, `band`, `draft` (list draft) | Firm member | `identify()`; user client only; 10 drafts per person per 5 min | `api/colleges.ts` |
 | `/api/google` | POST | `status`, `picker`, `connect`, `disconnect`, `browse`, `import`, `folders`, `link`, `unlink`, `sync`, `import_removed` | Firm member | `identify()`; Zod per action | `api/google.ts` |
 | `/api/google` | GET | OAuth redirect back from Google | Browser that started connect | Signed `state` plus cookie | `api/google.ts` |
-| `/api/account` | POST | Nobody: `preview` (what an invitation is for, address masked; one 404 for unknown, expired, revoked and used). Signed in: `accept`. Owner: `firm`, `invite_counselor`, `new_link`, `revoke_invitation`, `set_role`, `removal_summary`, `remove_member`. Member: `leave` | Anyone, a signed-in person, or a firm member | None for `preview` (30 per address per 5 min); verified sign-in for `accept`; `identify()` for the rest. Zod per action; 4 KB cap | `api/account.ts` |
+| `/api/account` | POST | Nobody: `preview` (what an invitation is for, address masked; one 404 for unknown, expired, revoked and used). Signed in: `accept`. Owner: `firm`, `invite_counselor`, `new_link`, `revoke_invitation`, `set_role`, `removal_summary`, `remove_member`. Member: `leave`, `invite_student`, `student_signin`, `set_student_signin`. Student: `delete_my_signin` | Anyone, a signed-in person, or a firm member | None for `preview` (30 per address per 5 min); verified sign-in for `accept`; `identify()` for the rest. Zod per action; 4 KB cap | `api/account.ts` |
 | `/api/phone` | POST | Phone: `pair`, `claim`, `report`. Counselor: `status`, `connect`, `number`, `test`, `wake`, `disconnect`, `resolve`, `cancel` | Phone or firm member | Setup code (`pair`), device key (`claim`, `report`), `identify()` (the rest) | `api/phone.ts` |
 
 All routes answer `cache-control: no-store`. Server failures return a fixed sentence; the real error is logged on the server only. In `npm run dev`, `vite.config.ts` mounts all ten routes.
@@ -309,6 +310,8 @@ Row level security is enabled on every table below. "Members" means policies lim
 | `reports` | Parent reports; an AI report needs an approval before it can be marked sent | Members |
 | `outbox` | Queued and sent messages | Members read; writes only through `queue_message` and `cancel_message` |
 | `reminder_rules` | Per-firm reminder rules | Members |
+| `student_accounts` | Auth user (one account at most), firm and student (one sign-in per student), the invitation it came from, when it was turned off | The student reads their own row; members read their firm's. No direct writes |
+| `student_account_consents` | Who ticked "a parent or guardian knows" or "I am 13 or older", when, and which wording | Members read. Insert only, for every role |
 | `activity` | Firm log; `actor_user` on counselor lines. `student_id` is empty on a line about the firm itself (a member joined, left, was removed, changed role) | Members read; may write only their own counselor lines |
 | `student_links` | Link hash, expiry, revoked time | Members read every column except the hash |
 | `weekly_texts` | Each week's draft and sent or skipped state | Members |
@@ -335,6 +338,7 @@ Storage: bucket `documents` is private. Object policies require the first path s
 | `apply_changes` | The store's one write path: a batch of upserts and deletes in one transaction, as the caller. Refuses the outbox. Deleting a student or clearing the caseload is the owner's only. Renaming yourself goes through `rename_self` |
 | `invite_counselor`, `revoke_invitation` | An owner makes or revokes a counselor's invitation; `replace` is "New link" |
 | `accept_counselor_invitation` | Server only. Locks the invitation, checks it is live, that the person's address is confirmed and is the invited one, and that they belong to no firm, then makes the `counselor` membership and marks the invitation used, in one transaction |
+| `invite_student`, `accept_student_invitation`, `set_student_account_disabled`, `student_grade` | A member invites a student (refused below 9th grade, without the guardian tick, or when a sign-in exists); the server accepts for the invited student and records their age tick; a member turns a sign-in off or on; the grade for a graduation year, with the school year turning over on July 1 |
 | `set_member_role`, `remove_member`, `leave_firm`, `member_removal_summary`, `rename_self` | The only ways a membership changes. Removal and leaving also delete the person's Google connection, revoke their phone, cancel their queued messages and write one activity line |
 | `queue_message` | The only insert into `outbox`; records the approver and holds 10 seconds |
 | `cancel_message` | Cancels a queued row inside its 10 seconds |
@@ -358,6 +362,8 @@ Storage: bucket `documents` is private. Object policies require the first path s
 - **Only the dispatcher calls a transport.** The one other send is the fixed "Wake." email to the counselor's own allowlisted Gmail.
 - **Row level security on every table**, with explicit revokes for `anon` and narrow grants for signed-in people. Server-only tables have no grants at all.
 - **Isolation between firms.** Student-owned rows use a composite `(firm_id, student_id)` foreign key. `npm run test:isolation` proves on the real project that two firms cannot reach each other and the anon key reaches nothing.
+- **One kind of account per sign-in.** Two triggers refuse a membership for a person with a student account and a student account for a member, for every role; `create_firm` refuses a student. `test:accounts:db` runs every table as a student session: zero rows everywhere but its own account row and the shared college directory, and no insert, update or delete anywhere. `test:accounts` sends a student's token to every counselor route and gets 401 or 403 from each.
+- **Students are mostly minors.** No sign-in below 9th grade; a member ticks that a parent or guardian knows and agrees before the first invitation; the student ticks "I am 13 or older"; both ticks are kept with their wording version in an insert-only table. Nothing is collected at sign-up beyond the email and password. None of this has had a legal review.
 - **Student links** are stored only as a hash, expire after 30 days, can be rotated or revoked, and return the same 404 for unknown, revoked and expired. The page is built field by field: no parents, counselor notes, drafts or other students.
 - **Phone credentials.** Setup codes and device keys are stored as hashes; codes are single use for 10 minutes; keys expire after 90 days and can be revoked. Finished jobs keep no message text.
 - **Log redaction.** The log transport prints a masked recipient and body length only. Student-link addresses are stripped from send errors. Server errors reach the browser as a fixed sentence.
@@ -479,6 +485,7 @@ Before reporting work done: `typecheck`, `lint`, `test:notes`. Do not run `test:
 | `20261205000001_undo_ten_seconds.sql` | `queue_message` holds a message 10 seconds, not 60 |
 | `20261206000001_templates.sql` | Templates, message drafts, `tasks.template_id` |
 | `20261207000001_calendar.sql` | Google Calendar columns on meetings |
+| `20261209000001_student_accounts.sql` | **Not pushed.** Student accounts, the consent record, one kind of account per sign-in, `create_firm` refuses a student, student invitations, turning a sign-in off |
 | `20261208000001_roles_and_invitations.sql` | **Not pushed.** `firm_members` is read-only for signed-in people; invitations; role, removal, leave and rename functions; a firm keeps an owner; only an owner deletes a student; `activity.student_id` may be empty |
 
 ## 15. Known limitations and roadmap

@@ -1,4 +1,7 @@
-// The student link: /api/student, with the link's token in a header.
+// The student's page: /api/student. Two ways in, and one page behind both:
+//
+//   * the link's token in the x-student-token header, as always, or
+//   * Authorization: Bearer <Supabase access token> of a student sign-in.
 //
 //   GET   returns the student's page (see server/studentLink.ts for exactly what).
 //   POST  one of three writes: mark a task done or not done, leave a progress
@@ -11,13 +14,20 @@
 // Only its SHA-256 hash is stored. An unknown token and a revoked one get the
 // same 404. Requests are rate limited by token and by address, and nothing here
 // reveals which of the two it was.
+//
+// A student sign-in is verified with Supabase, then its account is looked up
+// with the service role. It is refused when a member has turned it off or the
+// student is archived, on every request. After that it runs the very same page,
+// write and upload code as the link: nothing more is readable, nothing more is
+// writable. Requests are limited by user id and by address. A counselor's
+// token has no student account behind it and gets nothing here.
 
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
-import { STUDENT_TOKEN, STUDENT_UPLOAD, STUDENT_WRITE } from '../shared/student.js'
+import { STUDENT_TOKEN, STUDENT_UPLOAD, STUDENT_WRITE, type StudentErrorCode } from '../shared/student.js'
 import { inBackground } from '../server/documentSorting.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
-import { StudentLinkError, findLink, finishStudentUpload, hashToken, startStudentUpload, studentPage, studentWrite, type Link } from '../server/studentLink.js'
-import { serviceConfigured } from '../server/supabase.js'
+import { StudentLinkError, findLink, findStudentAccount, finishStudentUpload, hashToken, startStudentUpload, studentPage, studentWrite, type Link } from '../server/studentLink.js'
+import { authConfigured, serviceConfigured, signedIn } from '../server/supabase.js'
 
 // Long enough for the sorting that carries on after finish_upload has answered.
 export const config = { maxDuration: 60 }
@@ -29,13 +39,29 @@ const MAX_BODY_BYTES = 8_000
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
-const fail = (message: string, status: number) => json({ ok: false, message }, status)
+const fail = (message: string, status: number, code?: StudentErrorCode) => json(code ? { ok: false, code, message } : { ok: false, message }, status)
 const notFound = () => fail('This link does not work. Ask your counselor for a new one.', 404)
+const tooMany = () => fail('Too many requests. Wait a few minutes and try again.', 429)
+
+/** The student behind a sign-in, or the response to send instead. `code` tells an app which screen to show. */
+async function openAccount(request: Request): Promise<Link | Response> {
+  if (!authConfigured()) return fail('Student sign-ins are not set up on this server.', 503)
+  const person = await signedIn(request)
+  if (!person.ok) return fail('Sign in again.', 401, 'unauthorized')
+  if (rateLimited(`student-user:${person.userId}`, MAX_PER_TOKEN)) return tooMany()
+  const account = await findStudentAccount(person.userId)
+  if (account === 'off') return fail('This sign-in has been turned off. Ask your counselor about it.', 403, 'signin_off')
+  // No student account: a counselor, or a person who belongs to nothing. Nothing here is theirs.
+  if (!account) return fail('This is not a student sign-in.', 403, 'not_a_student')
+  return account
+}
 
 /** The link behind this request, or the response to send instead. */
 async function open(request: Request): Promise<Link | Response> {
   if (!serviceConfigured()) return fail('Student links are not set up on this server.', 503)
-  if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return fail('Too many requests. Wait a few minutes and try again.', 429)
+  if (rateLimited(`addr:${addressOf(request)}`, MAX_PER_ADDRESS)) return tooMany()
+  // A link token, when one is sent, is the whole credential, exactly as before. A sign-in is only looked at without one.
+  if (request.headers.get(STUDENT_TOKEN_HEADER) === null && request.headers.get('authorization')) return openAccount(request)
   const token = STUDENT_TOKEN.safeParse(request.headers.get(STUDENT_TOKEN_HEADER))
   if (!token.success) return notFound()
   if (rateLimited(`token:${hashToken(token.data)}`, MAX_PER_TOKEN)) return fail('Too many requests. Wait a few minutes and try again.', 429)

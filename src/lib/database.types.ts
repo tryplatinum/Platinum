@@ -1837,6 +1837,99 @@ export type Database = {
           },
         ]
       }
+      student_account_consents: {
+        Row: {
+          at: string
+          by_user: string
+          firm_id: string
+          id: string
+          invitation_id: string | null
+          kind: string
+          student_id: string
+          wording_version: string
+        }
+        Insert: {
+          at?: string
+          by_user: string
+          firm_id: string
+          id?: string
+          invitation_id?: string | null
+          kind: string
+          student_id: string
+          wording_version: string
+        }
+        Update: {
+          at?: string
+          by_user?: string
+          firm_id?: string
+          id?: string
+          invitation_id?: string | null
+          kind?: string
+          student_id?: string
+          wording_version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_account_consents_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      student_accounts: {
+        Row: {
+          created_at: string
+          disabled_at: string | null
+          disabled_by: string | null
+          firm_id: string
+          invitation_id: string | null
+          student_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          disabled_at?: string | null
+          disabled_by?: string | null
+          firm_id: string
+          invitation_id?: string | null
+          student_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          disabled_at?: string | null
+          disabled_by?: string | null
+          firm_id?: string
+          invitation_id?: string | null
+          student_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_accounts_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_accounts_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: true
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+          {
+            foreignKeyName: "student_accounts_invitation_id_fkey"
+            columns: ["invitation_id"]
+            isOneToOne: false
+            referencedRelation: "invitations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       student_drive_folders: {
         Row: {
           created_at: string
@@ -2299,6 +2392,10 @@ export type Database = {
         Args: { display_name: string; hash: string; person: string }
         Returns: Json
       }
+      accept_student_invitation: {
+        Args: { age_version: string; hash: string; person: string }
+        Returns: Json
+      }
       add_draft_to_college_list: { Args: { draft: string }; Returns: number }
       apply_changes: {
         Args: { changes: Json; firm: string }
@@ -2380,6 +2477,16 @@ export type Database = {
         Args: { email: string; replace?: string; token_hash: string }
         Returns: Json
       }
+      invite_student: {
+        Args: {
+          consent_version?: string
+          email: string
+          replace?: string
+          student: string
+          token_hash: string
+        }
+        Returns: Json
+      }
       leave_firm: { Args: never; Returns: Json }
       member_removal_summary: { Args: { member: string }; Returns: Json }
       remove_member: { Args: { member: string }; Returns: Json }
@@ -2388,6 +2495,14 @@ export type Database = {
       set_member_role: {
         Args: { member: string; new_role: string }
         Returns: undefined
+      }
+      set_student_account_disabled: {
+        Args: { disabled: boolean; student: string }
+        Returns: undefined
+      }
+      student_grade: {
+        Args: { grad_year: number; on_day?: string }
+        Returns: number
       }
       seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {

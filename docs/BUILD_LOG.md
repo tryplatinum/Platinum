@@ -30,6 +30,30 @@ One branch, one pull request, a commit or more per part. **No migration in this 
 
 **Checked.** `npm run test:accounts` (55 checks, in-memory Supabase): one answer for unknown, expired, revoked, used and malformed previews; the rate limit; accept needs a verified sign-in, the right address and a confirmed one; only the hash reaches the database; the caller's id never comes from the body; counselors are refused every owner action before the database is asked; removal revokes at Google and calls the database once. `npm run test:accounts:db` (67 checks, PGlite): everything above as the database enforces it, including the last owner, direct writes to `firm_members`, the hash column, "New link", and that removal does all four things and writes one line. **Not run:** a real database, real Supabase Auth, two accepts truly at once (PGlite has one connection; the check is that the second is refused and that the row is locked).
 
+### Part B: student accounts
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261209000001_student_accounts.sql`, after `20261208000001`.
+
+- `student_accounts` (auth user as the key, `(firm_id, student_id)` unique and a composite foreign key, the invitation, `disabled_at`). The student reads their own row, members read their firm's, nobody writes it directly.
+- `student_account_consents`: insert only for every role. A trigger refuses an update, and refuses a delete unless it arrives as a cascade from deleting the whole firm.
+- `one_kind_of_account` triggers on `firm_members` and `student_accounts`; `create_firm` restated whole with one refusal added.
+- `invite_student`, `accept_student_invitation` (service role only), `set_student_account_disabled`, `student_grade`.
+
+**The school-year boundary is July 1.** A student who graduates in the calendar year the current school year ends in is in 12th grade; grade = 12 − (grad_year − that year); below 9 is refused. The rule is in `shared/account.ts` (`gradeFor`, `maySignIn`) and again in the database (`student_grade`), and `test:accounts:db` checks the two agree for ten graduation years on both sides of the boundary.
+
+**`/api/student`** takes the link token as before, or a student sign-in's Bearer token when no link token is sent. `findStudentAccount` returns the same `Link` the link path makes, so the page, the three writes and the two upload steps are the same code. The link path's answers are unchanged; the sign-in path adds a `code` (`unauthorized`, `signin_off`, `not_a_student`). A file added by a signed-in student is recorded like a link upload with no link row.
+
+**Choices the brief did not settle.**
+- *"New link" for a student does not ask for the guardian tick again*; the tick already on record for that student stands.
+- *An archived student cannot be invited*, and an invitation made before the student was archived stops working.
+- *A student deleting their sign-in* deletes the auth user (the account row goes with it) and writes one activity line. The consent records stay. The firm's record of the student is untouched.
+- *A student deleted by the firm* loses the account row with the student; the auth user is left with no kind of account, and sees the "no firm, no invitation" screen.
+- *Wording versions* are `guardian-2026-11-27` and `age-2026-11-27` in `shared/account.ts`. The server sends its own version, never the request's.
+
+**From the review of Part A** (fixed in this commit, in the two unpushed migrations): an owner acting on an invitation that was just used now gets "no longer waiting" (`PI009`) instead of the invitee's dead-link sentence; the last-owner refusal has its own code (`PI010`); accept takes the firm lock before the invitation lock, the order "New link" uses; a person who starts a firm in another tab mid-accept is told they already belong to a firm; `invite_counselor` re-checks the caller after the lock; rate-limit keys for addresses and people no longer share a prefix.
+
+**Checked.** `test:accounts` is now 95 checks and `test:accounts:db` 119. New: the same page byte for byte by link and by sign-in; a turned-off or archived sign-in refused on the next request; 16 requests across the 9 counselor routes with a student's token, all 401 or 403; a student session against all 37 tables; deleting a sign-in. **Not run:** a real database, real Supabase Auth.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

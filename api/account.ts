@@ -7,8 +7,9 @@
 //   * nobody ("preview"): someone holding an invitation link, before they sign
 //     in. Rate limited by address. Unknown, expired, revoked and used
 //     invitations all get the same 404.
-//   * a signed-in person who is not a member of anything yet ("accept"):
-//     Authorization: Bearer <Supabase access token>, verified with Supabase.
+//   * a signed-in person who is not a member of a firm ("accept", and a
+//     student's "delete_my_signin"): Authorization: Bearer <Supabase access
+//     token>, verified with Supabase.
 //   * a member of a firm (everything else), through identify(). The firm id and
 //     the user id always come from there, never from the body. A student has
 //     no membership, so identify() refuses them here as on every counselor route.
@@ -18,7 +19,7 @@
 // message: an invitation is a link a person copies.
 
 import { ACCOUNT_REQUEST, type AccountErrorCode, type AccountRequest } from '../shared/account.js'
-import { AccountError, DEAD_INVITATION, acceptInvitation, firmOverview, inviteCounselor, leaveFirm, newLink, previewInvitation, removalSummary, removeMember, revokeInvitation, setRole } from '../server/account.js'
+import { AccountError, DEAD_INVITATION, acceptInvitation, deleteMySignIn, firmOverview, inviteCounselor, inviteStudent, leaveFirm, newLink, previewInvitation, removalSummary, removeMember, revokeInvitation, setRole, setStudentSignIn, studentSignIn } from '../server/account.js'
 import { addressOf, rateLimited } from '../server/rateLimit.js'
 import { authConfigured, identify, serviceConfigured, signedIn, type Caller } from '../server/supabase.js'
 
@@ -37,7 +38,7 @@ type Member = Extract<Caller, { ok: true }>
 type Action<K extends AccountRequest['action']> = Extract<AccountRequest, { action: K }>
 
 /** What a member of a firm may ask for. Who may do which is decided in server/account.ts and again in the database. */
-const MEMBER: { [K in Exclude<AccountRequest['action'], 'preview' | 'accept'>]: (caller: Member, body: Action<K>) => Promise<unknown> } = {
+const MEMBER: { [K in Exclude<AccountRequest['action'], 'preview' | 'accept' | 'delete_my_signin'>]: (caller: Member, body: Action<K>) => Promise<unknown> } = {
   firm: (caller) => firmOverview(caller),
   invite_counselor: (caller, body) => inviteCounselor(caller, body.email),
   new_link: (caller, body) => newLink(caller, body.invitationId),
@@ -46,6 +47,9 @@ const MEMBER: { [K in Exclude<AccountRequest['action'], 'preview' | 'accept'>]: 
   removal_summary: (caller, body) => removalSummary(caller, body.userId),
   remove_member: (caller, body) => removeMember(caller, body.userId),
   leave: (caller) => leaveFirm(caller),
+  invite_student: (caller, body) => inviteStudent(caller, body),
+  student_signin: (caller, body) => studentSignIn(caller, body.studentId),
+  set_student_signin: (caller, body) => setStudentSignIn(caller, body.studentId, body.on),
 }
 
 async function respond(request: Request): Promise<Response> {
@@ -70,21 +74,24 @@ async function respond(request: Request): Promise<Response> {
     return json({ ok: true, data: await previewInvitation(parsed.data.secret) })
   }
 
-  if (rateLimited(`account:${address}`, MAX_PER_ADDRESS)) return tooMany()
+  if (rateLimited(`account-addr:${address}`, MAX_PER_ADDRESS)) return tooMany()
   if (!parsed.success) return fail('invalid', 'The request was not valid.', 400)
   const body = parsed.data
 
-  if (body.action === 'accept') {
+  if (body.action === 'accept' || body.action === 'delete_my_signin') {
     const person = await signedIn(request)
     if (!person.ok) return fail('unauthorized', 'Sign in first.', 401)
-    if (rateLimited(`account:${person.userId}`, MAX_PER_USER)) return tooMany()
-    return json({ ok: true, data: await acceptInvitation(person, body) })
+    if (rateLimited(`account-user:${person.userId}`, MAX_PER_USER)) return tooMany()
+    if (body.action === 'accept') return json({ ok: true, data: await acceptInvitation(person, body) })
+    // A student, about their own sign-in. Who they are comes from the verified sign-in alone.
+    await deleteMySignIn(person)
+    return json({ ok: true, data: null })
   }
   if (body.action === 'preview') return fail('invalid', 'The request was not valid.', 400)
 
   const caller = await identify(request)
   if (!caller.ok) return caller.reason === 'no_firm' ? fail('no_firm', 'This account does not belong to a firm.', 403) : fail('unauthorized', 'Sign in again.', 401)
-  if (rateLimited(`account:${caller.userId}`, MAX_PER_USER)) return tooMany()
+  if (rateLimited(`account-user:${caller.userId}`, MAX_PER_USER)) return tooMany()
   const run = MEMBER[body.action] as (caller: Member, body: AccountRequest) => Promise<unknown>
   return json({ ok: true, data: (await run(caller, body)) ?? null })
 }
