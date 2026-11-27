@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { STUDENT_TOKEN } from '../../../shared/student'
 import { Card, Skeleton } from '../../components/ui'
+import { StudentPageError } from '../../services/studentLink'
 import { openStudentLink } from '../../store/session'
 import { useStore } from '../../store/store'
 
@@ -26,6 +27,13 @@ const keep = (token: string) => {
     sessionStorage.setItem(KEPT, token)
   } catch {
     // No storage: the page works until it is reloaded.
+  }
+}
+const forget = () => {
+  try {
+    sessionStorage.removeItem(KEPT)
+  } catch {
+    // Nothing to forget.
   }
 }
 const kept = () => {
@@ -41,7 +49,7 @@ export function StudentLinkLayout() {
   const navigate = useNavigate()
   const { token: inPath } = useParams()
   // From the fragment (links made now), from the path (links already sent), or this tab's own memory after a reload.
-  const [token] = useState(() => {
+  const [token, setToken] = useState(() => {
     const arrived = location.hash.slice(1) || inPath || ''
     if (STUDENT_TOKEN.safeParse(arrived).success) keep(arrived)
     return arrived || kept()
@@ -50,10 +58,17 @@ export function StudentLinkLayout() {
   const student = useStore((s) => s.data.students[0])
   const [error, setError] = useState('')
 
-  // Out of the address bar, and out of this history entry, before anything else happens.
+  // Out of the address bar, and out of this history entry, before anything else happens. A second
+  // link pasted into the same tab arrives here too: it replaces the first, and is removed the same way.
+  const arrived = location.hash.slice(1) || inPath || ''
   useEffect(() => {
-    if (location.hash || inPath) navigate('/s', { replace: true })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!arrived) return
+    if (arrived !== token) {
+      if (STUDENT_TOKEN.safeParse(arrived).success) keep(arrived)
+      setToken(arrived)
+    }
+    navigate('/s', { replace: true })
+  }, [arrived]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Whatever this page links to or loads is told nothing about where the visitor came from.
   useEffect(() => {
@@ -71,7 +86,11 @@ export function StudentLinkLayout() {
       setError('This link does not work. Ask your counselor for a new one.')
       return
     }
-    openStudentLink(token).catch((e) => live && setError(e instanceof Error ? e.message : 'This page is not available right now.'))
+    openStudentLink(token).catch((e) => {
+      // A link the server does not know is not kept for the next reload.
+      if (e instanceof StudentPageError && e.status === 404 && kept() === token) forget()
+      if (live) setError(e instanceof Error ? e.message : 'This page is not available right now.')
+    })
     return () => {
       live = false
     }

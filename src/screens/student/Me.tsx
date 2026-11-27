@@ -15,13 +15,13 @@
 // No analytics, trackers or third-party scripts run on this page.
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { NavLink, Navigate, Outlet, useOutletContext } from 'react-router-dom'
+import { Link, NavLink, Navigate, Outlet, useLocation, useOutletContext } from 'react-router-dom'
 import { COUNSELORS_CAN_SEE } from '../../../shared/account'
 import { Logo } from '../../components/Logo'
 import { Splash } from '../../components/RequireFirm'
 import { Button, Card, Field, Note, Skeleton, cx, useConfirm, usePageTitle, useToast } from '../../components/ui'
 import { deleteMySignIn } from '../../services/account'
-import { homeOf, refreshStudentAccount, setPassword, signOut } from '../../store/session'
+import { homeOf, leaveLinkForMyPage, refreshStudentAccount, setPassword, signOut } from '../../store/session'
 import type { Student } from '../../types'
 import { PASSWORD_HINT, PasswordInput, checkPassword } from '../counselor/SignIn'
 import { useStore } from '../../store/store'
@@ -39,8 +39,12 @@ function TurnedOff({ email }: { email: string }) {
         <h1 className="text-lg font-semibold">This sign-in has been turned off</h1>
         <p className="text-sm leading-relaxed text-ink-soft">Your counselor turned it off, so your page does not open with it right now. Ask them about it. If they sent you a link to your page, that still works.</p>
         <p className="break-all text-[13px] text-muted">Signed in as {email}</p>
-        <div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Button onClick={() => void signOut()}>Sign out</Button>
+          {/* Changing the password and deleting the sign-in do not depend on the page being open. */}
+          <Link to="/me/account" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
+            Your account
+          </Link>
         </div>
       </Card>
     </Column>
@@ -55,14 +59,14 @@ export function StudentAccountLayout() {
   const student = useStore((s) => (s.account.status === 'student' && s.mode === 'student_link' ? s.data.students[0] : undefined))
   const firmName = useStore((s) => s.data.firm.name)
 
-  // Keep the page current, and notice a sign-in that was turned off, when the student comes back to it.
+  const hasLink = useStore((s) => Boolean(s.linkToken))
+  const onAccount = useLocation().pathname.replace(/\/$/, '').endsWith('/account')
+
+  // Arriving from a student link opened in this tab: that link is let go of, and this is the student's own page.
+  // (The page is kept current on return to the tab by store/session.ts.)
   useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === 'visible') void refreshStudentAccount()
-    }
-    document.addEventListener('visibilitychange', refresh)
-    return () => document.removeEventListener('visibilitychange', refresh)
-  }, [])
+    if (hasLink) leaveLinkForMyPage()
+  }, [hasLink])
 
   if (account.status === 'loading') {
     return (
@@ -76,6 +80,17 @@ export function StudentAccountLayout() {
   if (account.status === 'signed_out') return <Navigate to="/signin" replace />
   // A member's home is the workspace; someone with no firm is asked what they came for.
   if (account.status !== 'student') return account.status === 'error' ? <Splash><p className="text-sm text-ink-soft">{account.message}</p></Splash> : <Navigate to={homeOf(account)!} replace />
+  // The Account page needs only the sign-in, so it opens even when the student's page does not.
+  if ((account.off || load === 'error') && onAccount) {
+    return (
+      <Column>
+        <Link to="/me" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
+          Back
+        </Link>
+        <Outlet context={undefined} />
+      </Column>
+    )
+  }
   if (account.off) return <TurnedOff email={account.email} />
 
   if (load === 'error') {
@@ -85,10 +100,13 @@ export function StudentAccountLayout() {
           <h1 className="text-lg font-semibold">Your page could not be loaded</h1>
           <p className="text-sm text-ink-soft">{loadError ?? 'Something went wrong.'}</p>
           <div className="flex gap-2">
-            <Button variant="primary" onClick={() => void refreshStudentAccount()}>
+            <Button variant="primary" onClick={() => void refreshStudentAccount(true)}>
               Try again
             </Button>
             <Button onClick={() => void signOut()}>Sign out</Button>
+            <Link to="/me/account" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
+              Your account
+            </Link>
           </div>
         </Card>
       </Column>
@@ -132,9 +150,10 @@ export function StudentAccountLayout() {
 
 /** The student's own account: the address, a new password, the way out, and deleting the sign-in. */
 export function StudentAccount() {
-  const student = useOutletContext<Student>()
+  // Missing when the student's page could not be opened (the sign-in is off, or it failed to load).
+  const student = useOutletContext<Student | undefined>()
   const email = useStore((s) => (s.account.status === 'student' ? s.account.email : ''))
-  const firmName = useStore((s) => s.data.firm.name)
+  const firmName = useStore((s) => (student ? s.data.firm.name : 'Your firm'))
   const confirm = useConfirm()
   const toast = useToast()
   const [password, setPasswordValue] = useState('')
@@ -189,7 +208,7 @@ export function StudentAccount() {
         <h2 className="text-[15px] font-semibold">Sign-in</h2>
         <p className="break-all text-sm text-ink-soft">{email}</p>
         <p className="text-[13px] text-muted">
-          {student.firstName} at {firmName}. Your email address and a password are all this account holds.
+          {student ? `${student.firstName} at ${firmName}. ` : ''}Your email address and a password are all this account holds.
         </p>
       </Card>
 

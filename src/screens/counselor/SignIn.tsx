@@ -57,7 +57,7 @@ export function PasswordInput({ value, onChange, autoComplete }: { value: string
   return (
     <span className="relative block">
       <input className={`${inputClass} pr-16!`} type={shown ? 'text' : 'password'} required minLength={autoComplete === 'new-password' ? MIN_PASSWORD : undefined} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} autoCapitalize="none" spellCheck={false} />
-      <button type="button" aria-pressed={shown} aria-label={shown ? 'Hide the password' : 'Show the password'} className="absolute inset-y-0 right-0 min-w-11 rounded-control px-3 text-[13px] font-semibold text-accent hover:underline" onClick={() => setShown(!shown)}>
+      <button type="button" aria-label={shown ? 'Hide the password' : 'Show the password'} className="absolute inset-y-0 right-0 min-w-11 rounded-control px-3 text-[13px] font-semibold text-accent hover:underline" onClick={() => setShown(!shown)}>
         {shown ? 'Hide' : 'Show'}
       </button>
     </span>
@@ -190,7 +190,7 @@ export function SignUp() {
         <div className="motion-page flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-6 text-left">
           <h1 className="text-lg font-semibold">Confirm your email</h1>
           <p className="text-sm leading-relaxed text-ink-soft">
-            We sent a link to <span className="font-semibold text-ink">{sent}</span>. Open it to confirm your address, then sign in. {firm.trim()} is made as soon as you do.
+            We sent a link to <span className="font-semibold text-ink">{sent}</span>. Open it in this browser to confirm your address, then sign in. {firm.trim()} is made as soon as you do. In another browser you will be asked for the firm’s name once more.
           </p>
           <Link to="/signin" className={LINK_CLASS}>
             Back to sign in
@@ -209,9 +209,9 @@ export function SignUp() {
         void run(async () => {
           checkPassword(password)
           const address = email.trim()
-          pendingFirm.keep({ firm: firm.trim(), name: name.trim() })
+          pendingFirm.keep({ firm: firm.trim(), name: name.trim(), email: address })
           if ((await signUp(address, password)) === 'confirm_email') setSent(address)
-          else await startFirm(firm.trim(), name.trim())
+          else await startFirm()
         })
       }}
     >
@@ -297,7 +297,7 @@ export function Start() {
 /** The firm step alone: for someone who signed up and never made a firm. Creates the firm with them as its owner. */
 export function FirmSetup() {
   const account = useStore((s) => s.account)
-  const kept = pendingFirm.read()
+  const kept = pendingFirm.read(account.status === 'needs_firm' ? account.email : undefined)
   const [firm, setFirm] = useState(kept?.firm ?? '')
   const [name, setName] = useState(kept?.name ?? '')
   const { busy, error, run } = useSubmit()

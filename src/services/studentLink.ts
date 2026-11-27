@@ -18,9 +18,12 @@ type Reply = { ok: true; data: AppData } | { ok: false; message: string; code?: 
 /** A refusal from /api/student. `code` is set only for a student sign-in, and says which screen to show. */
 export class StudentPageError extends Error {
   code?: StudentErrorCode
-  constructor(message: string, code?: StudentErrorCode) {
+  /** The HTTP status, when the server answered. 404 is a link that does not open anything. */
+  status?: number
+  constructor(message: string, code?: StudentErrorCode, status?: number) {
     super(message)
     this.code = code
+    this.status = status
   }
 }
 
@@ -50,7 +53,7 @@ async function call(linkToken: string | undefined, write?: StudentWrite): Promis
   }
   if (!res.headers.get('content-type')?.includes('application/json')) throw new StudentPageError('This page is not available right now.')
   const body = (await res.json()) as Reply
-  if (!body.ok) throw new StudentPageError(body.message, body.code)
+  if (!body.ok) throw new StudentPageError(body.message, body.code, res.status)
   return body.data
 }
 

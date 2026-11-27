@@ -13,13 +13,13 @@
 // No analytics, trackers or third-party scripts run on this page, and nothing
 // is asked of a student beyond an email address and a password.
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { COUNSELORS_CAN_SEE, INVITE_SECRET, STUDENT_AGE, STUDENT_SEES, type InvitationPreview } from '../../shared/account'
 import { Splash } from '../components/RequireFirm'
 import { Button, CheckRow, Field, Note, SegmentedControl, Skeleton, inputClass, usePageTitle } from '../components/ui'
 import { AccountFailure, acceptInvitation, previewInvitation } from '../services/account'
-import { homeOf, reenter, signIn, signOut, signUp } from '../store/session'
+import { homeOf, pendingFirm, reenter, signIn, signOut, signUp } from '../store/session'
 import { useStore } from '../store/store'
 import { ErrorNote, LINK_CLASS, PASSWORD_HINT, PasswordInput, checkPassword, useSubmit } from './counselor/SignIn'
 
@@ -28,10 +28,13 @@ let held: string | undefined
 
 function Box({ title, children }: { title: string; children: ReactNode }) {
   usePageTitle(title)
+  // The form was replaced by this message without a change of page: move focus to it, so it is read out.
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => heading.current?.focus(), [title])
   return (
     <Splash>
       <div className="motion-page flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-6 text-left">
-        <h1 tabIndex={-1} className="text-lg font-semibold focus:outline-none">
+        <h1 ref={heading} tabIndex={-1} className="text-lg font-semibold focus:outline-none">
           {title}
         </h1>
         {children}
@@ -72,14 +75,14 @@ export default function Join() {
   const location = useLocation()
   const navigate = useNavigate()
   const account = useStore((s) => s.account)
-  const [secret] = useState(() => {
+  const [secret, setSecret] = useState(() => {
     const fromLink = location.hash.slice(1)
     if (fromLink) held = fromLink
     return held ?? ''
   })
   const [preview, setPreview] = useState<InvitationPreview>()
   /** dead: the link does not work. offline: it could not be checked. confirm: the address has to be confirmed first. */
-  const [stage, setStage] = useState<'loading' | 'ready' | 'dead' | 'offline' | 'confirm' | 'done'>('loading')
+  const [stage, setStage] = useState<'loading' | 'ready' | 'none' | 'dead' | 'offline' | 'confirm' | 'done'>('loading')
   const [attempt, setAttempt] = useState(0)
   const [mode, setMode] = useState<'new' | 'existing'>('new')
   const [email, setEmail] = useState('')
@@ -89,13 +92,28 @@ export default function Join() {
   const [refusal, setRefusal] = useState<'wrong_email' | 'already_member'>()
   const { busy, error, run, clear } = useSubmit()
 
-  // Out of the address bar at once, and out of the history entry with it.
+  // Out of the address bar at once, and out of the history entry with it. Another invitation
+  // opened in the same tab arrives here too: it replaces the first, and is removed the same way.
+  const arrived = location.hash.slice(1)
   useEffect(() => {
-    if (location.hash) navigate('/join', { replace: true })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!arrived) return
+    if (arrived !== secret) {
+      held = arrived
+      setSecret(arrived)
+      setRefusal(undefined)
+    }
+    navigate('/join', { replace: true })
+  }, [arrived]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A firm name left over from an abandoned sign-up must not be made for someone who came to join.
+  useEffect(() => pendingFirm.clear(), [])
 
   useEffect(() => {
     let live = true
+    if (!secret) {
+      setStage('none')
+      return
+    }
     if (!INVITE_SECRET.safeParse(secret).success) {
       setStage('dead')
       return
@@ -163,7 +181,8 @@ export default function Join() {
     return home && home !== '/start' ? <Navigate to={home} replace /> : <Splash><p role="status" className="text-sm text-muted">Setting things up…</p></Splash>
   }
 
-  if (stage === 'loading') {
+  // Who is signed in is not known yet: the form would ask a signed-in person to sign in.
+  if (stage === 'loading' || account.status === 'loading') {
     return (
       <Splash>
         <div role="status" aria-label="Opening your invitation…" className="flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-6">
@@ -172,6 +191,18 @@ export default function Join() {
           <Skeleton className="h-11 w-full" />
         </div>
       </Splash>
+    )
+  }
+
+  // The page was reloaded, or opened without its link: the secret is never stored, so it is asked for again.
+  if (stage === 'none') {
+    return (
+      <Box title="Open your invitation link again">
+        <p className="text-sm leading-relaxed text-ink-soft">This page needs the link you were sent, and it does not keep it after a reload. Open the link again from the message it came in. If you already finished setting up, sign in.</p>
+        <Link to="/signin" className={LINK_CLASS}>
+          Go to sign in
+        </Link>
+      </Box>
     )
   }
 
@@ -205,7 +236,18 @@ export default function Join() {
         <p className="text-sm leading-relaxed text-ink-soft">
           We sent a confirmation email to the address you gave. Open the link in it, then <span className="font-semibold text-ink">open your invitation link again</span> to finish. The invitation keeps working until it expires.
         </p>
-        <p className="text-[13px] text-muted">No email after a few minutes? Check the address is the one the invitation was sent to, then ask the person who invited you.</p>
+        <p className="text-[13px] text-muted">No email after a few minutes? The address may already have a sign-in: go back and choose “I have a sign-in”. Or check it is the address the invitation was sent to.</p>
+        <div>
+          <Button
+            onClick={() => {
+              setMode('existing')
+              clear()
+              setStage('ready')
+            }}
+          >
+            Back
+          </Button>
+        </div>
       </Box>
     )
   }

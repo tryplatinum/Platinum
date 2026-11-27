@@ -75,7 +75,7 @@ export default function Firm() {
           <TabPanel tab={tab} label={tabs.find((t) => t.key === tab)?.label ?? ''}>
             {tab === 'team' && <Team members={firm.members} firmName={firmName} reload={load} />}
             {tab === 'invitations' && <Invitations invitations={counselorInvitations} reload={load} />}
-            {tab === 'students' && <StudentSignIns students={firm.students} onChange={(next) => setFirm({ ...firm, students: firm.students.map((s) => (s.studentId === next.studentId ? next : s)) })} />}
+            {tab === 'students' && <StudentSignIns students={firm.students} onChange={(next) => setFirm((now) => now && { ...now, students: now.students.map((s) => (s.studentId === next.studentId ? next : s)) })} />}
           </TabPanel>
         </>
       )}
@@ -173,10 +173,10 @@ function Team({ members, firmName, reload }: { members: FirmMember[]; firmName: 
                 </>
               ) : m.role === 'counselor' ? (
                 <>
-                  <Button busy={busy === m.userId} onClick={() => void makeOwner(m)}>
+                  <Button busy={busy === m.userId} aria-label={`Make ${m.name} an owner`} onClick={() => void makeOwner(m)}>
                     Make owner
                   </Button>
-                  <Button variant="danger" disabled={busy === m.userId} onClick={() => void remove(m)}>
+                  <Button variant="danger" disabled={busy === m.userId} aria-label={`Remove ${m.name}`} onClick={() => void remove(m)}>
                     Remove
                   </Button>
                 </>
@@ -302,10 +302,10 @@ function Invitations({ invitations, reload }: { invitations: PendingInvitation[]
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button busy={busy === i.id} onClick={() => renew(i)}>
+                  <Button busy={busy === i.id} aria-label={`New link for ${i.email}`} onClick={() => renew(i)}>
                     New link
                   </Button>
-                  <Button variant="danger" disabled={busy === i.id} onClick={() => void revoke(i)}>
+                  <Button variant="danger" disabled={busy === i.id} aria-label={`Revoke the invitation for ${i.email}`} onClick={() => void revoke(i)}>
                     Revoke
                   </Button>
                 </div>
@@ -316,7 +316,7 @@ function Invitations({ invitations, reload }: { invitations: PendingInvitation[]
       </Card>
 
       {fresh && (
-        <Modal title="Invitation link" onClose={() => setFresh(undefined)}>
+        <Modal title="Invitation link" typed onClose={() => setFresh(undefined)}>
           <div className="flex flex-col gap-3">
             <InvitationLink made={fresh} />
             <div className="flex justify-end">

@@ -109,6 +109,22 @@ No migration. `/me` is `StudentAccountLayout` in `src/screens/student/Me.tsx`: a
 
 **Checked.** `test:accounts:db` is 132 checks: a counselor's direct delete of a student removes nothing, an owner's does; a stored file with no row, or with another firm's row, is not listed or deletable, and stops being listed when its row is deleted. `test:outbox` checks the new link form and that neither form reaches a log. By hand in the preview: the fragment link, an old path link, no link, the counselor's Settings (`docs/accounts/f*.png`). **Not run:** a real database or real storage.
 
+### Parts C to F: fixes from the review
+
+A read-only review of the four commits found no secret reaching a server, a log or storage, no open redirect and no redirect loop. What it did find, now fixed:
+
+- **An older account lookup could overwrite a newer one.** `enter()` in `src/store/session.ts` now counts each decision (`generation`); a lookup that finishes after a newer one started, or after a sign-out, writes nothing. The student page refresh and a student's task write check that the same student is still the one on screen before keeping the answer.
+- **A student link and a student sign-in in one tab.** While a link's page is open, an account lookup notes who is signed in and leaves the page alone. Opening `/me` from there lets go of the link and loads the student's own page.
+- **Sign-up with a confirmation step did not make the firm**, though the screen said it would. The firm's name is now kept with the address it was typed for, in `localStorage`, and the firm is made on that person's first sign-in in the same browser. One promise makes it, so two lookups cannot make two. The join page clears a leftover name.
+- **Reset password** now says the same sentence whatever Supabase answers; only having no connection is reported.
+- **A second link pasted into an open tab** (`/s#…` or `/join#…`) is adopted and removed from the address bar like the first. A student link the server does not know is no longer kept for the next reload.
+- **Join**: reloading after the secret was removed says "Open your invitation link again", not that the link is dead; the confirm screen has a way back; the form waits until it is known who is signed in; a message that replaces the form takes focus.
+- **`/me/account` opens even when the sign-in is off or the page failed to load**, so a student can always delete their sign-in.
+- **Firm page**: two sign-in changes in a row no longer overwrite each other on screen; row buttons name who they act on; a window showing a one-time link no longer closes on an outside click.
+- **`scripts/test-isolation.ts`**: setup steps are asserted, the orphan file is confirmed to exist before it is tested, and "zero rows" names columns so an error is not mistaken for an empty answer.
+
+Not changed: `/reset-password` still shows its form to anyone already signed in (as before this branch).
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

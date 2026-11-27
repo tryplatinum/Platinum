@@ -556,9 +556,13 @@ export const useStore = create<State & Actions>()((set, get) => {
       // A link's token, or a signed-in student's session. Anything else on this page changes nothing.
       if (!asStudent || !(state.linkToken || state.account.status === 'student')) return
       set({ data: fn(before) })
+      // The answer is kept only if the same student, by the same way in, is still the one on screen.
+      const who = 'userId' in state.account ? state.account.userId : undefined
+      const still = () => get().mode === 'student_link' && get().linkToken === state.linkToken && ('userId' in get().account ? (get().account as { userId: ID }).userId : undefined) === who
       studentLinkWrite(state.linkToken, asStudent)
-        .then((data) => set({ data }))
+        .then((data) => still() && set({ data }))
         .catch((error) => {
+          if (!still()) return
           set({ data: before })
           notify(`That was not saved. ${reasonOf(error)}`)
         })

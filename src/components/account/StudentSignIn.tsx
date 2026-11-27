@@ -87,7 +87,7 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
     <>
       <div className="flex flex-wrap gap-2">
         {signIn.state === 'none' && !signIn.tooYoung && (
-          <Button disabled={busy} onClick={() => setInviting(true)}>
+          <Button disabled={busy} aria-label={`Invite ${firstName}`} onClick={() => setInviting(true)}>
             Invite
           </Button>
         )}
@@ -95,10 +95,12 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
           <>
             <Button
               busy={busy}
+              aria-label={`New link for ${firstName}`}
               onClick={() =>
                 void attempt(async () => {
                   setFresh(await newInvitationLink(signIn.invitationId!))
-                  await refresh()
+                  // The link is made and on screen. If the list cannot be read again, that is not a failure of this.
+                  await refresh().catch(() => undefined)
                 })
               }
             >
@@ -107,6 +109,7 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
             <Button
               variant="danger"
               disabled={busy}
+              aria-label={`Revoke ${firstName}’s invitation`}
               onClick={() =>
                 void attempt(async () => {
                   if (!(await confirm({ title: 'Revoke the invitation', body: `The link sent to ${signIn.email} stops working. ${firstName} keeps their student link, if they have one.`, action: 'Revoke' }))) return
@@ -123,6 +126,7 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
         {signIn.state === 'on' && (
           <Button
             disabled={busy}
+            aria-label={`Turn off ${firstName}’s sign-in`}
             onClick={() =>
               void attempt(async () => {
                 if (!(await confirm({ title: `Turn off ${firstName}’s sign-in`, body: `${firstName} can no longer open their page by signing in, from their next request. Nothing is deleted, and you can turn it back on. Their student link is not affected.`, action: 'Turn off' }))) return
@@ -137,6 +141,7 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
         {signIn.state === 'off' && (
           <Button
             busy={busy}
+            aria-label={`Turn on ${firstName}’s sign-in`}
             onClick={() =>
               void attempt(async () => {
                 onChange(await setStudentSignIn(signIn.studentId, true))
@@ -160,7 +165,7 @@ export function SignInActions({ signIn, firstName, onChange }: { signIn: Student
         />
       )}
       {fresh && (
-        <Modal title={`New link for ${firstName}`} onClose={() => setFresh(undefined)}>
+        <Modal title={`New link for ${firstName}`} typed onClose={() => setFresh(undefined)}>
           <div className="flex flex-col gap-3">
             <p className="text-sm text-ink-soft">The previous link has stopped working.</p>
             <InvitationLink made={fresh} scan />
@@ -191,7 +196,7 @@ function InviteStudent({ studentId, firstName, onClose }: { studentId: string; f
   }
 
   return (
-    <Modal title={made ? `Invitation for ${firstName}` : `Invite ${firstName} to make a sign-in`} onClose={onClose}>
+    <Modal title={made ? `Invitation for ${firstName}` : `Invite ${firstName} to make a sign-in`} typed onClose={onClose}>
       {made ? (
         <div className="flex flex-col gap-3">
           <InvitationLink made={made} scan />
