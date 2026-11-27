@@ -10,7 +10,8 @@ import { FileRow } from '../../components/files/FileRow'
 import { FilingRow } from '../../components/files/FilingRow'
 import { UploadWindow, useFileDrop } from '../../components/files/UploadWindow'
 import { DrivePicker } from '../../components/google/DrivePicker'
-import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase } from '../../components/ui'
+import { MotionList } from '../../components/motion'
+import { Button, Card, CardHeader, Empty, PageHeader, cx, inputBase, usePageTitle } from '../../components/ui'
 import { activeStudents, fullName } from '../../lib/derive'
 import { filesToCheck, folderOf, foldersInOrder, isSorting, newFiles, waitingFiles } from '../../lib/files'
 import { driveReady, useGoogleStatus } from '../../services/google'
@@ -19,6 +20,7 @@ import type { StudentDocument } from '../../types'
 
 export default function Documents() {
   const data = useData()
+  usePageTitle('Documents')
   const { refreshFiles } = useStore.getState()
   const [params, setParams] = useSearchParams()
   const [uploading, setUploading] = useState<File[]>()
@@ -64,7 +66,7 @@ export default function Documents() {
       />
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="tap-link font-semibold underline">Settings</Link> to add from Drive. Files already imported are not affected.
         </p>
       )}
       {drive && <DrivePicker mode="files" onClose={() => setDrive(false)} />}
@@ -104,43 +106,38 @@ export default function Documents() {
 
       <Card>
         <CardHeader className="px-5 py-4" title="Waiting for you" count={waiting.length} sub="Files you or a colleague uploaded that nobody has filed yet. They are on no student’s page until someone does." />
-        {waiting.length === 0 ? (
+        {waiting.length === 0 && (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">{filtered ? 'Nothing waiting matches these filters.' : 'Nothing is waiting. Uploads you have not filed yet appear here.'}</p>
-        ) : (
-          <ul>
-            {waiting.map((d) => (
-              <li key={d.id} className="border-t border-line px-5 py-4">
-                <FilingRow doc={d} />
-              </li>
-            ))}
-          </ul>
         )}
+        <MotionList itemClassName="border-t border-line px-5 py-4">
+          {waiting.map((d) => (
+            <FilingRow key={d.id} doc={d} />
+          ))}
+        </MotionList>
       </Card>
 
       <Card>
         <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed without a person choosing the folder: the AI was not sure, could not be reached, or sorting is switched off." />
-        {toCheck.length === 0 ? (
+        {toCheck.length === 0 && (
           <p className="border-t border-line px-5 py-4 text-sm text-muted">Nothing to check.</p>
-        ) : (
-          <ul>
-            {toCheck.map((d) => (
-              <FileRow key={d.id} doc={d} showStudent />
-            ))}
-          </ul>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {toCheck.map((d) => (
+            <FileRow key={d.id} doc={d} showStudent />
+          ))}
+        </MotionList>
       </Card>
 
       <Card>
         <CardHeader className="px-5 py-4" title="New" count={fresh.length} sub="Filed and not opened yet. Opening a file takes it off this list." />
-        {fresh.length === 0 ? (
+        {fresh.length === 0 && (
           <Empty title={filtered ? 'Nothing new matches these filters.' : 'Nothing new. Files your students add from their links, and files you upload, show here until someone opens them.'} />
-        ) : (
-          <ul>
-            {fresh.map((d) => (
-              <FileRow key={d.id} doc={d} showStudent />
-            ))}
-          </ul>
         )}
+        <MotionList itemClassName="border-t border-line">
+          {fresh.map((d) => (
+            <FileRow key={d.id} doc={d} showStudent />
+          ))}
+        </MotionList>
       </Card>
     </div>
   )

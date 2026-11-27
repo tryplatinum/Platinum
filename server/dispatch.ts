@@ -2,7 +2,7 @@
 // Uses the service-role client for status updates. The only caller of a
 // transport. The allowlist is checked before every send.
 
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import {
   STUDENT_LINK_PLACEHOLDER,
   allowlistAllows,
@@ -14,7 +14,8 @@ import {
   type RecipientContact,
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
-import type { QueueChannel, QueueLanguage } from '../shared/outbox.js'
+import { QUEUE_CHANNELS, type QueueChannel, type QueueLanguage } from '../shared/outbox.js'
+import { HAND_SENT_NOTE } from '../shared/phoneGateway.js'
 import { sweepJobs } from './phoneGateway/jobs.js'
 import { hashToken } from './studentLink.js'
 import { serviceClient } from './supabase.js'
@@ -37,6 +38,8 @@ type OutboxRow = {
   approved_by: string | null
   /** "Sent from your own phone" marks a text the counselor already sent by hand. */
   note: string | null
+  /** 'approved' when a counselor approved this message; 'automatic' when a rule queued it. */
+  trigger: string | null
 }
 
 export type DispatchSummary = {
@@ -105,6 +108,39 @@ async function loadRecipient(row: OutboxRow): Promise<RecipientContact> {
   return { phone: data?.phone, email: data?.email }
 }
 
+/** Someone with every kind of address, so only the channel decides. */
+const ANYONE: RecipientContact = { phone: '+15550100', email: 'someone@example.com' }
+
+/**
+ * True for a message a counselor approved on a channel Platinum has no way to
+ * send on (WeChat, LINE). The screen only lets such a message be approved with
+ * Copy, so the counselor has the text and sends it from their own app. The row
+ * is the record of that, exactly as a weekly text sent with Copy or Open in
+ * Messages is: it was sent by hand, it did not fail. A message a rule queued by
+ * itself on such a channel was copied by nobody, and still fails.
+ */
+export function approvedToSendByHand(row: { channel: string; trigger?: string | null }): boolean {
+  // A channel the queue knows, that resolveAddress refuses even for someone with every address.
+  const known = (QUEUE_CHANNELS as readonly string[]).includes(row.channel)
+  return row.trigger === 'approved' && known && !resolveAddress(row.channel as QueueChannel, ANYONE).ok
+}
+
+/**
+ * Records a message the counselor sent by hand, the way the phone transport
+ * records a hand-sent text: 'sent', a `hand_` id, and the note "Sent from your
+ * own phone" unless the row already says how it went. Nothing is sent from
+ * here and no transport is called.
+ */
+async function markSentByHand(row: OutboxRow): Promise<void> {
+  const { error } = await serviceClient()
+    .from('outbox')
+    .update({ status: 'sent', provider_message_id: `hand_${randomUUID()}`, error: null, sent_at: new Date().toISOString(), note: row.note?.trim() ? row.note : HAND_SENT_NOTE })
+    .eq('id', row.id)
+    .eq('status', 'sending')
+  if (error) console.error('[dispatch] sent-by-hand update:', error.message)
+  await activity(row.firm_id, row.student_id, `Sent a ${kindLabel(row.kind)} to ${row.to_name}.`)
+}
+
 function newToken(): string {
   return randomBytes(32).toString('base64url')
 }
@@ -142,6 +178,11 @@ async function withStudentLink(row: OutboxRow, body: string, bodyEn: string | nu
 
 async function processOne(row: OutboxRow, allowlist: ReturnType<typeof parseAllowlist>): Promise<'sent' | 'failed' | 'waiting'> {
   try {
+    // Approved on a channel with no transport: the counselor copied it and sends it themselves.
+    if (approvedToSendByHand(row)) {
+      await markSentByHand(row)
+      return 'sent'
+    }
     const recipient = await loadRecipient(row)
     const address = resolveAddress(row.channel as QueueChannel, recipient)
     if (!address.ok) {
@@ -204,7 +245,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
   const now = new Date().toISOString()
   const { data: due, error } = await serviceClient()
     .from('outbox')
-    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note')
+    .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note, trigger')
     .eq('firm_id', firmId)
     .eq('status', 'queued')
     .lte('send_after', now)
@@ -219,7 +260,7 @@ export async function dispatchFirm(firmId: string): Promise<DispatchSummary> {
       .update({ status: 'sending' })
       .eq('id', candidate.id)
       .eq('status', 'queued')
-      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note')
+      .select('id, firm_id, student_id, to_kind, to_name, parent_id, channel, language, kind, body, body_en, status, approved_by, note, trigger')
       .maybeSingle()
 
     if (claimed.error) throw new Error(`outbox claim failed: ${claimed.error.message}`)

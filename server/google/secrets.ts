@@ -65,6 +65,8 @@ export interface StateClaims {
   firmId: string
   /** The consent asked for sending from Gmail as well. */
   gmail: boolean
+  /** The consent asked for the calendar as well. */
+  calendar?: boolean
 }
 
 const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('base64url')
@@ -73,7 +75,7 @@ const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('
 export const newNonce = () => randomBytes(24).toString('base64url')
 
 export function signState(claims: StateClaims, nonce: string, key: string, now = Date.now()): string {
-  const payload = b64(Buffer.from(JSON.stringify({ u: claims.userId, f: claims.firmId, g: claims.gmail, e: Math.floor(now / 1000) + STATE_SECONDS, n: sha(nonce) }), 'utf8'))
+  const payload = b64(Buffer.from(JSON.stringify({ u: claims.userId, f: claims.firmId, g: claims.gmail, c: claims.calendar === true, e: Math.floor(now / 1000) + STATE_SECONDS, n: sha(nonce) }), 'utf8'))
   return `${payload}.${b64(createHmac('sha256', subKey(key, 'state')).update(payload).digest())}`
 }
 
@@ -89,13 +91,13 @@ export function verifyState(state: string | null | undefined, nonce: string | nu
   const given = Buffer.from(signature, 'base64url')
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined
   try {
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; f?: unknown; g?: unknown; e?: unknown; n?: unknown }
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; f?: unknown; g?: unknown; c?: unknown; e?: unknown; n?: unknown }
     if (typeof claims.u !== 'string' || typeof claims.f !== 'string' || typeof claims.e !== 'number' || typeof claims.n !== 'string') return undefined
     if (claims.e * 1000 <= now) return undefined
     const want = Buffer.from(claims.n)
     const have = Buffer.from(sha(nonce))
     if (want.length !== have.length || !timingSafeEqual(want, have)) return undefined
-    return { userId: claims.u, firmId: claims.f, gmail: claims.g === true }
+    return { userId: claims.u, firmId: claims.f, gmail: claims.g === true, calendar: claims.c === true }
   } catch {
     return undefined
   }

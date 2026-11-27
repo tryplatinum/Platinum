@@ -996,6 +996,8 @@ export type Database = {
           date: string
           duration_min: number
           firm_id: string
+          google_event_id: string | null
+          google_sync: string | null
           id: string
           location: string | null
           recap: Json | null
@@ -1015,6 +1017,8 @@ export type Database = {
           date: string
           duration_min?: number
           firm_id: string
+          google_event_id?: string | null
+          google_sync?: string | null
           id?: string
           location?: string | null
           recap?: Json | null
@@ -1034,6 +1038,8 @@ export type Database = {
           date?: string
           duration_min?: number
           firm_id?: string
+          google_event_id?: string | null
+          google_sync?: string | null
           id?: string
           location?: string | null
           recap?: Json | null
@@ -1058,6 +1064,94 @@ export type Database = {
             columns: ["firm_id", "student_id"]
             isOneToOne: false
             referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+        ]
+      }
+      message_drafts: {
+        Row: {
+          approval: Json | null
+          batch_id: string
+          body: string
+          channel: string
+          created_at: string
+          firm_id: string
+          id: string
+          kind: string
+          language: string
+          parent_id: string | null
+          seq: number
+          status: string
+          student_id: string
+          subject: string | null
+          template_id: string | null
+          to_kind: string
+          to_name: string
+          untranslated: boolean
+          updated_at: string
+        }
+        Insert: {
+          approval?: Json | null
+          batch_id: string
+          body: string
+          channel: string
+          created_at?: string
+          firm_id: string
+          id?: string
+          kind: string
+          language: string
+          parent_id?: string | null
+          seq?: number
+          status?: string
+          student_id: string
+          subject?: string | null
+          template_id?: string | null
+          to_kind: string
+          to_name: string
+          untranslated?: boolean
+          updated_at?: string
+        }
+        Update: {
+          approval?: Json | null
+          batch_id?: string
+          body?: string
+          channel?: string
+          created_at?: string
+          firm_id?: string
+          id?: string
+          kind?: string
+          language?: string
+          parent_id?: string | null
+          seq?: number
+          status?: string
+          student_id?: string
+          subject?: string | null
+          template_id?: string | null
+          to_kind?: string
+          to_name?: string
+          untranslated?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_drafts_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_drafts_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
+          },
+          {
+            foreignKeyName: "message_drafts_firm_id_template_id_fkey"
+            columns: ["firm_id", "template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
             referencedColumns: ["firm_id", "id"]
           },
         ]
@@ -1932,6 +2026,7 @@ export type Database = {
           source: string
           status: string
           student_id: string
+          template_id: string | null
           title: string
           updated_at: string
         }
@@ -1956,6 +2051,7 @@ export type Database = {
           source: string
           status: string
           student_id: string
+          template_id?: string | null
           title: string
           updated_at?: string
         }
@@ -1980,6 +2076,7 @@ export type Database = {
           source?: string
           status?: string
           student_id?: string
+          template_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -2010,6 +2107,53 @@ export type Database = {
             columns: ["owner_parent_id"]
             isOneToOne: false
             referencedRelation: "parents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      templates: {
+        Row: {
+          archived: boolean
+          content: Json
+          created_at: string
+          created_by: string | null
+          firm_id: string
+          id: string
+          kind: string
+          name: string
+          seq: number
+          updated_at: string
+        }
+        Insert: {
+          archived?: boolean
+          content: Json
+          created_at?: string
+          created_by?: string | null
+          firm_id: string
+          id?: string
+          kind: string
+          name: string
+          seq?: number
+          updated_at?: string
+        }
+        Update: {
+          archived?: boolean
+          content?: Json
+          created_at?: string
+          created_by?: string | null
+          firm_id?: string
+          id?: string
+          kind?: string
+          name?: string
+          seq?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "templates_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
             referencedColumns: ["id"]
           },
         ]

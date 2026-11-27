@@ -55,6 +55,7 @@ import type {
 import { CATEGORY_FOR_KIND, migrate } from './migrate'
 import { clearStoredFiles, fileActions, type FileActions } from './files'
 import { listDraftActions, type ListDraftActions } from './listDrafts'
+import { templateActions, type TemplateActions } from './templates'
 
 /** Where versions before accounts kept everything. Read once, to offer an import. */
 const LEGACY_STORAGE_KEY = 'platinum-v0'
@@ -78,7 +79,7 @@ export type StudentFields = Partial<Omit<Student, 'id' | 'parents' | 'onboardedO
 export type NewTask = Pick<Task, 'studentId' | 'title' | 'owner' | 'dueDate'> &
   Partial<Pick<Task, 'detail' | 'category' | 'ownerParentId' | 'expectsDocument'>>
 
-export type NewMeeting = Pick<Meeting, 'studentId' | 'title' | 'date' | 'time'> & Partial<Pick<Meeting, 'durationMin' | 'location'>>
+export type NewMeeting = Pick<Meeting, 'studentId' | 'title' | 'date' | 'time'> & Partial<Pick<Meeting, 'durationMin' | 'location' | 'googleEventId' | 'googleSync'>>
 
 export type NewDocument = Pick<StudentDocument, 'studentId' | 'name' | 'kind' | 'addedBy'> &
   Partial<Omit<StudentDocument, 'id' | 'addedOn' | 'studentId' | 'name' | 'kind' | 'addedBy'>>
@@ -174,6 +175,10 @@ interface Actions {
   addMeeting: (meeting: NewMeeting) => ID
   /** Reschedule, rename, or edit the agenda. */
   updateMeeting: (id: ID, patch: Partial<Pick<Meeting, 'title' | 'date' | 'time' | 'durationMin' | 'location' | 'agenda'>>) => void
+  /** What a meeting remembers about its Google Calendar event. Set after Google has answered; `undefined` clears a field. */
+  setMeetingCalendar: (id: ID, patch: Pick<Meeting, 'googleEventId' | 'googleSync'> | Pick<Meeting, 'googleSync'>) => void
+  /** Resolves once every change made so far has been written, or has failed and been undone. */
+  whenSaved: () => Promise<void>
   /** Marks a meeting as held and stores the notes or transcript the AI will read. */
   completeMeeting: (id: ID, notes: string, heldOn?: string) => void
   deleteMeeting: (id: ID) => void
@@ -258,6 +263,10 @@ interface Actions extends FileActions {}
 /** Draft college lists: see store/listDrafts.ts. */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface Actions extends ListDraftActions {}
+
+/** Templates and the drafts a message template makes: see store/templates.ts. */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+interface Actions extends TemplateActions {}
 
 // ── Pure helpers on AppData ─────────────────────────────────────────────────
 
@@ -392,6 +401,8 @@ function emptyData(firm: Firm): AppData {
     collegeListDraftItems: [],
     reminderSkips: [],
     agentProposals: [],
+    templates: [],
+    messageDrafts: [],
   }
 }
 
@@ -408,6 +419,7 @@ function merged(base: AppData, add: AppData): AppData {
     outbox: [...add.outbox, ...base.outbox],
     activity: [...add.activity, ...base.activity].slice(0, ACTIVITY_LIMIT),
     weeklyTexts: [...base.weeklyTexts, ...add.weeklyTexts],
+    templates: [...(base.templates ?? []), ...(add.templates ?? [])],
     personalNotes: [...base.personalNotes, ...add.personalNotes],
   }
 }
@@ -591,7 +603,7 @@ export const useStore = create<State & Actions>()((set, get) => {
       const saved = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as { state?: { schema?: unknown; data?: unknown } } | null
       const data = migrate(saved?.state?.schema, saved?.state?.data)
       // Saved before weekly texts and things to remember existed.
-      return data && data.students.length > 0 ? { ...data, weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
+      return data && data.students.length > 0 ? { ...data, templates: data.templates ?? [], messageDrafts: data.messageDrafts ?? [], weeklyTexts: data.weeklyTexts ?? [], personalNotes: (data.personalNotes ?? []).map((n) => ({ ...n, uses: n.uses ?? [] })) } : undefined
     } catch {
       return undefined
     }
@@ -929,6 +941,10 @@ export const useStore = create<State & Actions>()((set, get) => {
     },
 
     updateMeeting: (id, patch) => change((data) => patchMeeting(data, id, (m) => ({ ...m, ...patch }))),
+
+    setMeetingCalendar: (id, patch) => change((data) => (data.meetings.some((m) => m.id === id) ? patchMeeting(data, id, (m) => ({ ...m, ...patch })) : data)),
+
+    whenSaved: () => writes,
 
     completeMeeting: (id, notes, heldOn) =>
       change((data) => {
@@ -1417,6 +1433,8 @@ export const useStore = create<State & Actions>()((set, get) => {
     ...fileActions({ get, absorb: (fn) => get().absorb(fn), change }),
 
     ...listDraftActions({ get, absorb: (fn) => get().absorb(fn), change, saved: () => writes }),
+
+    ...templateActions({ get, change, batch, log: (data, studentId, text) => logActivity(data, studentId, 'counselor', text) }),
   }
 })
 

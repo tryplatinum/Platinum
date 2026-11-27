@@ -78,6 +78,12 @@
   --duration-enter: 180ms;
   --duration-progress: 400ms;
   --duration-spark: 600ms;
+  --duration-press: 80ms; /* a control going down under the finger */
+  --duration-exit: 120ms; /* leaving: always shorter than arriving */
+  --duration-reveal: 220ms; /* a section opening or closing, the active marker moving */
+  --duration-leave: 340ms; /* a decided row: shown as decided, then gone */
+  --delay-stagger: 30ms; /* between the first rows of a list */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
   /* `transition-colors` and friends pick these up. */
   --default-transition-duration: var(--duration-hover);
@@ -98,7 +104,7 @@
    person has chosen one in Settings.
 
    Surfaces step up from midnight (page) to navy (cards) so a card still reads
-   as a card without a shadow. Filled buttons turn silver with midnight text.
+   as a card without a shadow. Filled buttons turn porcelain with midnight text.
    The logo keeps its porcelain background, so in the dark it shows as a small
    light tile; it is never recoloured. */
 :root[data-theme='dark'] {
@@ -116,9 +122,10 @@
   --color-ink-soft: #d7e2ef;
   --color-muted: #adb7c7;
 
-  --color-primary: #adb7c7;
-  --color-primary-hover: #d7e2ef;
-  --color-on-primary: #09182f;
+  /* Porcelain, the lightest thing on a dark page, so a filled button is the strongest element on it. */
+  --color-primary: var(--color-heading);
+  --color-primary-hover: var(--color-accent-hover);
+  --color-on-primary: var(--color-canvas);
 
   --color-accent: #b6d0f2;
   --color-accent-hover: #d7e2ef;
@@ -162,9 +169,17 @@
   textarea,
   [role='tab'],
   [role='radio'] {
-    transition-property: color, background-color, border-color, outline-color;
+    transition-property: color, background-color, border-color, outline-color, opacity, transform;
     transition-duration: var(--duration-hover);
     transition-timing-function: var(--ease-brand);
+  }
+
+  /* Anything that can be pressed answers at once. */
+  button:not(:disabled):active,
+  a[data-press]:active,
+  label[data-press]:active {
+    transform: scale(0.98);
+    transition-duration: var(--duration-press);
   }
 }
 
@@ -172,6 +187,11 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* Clear of the bar at the top on a phone, and of the Inbox's filters, when something is focused or linked to. */
+html {
+  scroll-padding-top: 80px;
 }
 
 body {
@@ -195,6 +215,16 @@ select {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+/* Where focus is put for a screen reader when the page changes: nothing to operate, so no ring. */
+h1:focus,
+main:focus {
+  outline: none;
+}
+/* Where focus goes when a row's buttons are gone: shown, inside its edge. */
+[data-motion-row]:focus-visible,
+[data-focus-home]:focus-visible {
+  outline-offset: -2px;
+}
 
 dialog::backdrop {
   background: var(--backdrop);
@@ -209,6 +239,45 @@ dialog::backdrop {
 
 table {
   font-variant-numeric: tabular-nums;
+}
+
+/* On a phone iOS zooms into any field smaller than 16px when it is focused. */
+@media (width < 64rem) {
+  input:not([type='checkbox'], [type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* A link in a line of text or a list: at least 24px tall, and on a phone 44px
+   to press without the line growing. */
+@utility tap-link {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  @media (width < 64rem) {
+    min-height: 44px;
+    min-width: 44px;
+    margin-block: -10px;
+  }
+}
+
+/* A row that holds a checkbox: the whole row is the target, the box is 20px. */
+@utility check-row {
+  display: flex;
+  min-height: 44px;
+  cursor: pointer;
+  align-items: center;
+  gap: 12px;
+  & input[type='checkbox'] {
+    height: 20px;
+    width: 20px;
+    flex-shrink: 0;
+  }
+  &:has(input:disabled) {
+    cursor: default;
+  }
 }
 
 /* The student's own page is read on a phone: body 16, secondary 14. The
@@ -242,8 +311,11 @@ input[type='radio'] {
 }
 
 /* ── Motion ──────────────────────────────────────────────────────────────────
-   All motion lives here. Nothing delays a click, nothing plays on every page
-   load, and nothing runs longer than 600 ms. Only the Thinking pulse loops. */
+   All motion lives here; components/motion.tsx only says when. Nothing delays a
+   click. Things arrive in 150 to 250 ms and leave faster. Nothing runs longer
+   than 400 ms except progress and the two brand moments (the spark's one turn,
+   the logo on sign-in). Only loading indicators loop. /app/styleguide shows
+   each pattern. */
 
 @keyframes rise-in {
   from {
@@ -280,7 +352,234 @@ input[type='radio'] {
   }
 }
 
-/* Modal and menus: fade and a 4 px rise on open. Closing is immediate. */
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes sink-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes row-first {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes row-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@keyframes row-out {
+  0%,
+  35% {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  100% {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@keyframes row-drop {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+/* Clips a row or a section only while it moves, so focus rings are never cut off at rest. */
+@keyframes clip {
+  from,
+  to {
+    overflow: hidden;
+  }
+}
+@keyframes count-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+@keyframes time-left {
+  from {
+    transform: scaleX(var(--left, 1));
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes skeleton {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* A row in a list (MotionList). `first` is the list appearing, `enter` a row
+   added later, `leave` one that has been decided, filed or removed. */
+@utility motion-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  &[data-state='first'] {
+    animation: row-first var(--duration-enter) var(--ease-brand) both;
+    animation-delay: calc(var(--row, 0) * var(--delay-stagger));
+  }
+  &[data-state='enter'] {
+    animation: row-in var(--duration-reveal) var(--ease-brand);
+  }
+  &[data-state='leave'] {
+    pointer-events: none;
+    animation: row-out var(--duration-leave) var(--ease-brand) forwards;
+  }
+  /* Discarded: gone at once, with nothing to say. */
+  &[data-state='leave']:has([data-settled='discarded']) {
+    animation: row-drop 160ms var(--ease-exit) forwards;
+  }
+}
+@utility motion-row-body {
+  min-width: 0;
+  min-height: 0;
+  [data-state='enter'] > & {
+    animation: clip var(--duration-reveal);
+  }
+  [data-state='leave'] > & {
+    overflow: hidden;
+  }
+}
+
+/* A section that opens and closes (Reveal). */
+@utility motion-reveal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--duration-exit) var(--ease-exit),
+    visibility var(--duration-exit);
+  &[data-open='true'] {
+    grid-template-rows: 1fr;
+    visibility: visible;
+    transition:
+      grid-template-rows var(--duration-reveal) var(--ease-brand),
+      visibility 0s;
+  }
+}
+@utility motion-reveal-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  [data-open='true'] > & {
+    overflow: visible;
+    animation: clip var(--duration-reveal);
+  }
+}
+
+/* The arrow beside something that opens. */
+@utility motion-chevron {
+  transition: transform var(--duration-reveal) var(--ease-brand);
+  [aria-expanded='true'] > & {
+    transform: rotate(90deg);
+  }
+}
+
+/* A page or a tab being shown. */
+@utility motion-page {
+  animation: fade-in var(--duration-hover) var(--ease-brand);
+}
+
+/* The one marker that moves between navigation items or tabs. */
+@utility motion-marker {
+  transform-origin: 0 0;
+  transition: transform var(--duration-reveal) var(--ease-brand);
+}
+
+/* The assistant. Where the browser can, it slides out as well as in. */
+@utility motion-panel {
+  opacity: 0;
+  transform: translateX(16px);
+  transition:
+    opacity var(--duration-exit) var(--ease-exit),
+    transform var(--duration-exit) var(--ease-exit),
+    display var(--duration-exit) allow-discrete;
+  &[data-open='true'] {
+    opacity: 1;
+    transform: none;
+    transition-duration: var(--duration-enter);
+    transition-timing-function: var(--ease-brand);
+    @starting-style {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+  }
+}
+
+/* A window that has closed: a picture of it fades, and cannot be pressed. */
+@utility motion-ghost {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+@utility motion-ghost-shade {
+  position: absolute;
+  inset: 0;
+  background: var(--backdrop);
+  animation: fade-out var(--duration-exit) var(--ease-exit) forwards;
+}
+@utility motion-ghost-panel {
+  position: absolute !important;
+  margin: 0 !important;
+  max-width: none !important;
+  overflow: hidden;
+  animation: sink-out var(--duration-exit) var(--ease-exit) forwards;
+}
+
+/* A toast on its way out. */
+@utility motion-toast-out {
+  animation: sink-out var(--duration-exit) var(--ease-exit) forwards;
+}
+
+/* A badge that has a new number. */
+@utility motion-count {
+  animation: count-in var(--duration-enter) var(--ease-brand);
+}
+
+/* The time left to undo. */
+@utility motion-time-left-track {
+  display: block;
+  height: 4px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--color-track);
+}
+@utility motion-time-left {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  transform-origin: left;
+  animation: time-left linear forwards;
+}
+
+/* Waiting on the server. */
+@utility motion-spin {
+  animation: spin 900ms linear infinite;
+}
+@utility motion-skeleton {
+  animation: skeleton 1.6s ease-in-out infinite;
+}
+
+/* Modal and menus: fade and a 4 px rise on open. A closed window fades (motion-ghost). */
 @utility motion-rise {
   animation: rise-in var(--duration-enter) var(--ease-brand);
 }
@@ -304,7 +603,8 @@ dialog[open]::backdrop {
 /* Progress bars ease when the value changes. A transition does not run on the
    first render, so a page of bars does not animate on load. */
 @utility motion-progress {
-  transition: width var(--duration-progress) var(--ease-brand);
+  transform-origin: left;
+  transition: transform var(--duration-progress) var(--ease-brand);
 }
 
 /* The task check mark draws when ticked. It is a transition for the same
@@ -338,7 +638,18 @@ dialog[open]::backdrop {
   ::after,
   ::backdrop {
     animation-duration: 0s !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+  button:not(:disabled):active,
+  a[data-press]:active,
+  label[data-press]:active {
+    transform: none;
+  }
+  /* A bar that empties is movement and nothing else: the seconds are in words beside it. */
+  .motion-time-left-track {
+    display: none;
   }
 }

@@ -2,11 +2,12 @@
 // into, and the switch for sorting with AI. Only the firm's owner can change
 // either; the database refuses anyone else, and this screen says so.
 
+import { ArrowDown, ArrowUp } from 'lucide-react'
 import { useState } from 'react'
 import { foldersInOrder } from '../../lib/files'
 import { useData, useStore } from '../../store/store'
 import type { DocumentType, FolderSensitivity } from '../../types'
-import { Button, Card, CardHeader, Pill, SectionLabel, cx, inputBase } from '../ui'
+import { Button, Card, CardHeader, CheckRow, Pill, cx, inputBase } from '../ui'
 
 const WHO: Record<FolderSensitivity, string> = { standard: 'Everyone in the firm', restricted: 'Owner only', firm_only: 'Owner only (firm paperwork)' }
 
@@ -68,15 +69,15 @@ export function FolderSettings() {
       <CardHeader size="section" title="Folders" />
       {!owner && <p className="rounded-lg bg-canvas px-3 py-2 text-[13px] text-muted">Only the firm’s owner can change the folders and this setting.</p>}
 
-      <label className="flex min-h-11 items-start gap-3">
-        <input type="checkbox" className="mt-1 h-5 w-5" checked={data.firm.sortFilesAutomatically} disabled={!owner} onChange={(e) => updateFirm({ sortFilesAutomatically: e.target.checked })} />
-        <span className="text-sm">
-          <span className="font-semibold">Sort files automatically</span>
-          <span className="block text-[13px] text-muted">
-            On: the AI reads the first two pages of each upload to choose a folder and a title. A student’s upload is filed straight away; yours waits for you with a suggestion. Off: every upload lands under Other to be checked, and nothing is sent to the AI.
-          </span>
-        </span>
-      </label>
+      <CheckRow
+        className="items-start!"
+        checked={data.firm.sortFilesAutomatically}
+        disabled={!owner}
+        onChange={(sortFilesAutomatically) => updateFirm({ sortFilesAutomatically })}
+        hint="On: the AI reads the first two pages of each upload to choose a folder and a title. A student’s upload is filed straight away; yours waits for you with a suggestion. Off: every upload lands under Other to be checked, and nothing is sent to the AI."
+      >
+        <span className="font-semibold">Sort files automatically</span>
+      </CheckRow>
 
       <ul className="flex flex-col">
         {folders.map((f, i) => (
@@ -85,7 +86,7 @@ export function FolderSettings() {
               <FolderForm folder={f} onDone={() => setEditing(undefined)} />
             ) : (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <div className="min-w-[10rem] flex-1">
+                <div className="min-w-0 flex-1 basis-40">
                   <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                     {f.name}
                     {f.sensitivity !== 'standard' && <Pill tone="warn">{WHO[f.sensitivity]}</Pill>}
@@ -95,16 +96,16 @@ export function FolderSettings() {
                 </div>
                 {owner && (
                   <div className="flex flex-wrap items-center gap-1">
-                    <Button variant="quiet" className="px-2" disabled={i === 0} aria-label={`Move ${f.name} up`} onClick={() => moveFolder(f.id, -1)}>
-                      ↑
+                    <Button variant="quiet" className="w-11 px-0!" disabled={i === 0} aria-label={`Move ${f.name} up`} onClick={() => moveFolder(f.id, -1)}>
+                      <ArrowUp size={20} strokeWidth={1.75} aria-hidden />
                     </Button>
-                    <Button variant="quiet" className="px-2" disabled={i === folders.length - 1} aria-label={`Move ${f.name} down`} onClick={() => moveFolder(f.id, 1)}>
-                      ↓
+                    <Button variant="quiet" className="w-11 px-0!" disabled={i === folders.length - 1} aria-label={`Move ${f.name} down`} onClick={() => moveFolder(f.id, 1)}>
+                      <ArrowDown size={20} strokeWidth={1.75} aria-hidden />
                     </Button>
-                    <Button variant="quiet" className="px-2" aria-label={`Edit ${f.name}`} onClick={() => setEditing(f.id)}>
+                    <Button variant="quiet" className="px-3!" aria-label={`Edit ${f.name}`} onClick={() => setEditing(f.id)}>
                       Edit
                     </Button>
-                    <Button variant="quiet" className="px-2" aria-label={`${f.archivedAt ? 'Restore' : 'Archive'} ${f.name}`} onClick={() => archiveFolder(f.id, !f.archivedAt)}>
+                    <Button variant="quiet" className="px-3!" aria-label={`${f.archivedAt ? 'Restore' : 'Archive'} ${f.name}`} onClick={() => archiveFolder(f.id, !f.archivedAt)}>
                       {f.archivedAt ? 'Restore' : 'Archive'}
                     </Button>
                   </div>
@@ -116,7 +117,7 @@ export function FolderSettings() {
       </ul>
 
       {owner && (editing === 'new' ? <FolderForm onDone={() => setEditing(undefined)} /> : <Button onClick={() => setEditing('new')}>Add a folder</Button>)}
-      <SectionLabel className="normal-case tracking-normal">Archiving moves nothing: files keep their folder and show it as archived. It only stops new files going in.</SectionLabel>
+      <p className="text-[13px] text-muted">Archiving moves nothing: files keep their folder and show it as archived. It only stops new files going in.</p>
     </Card>
   )
 }

@@ -37,7 +37,8 @@ const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 export const driveId = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/)
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 
-export const connectInput = z.object({ gmail: z.boolean().optional() })
+/** `gmail` and `calendar` are each asked for on their own, after Drive. Neither is part of the first consent. */
+export const connectInput = z.object({ gmail: z.boolean().optional(), calendar: z.boolean().optional() })
 
 export const browseInput = z.object({
   /** root: My Drive. shared: Shared with me. drives: the list of shared drives. Otherwise a folder's id. */
@@ -92,6 +93,8 @@ export interface GoogleStatus {
   address?: string
   drive: boolean
   gmail: boolean
+  /** The calendar is turned on for this connection. Off by default; the connection works without it. */
+  calendar: boolean
   /** The stored Drive permission is the old whole-Drive one. Do not use that token for Drive. */
   driveReconnect: boolean
   /** Google said the grant is expired or revoked. Everything shows "Reconnect Google". */

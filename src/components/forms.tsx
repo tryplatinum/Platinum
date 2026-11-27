@@ -2,6 +2,7 @@
 // meetings, and logging a meeting that has happened. Each is a modal that
 // writes through a store action.
 
+import { removeMeetingFromCalendar, syncMeetingToCalendar } from '../lib/calendarSync'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MAX_TEXT_CHARS } from '../../shared/constants'
@@ -11,12 +12,12 @@ import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
 import { draftMeeting, type DraftMode } from '../services/workflows'
 import { useData, useStore } from '../store/store'
 import type { Channel, ID, Language, Meeting, Parent } from '../types'
-import { AiErrorNote, Button, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useToast } from './ui'
+import { AiErrorNote, Button, CheckRow, Field, Modal, SegmentedControl, Thinking, inputClass, textareaClass, useAi, useConfirm, useToast } from './ui'
 
 const CHANNELS = Object.entries(CHANNEL_LABEL) as [Channel, string][]
 const LANGUAGES = Object.entries(LANGUAGE_LABEL) as [Language, string][]
 
-function FormActions({ onClose, submit, onDelete, deleteLabel, disabled }: { onClose: () => void; submit: string; onDelete?: () => void; deleteLabel?: string; disabled?: boolean }) {
+function FormActions({ onClose, submit, onDelete, deleteLabel, disabled, busy }: { onClose: () => void; submit: string; onDelete?: () => void; deleteLabel?: string; disabled?: boolean; busy?: boolean }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
       {onDelete ? (
@@ -28,7 +29,7 @@ function FormActions({ onClose, submit, onDelete, deleteLabel, disabled }: { onC
       )}
       <div className="flex gap-2">
         <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={disabled}>
+        <Button type="submit" variant="primary" disabled={disabled} busy={busy}>
           {submit}
         </Button>
       </div>
@@ -47,7 +48,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
   const set = (patch: Partial<typeof f>) => setF({ ...f, ...patch })
 
   return (
-    <Modal title="Add a student" onClose={onClose}>
+    <Modal title="Add a student" onClose={onClose} typed={Boolean(f.firstName || f.lastName || f.school || f.email || f.phone)}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -69,7 +70,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="First name">
-            <input className={inputClass} required autoFocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} />
+            <input className={inputClass} required data-autofocus value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} />
           </Field>
           <Field label="Last name">
             <input className={inputClass} required value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} />
@@ -113,6 +114,7 @@ export function StudentFormModal({ onClose }: { onClose: () => void }) {
 
 export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID; parent?: Parent; onClose: () => void }) {
   const { addParent, updateParent, removeParent } = useStore.getState()
+  const confirm = useConfirm()
   const [f, setF] = useState({
     name: parent?.name ?? '',
     localName: parent?.localName ?? '',
@@ -130,7 +132,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
   const clean = (v: string) => v.trim() || undefined
 
   return (
-    <Modal title={parent ? `Edit ${parent.name}` : 'Add a parent or guardian'} onClose={onClose}>
+    <Modal title={parent ? `Edit ${parent.name}` : 'Add a parent or guardian'} onClose={onClose} typed={f.name !== (parent?.name ?? '') || f.note !== (parent?.note ?? '') || f.phone !== (parent?.phone ?? '') || f.email !== (parent?.email ?? '')}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -143,7 +145,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name">
-            <input className={inputClass} required autoFocus value={f.name} onChange={(e) => set({ name: e.target.value })} />
+            <input className={inputClass} required data-autofocus value={f.name} onChange={(e) => set({ name: e.target.value })} />
           </Field>
           <Field label="Name in their language (optional)" hint="Used to greet them, e.g. 张伟.">
             <input className={inputClass} value={f.localName} onChange={(e) => set({ localName: e.target.value })} />
@@ -186,10 +188,9 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
             ))}
           </select>
         </Field>
-        <label className="flex min-h-11 items-center gap-3 text-sm">
-          <input type="checkbox" className="h-5 w-5" checked={f.isPrimary} onChange={(e) => set({ isPrimary: e.target.checked })} />
+        <CheckRow checked={f.isPrimary} onChange={(isPrimary) => set({ isPrimary })}>
           Main contact for this family
-        </label>
+        </CheckRow>
         <Field label="Your private note (optional)">
           <input className={inputClass} value={f.note} onChange={(e) => set({ note: e.target.value })} placeholder="e.g. replies fastest to voice messages" />
         </Field>
@@ -199,11 +200,10 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
           deleteLabel="Remove"
           onDelete={
             parent
-              ? () => {
-                  if (window.confirm(`Remove ${parent.name}? Their open tasks move to you.`)) {
-                    removeParent(studentId, parent.id)
-                    onClose()
-                  }
+              ? async () => {
+                  if (!(await confirm({ title: 'Remove parent', body: `Remove ${parent.name}? Their open tasks move to you.`, action: 'Remove parent' }))) return
+                  removeParent(studentId, parent.id)
+                  onClose()
                 }
               : undefined
           }
@@ -218,6 +218,7 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
 export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: ID; meeting?: Meeting; onClose: () => void }) {
   const data = useData()
   const { addMeeting, updateMeeting, deleteMeeting } = useStore.getState()
+  const confirm = useConfirm()
   const students = activeStudents(data)
   const [f, setF] = useState({
     studentId: meeting?.studentId ?? studentId ?? students[0]?.id ?? '',
@@ -239,8 +240,9 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
           onSubmit={(e) => {
             e.preventDefault()
             const fields = { title: f.title.trim() || 'Check-in', date: f.date, time: f.time, durationMin: Number(f.durationMin) || 45, location: f.location.trim() || undefined }
-            if (meeting) updateMeeting(meeting.id, fields)
-            else addMeeting({ studentId: f.studentId, ...fields })
+            // The meeting is saved first and never waits for Google: its event follows, or it says "Not on your calendar yet".
+            const id = meeting ? (updateMeeting(meeting.id, fields), meeting.id) : addMeeting({ studentId: f.studentId, ...fields })
+            void syncMeetingToCalendar(id)
             onClose()
           }}
         >
@@ -256,7 +258,7 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
             </Field>
           )}
           <Field label="What the meeting is about">
-            <input className={inputClass} autoFocus value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. UC essays and campus list" />
+            <input className={inputClass} data-autofocus value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. UC essays and campus list" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Date">
@@ -272,18 +274,18 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
               <input className={inputClass} value={f.location} onChange={(e) => set({ location: e.target.value })} />
             </Field>
           </div>
-          <p className="text-[13px] text-muted">Platinum keeps your schedule. It does not send calendar invitations in v0.</p>
+          <p className="text-[13px] text-muted">Platinum keeps your schedule. It does not send calendar invitations.</p>
           <FormActions
             onClose={onClose}
             submit={meeting ? 'Save' : 'Schedule'}
             deleteLabel="Cancel this meeting"
             onDelete={
               meeting
-                ? () => {
-                    if (window.confirm('Cancel this meeting and remove it from the schedule?')) {
-                      deleteMeeting(meeting.id)
-                      onClose()
-                    }
+                ? async () => {
+                    if (!(await confirm({ title: 'Cancel this meeting', body: 'Cancel this meeting and remove it from the schedule?', action: 'Cancel this meeting' }))) return
+                    deleteMeeting(meeting.id)
+                    void removeMeetingFromCalendar(meeting)
+                    onClose()
                   }
                 : undefined
             }
@@ -312,11 +314,17 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
   const [student, setStudent] = useState(studentId ?? students[0]?.id ?? '')
   const scheduled = (() => {
     const b = meetingBuckets(data, student)
-    return [b.upcoming, ...b.later].filter((m): m is Meeting => Boolean(m))
+    const named = data.meetings.find((m) => m.id === meetingId && m.studentId === student)
+    const open = [b.upcoming, ...b.later].filter((m): m is Meeting => Boolean(m))
+    return named && !open.includes(named) ? [named, ...open] : open
   })()
   const [which, setWhich] = useState(meetingId ?? scheduled[0]?.id ?? NEW_MEETING)
   const [title, setTitle] = useState('')
-  const [heldOn, setHeldOn] = useState(todayISO())
+  // A meeting whose day has passed was held on that day.
+  const [heldOn, setHeldOn] = useState(() => {
+    const named = data.meetings.find((m) => m.id === meetingId)
+    return named && named.date < todayISO() ? named.date : todayISO()
+  })
   const [notes, setNotes] = useState('')
   const [mode, setMode] = useState<DraftMode>('full')
   const { busy, error, run } = useAi()
@@ -344,7 +352,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
     })
 
   return (
-    <Modal title="Log a meeting" onClose={onClose} wide>
+    <Modal title="Log a meeting" onClose={onClose} wide typed={notes.trim() !== ''}>
       {students.length === 0 ? (
         <p className="text-sm text-muted">Add a student first, then you can log a meeting with them.</p>
       ) : (
@@ -399,7 +407,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
             <textarea className={textareaClass} rows={9} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Paste or type what was discussed, decided and assigned…" />
           </Field>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2">
+            <label data-press className="inline-flex min-h-11 cursor-pointer items-center rounded-control border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent">
               <input
                 type="file"
                 accept=".txt,.md,.vtt,text/plain"
@@ -429,7 +437,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
           {logged && error && (
             <p className="text-[13px] text-muted">
               The meeting itself is saved. You can try drafting again, or{' '}
-              <button type="button" className="font-semibold text-accent underline" onClick={() => open(student)}>
+              <button type="button" className="tap-link font-semibold text-accent underline" onClick={() => open(student)}>
                 open it without drafts
               </button>
               .
@@ -437,7 +445,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
           )}
           {busy && <Thinking label={`AI is reading the notes and drafting follow-ups for ${who?.firstName}…`} />}
           <p className="text-[13px] text-muted">Everything drafted waits for your approval. Nothing goes to {who?.firstName ?? 'the student'} or the family from here.</p>
-          <FormActions onClose={onClose} submit={logged ? 'Try drafting again' : notes.trim() ? 'Log and draft' : 'Log without notes'} disabled={busy || tooLong} />
+          <FormActions onClose={onClose} submit={logged ? 'Try drafting again' : notes.trim() ? 'Log and draft' : 'Log without notes'} disabled={tooLong} busy={busy} />
         </form>
       )}
     </Modal>

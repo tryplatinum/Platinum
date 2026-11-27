@@ -1,5 +1,7 @@
-// TEMPORARY screenshot harness. Not committed. Renders the app from the sample
-// caseload with no sign-in and no database.
+// For looking at screens: renders the app from the sample caseload with no
+// sign-in and no database. Run `npx vite` and open
+// preview.html?theme=light|dark&path=<route>. Kept in the repository; the
+// production build starts from index.html and does not include it.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'

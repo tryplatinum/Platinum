@@ -204,7 +204,7 @@ export function DrivePicker({ mode, student, onClose, onLinked }: { mode: 'files
         )}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void choose()}>
+          <Button variant="primary" busy={busy} onClick={() => void choose()}>
             {mode === 'folder' ? 'Choose a folder' : 'Choose files'}
           </Button>
         </div>

@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { LogMeetingModal } from '../../components/forms'
 import { StudentLinkModal } from '../../components/StudentLinkModal'
-import { Button, PageHeader, StatusPill, Tabs, useTab, type TabItem } from '../../components/ui'
+import { Button, PageHeader, StatusPill, TabPanel, Tabs, usePageTitle, useTab, type TabItem } from '../../components/ui'
 import { MEETING_APPROVAL_KINDS, essaysFor, findStudent, fullName, summarize } from '../../lib/derive'
 import { inboxContents, inboxSize } from '../../lib/inbox'
 import { useData } from '../../store/store'
@@ -35,6 +35,7 @@ export default function StudentPage() {
     { key: 'profile', label: 'Profile' },
   ]
   const tab = useTab(tabs)
+  usePageTitle(student ? fullName(student) : 'Students')
   if (!student) return <Navigate to="/app/students" replace />
 
   const summary = summarize(data, student)
@@ -53,7 +54,7 @@ export default function StudentPage() {
       <PageHeader
         above={
           <>
-            <Link to="/app/students" className="font-medium text-accent hover:underline">
+            <Link to="/app/students" className="tap-link font-medium text-accent hover:underline">
               Students
             </Link>{' '}
             / {fullName(student)}
@@ -73,8 +74,8 @@ export default function StudentPage() {
             {waiting > 0 && (
               <>
                 {' · '}
-                <Link to={`/app?student=${student.id}`} className="font-medium text-accent hover:underline">
-                  Waiting for review ({waiting})
+                <Link to={`/app?student=${student.id}`} className="tap-link font-medium text-accent hover:underline">
+                  To review ({waiting})
                 </Link>
               </>
             )}
@@ -91,12 +92,14 @@ export default function StudentPage() {
       />
       <Tabs tabs={tabs} label={`${student.firstName}’s pages`} />
 
-      {tab === 'overview' && <Overview student={student} />}
-      {tab === 'meetings' && <MeetingsTab student={student} />}
-      {tab === 'documents' && <DocumentsTab student={student} />}
-      {tab === 'essays' && <EssaysTab student={student} />}
-      {tab === 'reports' && <ReportsTab student={student} />}
-      {tab === 'profile' && <ProfileTab student={student} />}
+      <TabPanel tab={tab} label={tabs.find((t) => t.key === tab)?.label ?? ''}>
+        {tab === 'overview' && <Overview student={student} />}
+        {tab === 'meetings' && <MeetingsTab student={student} />}
+        {tab === 'documents' && <DocumentsTab student={student} />}
+        {tab === 'essays' && <EssaysTab student={student} />}
+        {tab === 'reports' && <ReportsTab student={student} />}
+        {tab === 'profile' && <ProfileTab student={student} />}
+      </TabPanel>
 
       {modal === 'link' && <StudentLinkModal student={student} onClose={() => setModal(undefined)} />}
       {modal === 'log' && <LogMeetingModal studentId={student.id} onClose={() => setModal(undefined)} />}

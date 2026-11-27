@@ -51,7 +51,7 @@ export async function callGoogle<T>(action: string, body: Record<string, unknown
 
 // ── Status ──────────────────────────────────────────────────────────────────
 
-const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, reconnect: false }
+const HIDDEN: GoogleStatus = { available: false, connected: false, drive: false, driveReconnect: false, gmail: false, calendar: false, reconnect: false }
 
 let status: GoogleStatus | undefined
 let loading: Promise<void> | undefined
@@ -70,6 +70,12 @@ export function loadGoogleStatus(force = false): Promise<void> {
 }
 
 export const takeGoogleStatus = setStatus
+
+/** The connection as last heard, outside React. */
+export const googleStatusNow = () => status
+
+/** True when the calendar can be used right now: connected, turned on, and not waiting for a reconnect. */
+export const calendarReady = (s: GoogleStatus | undefined) => Boolean(s?.available && s.connected && s.calendar && !s.reconnect)
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
@@ -96,7 +102,7 @@ export function useGoogleStatus(): GoogleStatus | undefined {
 export const driveReady = (s: GoogleStatus | undefined) => Boolean(s?.available && s.connected && s.drive && !s.reconnect)
 
 /** Sends the person to Google's consent screen. They come back to /app?google=…. */
-export async function startGoogleConnect(options: { gmail?: boolean } = {}): Promise<void> {
+export async function startGoogleConnect(options: { gmail?: boolean; calendar?: boolean } = {}): Promise<void> {
   const { url } = await callGoogle<{ url: string }>('connect', options)
   window.location.assign(url)
 }

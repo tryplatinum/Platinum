@@ -2,11 +2,13 @@
 // and deadline, their tasks, the latest recap their counselor approved, and any
 // approved essay feedback. Students never see drafts.
 
+import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { Logo } from '../../components/Logo'
+import { MotionList } from '../../components/motion'
 import { TaskItem } from '../../components/TaskRows'
-import { Button, Card, Empty, Field, SectionLabel, inputClass, useToast } from '../../components/ui'
+import { Button, Card, Empty, Field, SectionLabel, inputClass, usePageTitle, useToast } from '../../components/ui'
 import { formatDate, formatDateLong, formatTime } from '../../lib/dates'
 import { dueText, essaysFor, isOpen, meetingsFor, nextApplicationDeadline, nextMeeting, ownerLabel, sortByUrgency, tasksFor } from '../../lib/derive'
 import { useData, useStore } from '../../store/store'
@@ -22,6 +24,7 @@ export function StudentHome() {
   // The profile form is part of the counselor's preview only; the student link allows three writes, all on tasks.
   const onLink = useStore((s) => s.mode === 'student_link')
   const [showDone, setShowDone] = useState(false)
+  usePageTitle(onLink ? 'Your page' : `${student.firstName}’s page`)
   const all = tasksFor(data, student.id)
   const mine = sortByUrgency(all.filter((t) => t.owner === 'student'))
   const open = mine.filter(isOpen)
@@ -40,7 +43,7 @@ export function StudentHome() {
           <Logo variant="symbol" width={40} />
           {data.firm.name}
         </p>
-        <h1 className="mt-2 text-2xl font-semibold">Hi {student.firstName}</h1>
+        <h1 tabIndex={-1} className="mt-2 text-2xl font-semibold focus:outline-none">Hi {student.firstName}</h1>
       </header>
 
       <Card className="grid grid-cols-2 divide-x divide-line">
@@ -80,19 +83,19 @@ export function StudentHome() {
         ) : open.length === 0 ? (
           <p className="text-sm text-muted">You are all caught up.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <MotionList itemClassName="pb-2 last:pb-0">
             {open.map((t) => (
               <TaskItem key={t.id} task={t} student={student} viewer="student" />
             ))}
-          </ul>
+          </MotionList>
         )}
         {done.length > 0 && (
           <>
-            <ul className="flex flex-col gap-2">
+            <MotionList itemClassName="pb-2 last:pb-0">
               {(showDone ? done : done.slice(0, 2)).map((t) => (
                 <TaskItem key={t.id} task={t} student={student} viewer="student" />
               ))}
-            </ul>
+            </MotionList>
             {done.length > 2 && (
               <Button variant="quiet" className="self-start" onClick={() => setShowDone(!showDone)}>
                 {showDone ? 'Show fewer' : `Show ${done.length - 2} more done`}
@@ -224,8 +227,8 @@ export function StudentProfile() {
   return (
     <>
       <header>
-        <Link to=".." className="flex min-h-11 items-center text-sm font-semibold text-accent">
-          ← Back to my tasks
+        <Link to=".." className="flex min-h-11 items-center gap-2 text-sm font-semibold text-accent">
+          <ArrowLeft size={20} strokeWidth={1.75} aria-hidden /> Back to my tasks
         </Link>
         <h1 className="text-2xl font-semibold">My profile</h1>
         <p className="text-[13px] text-muted">

@@ -14,7 +14,8 @@ import { duplicateOf, fileTitle, folderById, isWaiting } from '../../lib/files'
 import { checkFile, hashFile } from '../../services/files'
 import { useData, useStore } from '../../store/store'
 import type { ID } from '../../types'
-import { Button, Modal, cx } from '../ui'
+import { MotionList } from '../motion'
+import { Button, Modal, ProgressBar, cx } from '../ui'
 import { FilingRow } from './FilingRow'
 
 interface Item {
@@ -152,18 +153,18 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
         {ready.length > 1 && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink-soft">{ready.length} files have a suggestion you can accept as it stands.</p>
-            <Button variant="primary" disabled={busyAll} onClick={() => void yesToAll()}>
+            <Button busy={busyAll} onClick={() => void yesToAll()}>
               Yes to all suggestions
             </Button>
           </div>
         )}
 
         {items.length > 0 && (
-          <ul className="flex flex-col gap-3">
+          <MotionList itemClassName="pb-3 last:pb-0">
             {items.map((item) => {
               const doc = docOf(item)
               return (
-                <li key={item.key} className="rounded-lg border border-line p-4">
+                <div key={item.key} className="rounded-control border border-line p-3 sm:p-4">
                   {item.stage === 'uploaded' && doc && isWaiting(doc) ? (
                     <FilingRow doc={doc} lockStudent={Boolean(studentId)} suggesting={item.suggesting} onFiled={(note) => patch(item.key, { stage: 'filed', note })} />
                   ) : (
@@ -175,10 +176,8 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
                       {item.stage === 'checking' && <p className="text-[13px] text-muted">Checking…</p>}
                       {item.stage === 'uploading' && (
                         <div>
-                          <div role="progressbar" aria-label={`Uploading ${item.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.progress * 100)} className="h-2 overflow-hidden rounded-full bg-track">
-                            <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round(item.progress * 100)}%` }} />
-                          </div>
-                          <p className="mt-1 text-[13px] text-muted">{item.progress >= 1 ? 'Checking the file…' : `Uploading… ${Math.round(item.progress * 100)}%`}</p>
+                          <ProgressBar label={`Uploading ${item.file.name}`} done={item.progress} />
+                          <p className="nums mt-1 text-[13px] text-muted">{item.progress >= 1 ? 'Checking the file…' : `Uploading… ${Math.round(item.progress * 100)}%`}</p>
                         </div>
                       )}
                       {item.stage === 'duplicate' && (
@@ -205,14 +204,14 @@ export function UploadWindow({ studentId, initialFiles, onClose }: { studentId?:
                           </div>
                         </div>
                       )}
-                      {(item.stage === 'filed' || (item.stage === 'uploaded' && (!doc || !isWaiting(doc)))) && <p className="text-[13px] font-medium text-good">{item.note ?? (doc ? 'Filed.' : 'Removed.')}</p>}
-                      {item.stage !== 'failed' && item.error && <p className="text-[13px] text-bad">{item.error}</p>}
+                      {(item.stage === 'filed' || (item.stage === 'uploaded' && (!doc || !isWaiting(doc)))) && <p role="status" className="motion-fade text-[13px] font-medium text-good">{item.note ?? (doc ? 'Filed.' : 'Removed.')}</p>}
+                      {item.stage !== 'failed' && item.error && <p role="alert" className="text-[13px] text-bad">{item.error}</p>}
                     </div>
                   )}
-                </li>
+                </div>
               )
             })}
-          </ul>
+          </MotionList>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">

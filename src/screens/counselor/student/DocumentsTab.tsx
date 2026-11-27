@@ -11,6 +11,7 @@ import { FileRow } from '../../../components/files/FileRow'
 import { UploadWindow, useFileDrop } from '../../../components/files/UploadWindow'
 import { DriveFolders, goneFromDrive, useLinkedFolders } from '../../../components/google/DriveFolders'
 import { DrivePicker } from '../../../components/google/DrivePicker'
+import { MotionList } from '../../../components/motion'
 import { ReminderComposer } from '../../../components/ReminderComposer'
 import { Button, Card, CardHeader, Empty, SectionLabel, cx, inputBase } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
@@ -68,14 +69,14 @@ export default function DocumentsTab({ student }: { student: Student }) {
               <Button onClick={() => setDrive('files')}>Add from Google Drive</Button>
             </>
           )}
-          <Button variant="primary" onClick={() => setUploading([])}>
+          <Button onClick={() => setUploading([])}>
             Upload files
           </Button>
         </div>
       </div>
       {google?.available && google.connected && google.reconnect && (
         <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">
-          Reconnect Google in <Link to="/app/settings#google" className="font-semibold underline">Settings</Link> to add from Drive and to sync linked folders. Files already imported are not affected.
+          Reconnect Google in <Link to="/app/settings#google" className="tap-link font-semibold underline">Settings</Link> to add from Drive and to sync linked folders. Files already imported are not affected.
         </p>
       )}
 
@@ -156,7 +157,7 @@ export default function DocumentsTab({ student }: { student: Student }) {
           <p className="text-sm">
             {waiting} uploaded {waiting === 1 ? 'file is' : 'files are'} waiting to be filed for {student.firstName}. {waiting === 1 ? 'It shows' : 'They show'} here once filed.
           </p>
-          <Link to={`/app/documents?student=${student.id}`} className="text-sm font-semibold text-accent underline">
+          <Link to={`/app/documents?student=${student.id}`} className="tap-link text-sm font-semibold text-accent underline">
             Open “Waiting for you”
           </Link>
         </Card>
@@ -165,29 +166,29 @@ export default function DocumentsTab({ student }: { student: Student }) {
       {toCheck.length > 0 && (
         <Card>
           <CardHeader className="px-5 py-4" title="Check these" count={toCheck.length} sub="Filed by the AI when it was not sure, or put under a catch-all folder. Move each one, or say it is in the right place." />
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {toCheck.map((d) => (
               <FileRow key={d.id} doc={d} showFolder goneFromDrive={isGone(d)} />
             ))}
-          </ul>
+          </MotionList>
         </Card>
       )}
 
       {sorting.length > 0 && (
         <Card>
           <CardHeader className="px-5 py-4" title={`Just added by ${student.firstName}`} count={sorting.length} />
-          <ul>
+          <MotionList itemClassName="border-t border-line">
             {sorting.map((d) => (
               <FileRow key={d.id} doc={d} />
             ))}
-          </ul>
+          </MotionList>
         </Card>
       )}
 
       {docs.length === 0 ? (
         <Card>
           <Empty title={`No documents for ${student.firstName} yet. Upload a transcript or a score report, or add a link. Files ${student.firstName} adds from their own link are sorted into folders here.`}>
-            <Button variant="primary" onClick={() => setUploading([])}>
+            <Button onClick={() => setUploading([])}>
               Upload files
             </Button>
           </Empty>
@@ -201,18 +202,18 @@ export default function DocumentsTab({ student }: { student: Student }) {
               count={g.docs.length}
               sub={[g.folder.archivedAt && 'Archived folder: it takes no new files.', g.folder.sensitivity !== 'standard' && 'Only the firm’s owner can open files in this folder.'].filter(Boolean).join(' ') || undefined}
             />
-            <ul>
+            <MotionList itemClassName="border-t border-line">
               {g.docs.map((d) => (
                 <FileRow key={d.id} doc={d} goneFromDrive={isGone(d)} />
               ))}
-            </ul>
+            </MotionList>
           </Card>
         ))
       )}
 
       <p className="text-[13px] text-muted">
         Essay drafts live in the{' '}
-        <Link to="?tab=essays" className="font-semibold text-accent underline">
+        <Link to="?tab=essays" className="tap-link font-semibold text-accent underline">
           Essays tab
         </Link>
         . A link a student attaches to a task is listed here too.

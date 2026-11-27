@@ -15,7 +15,7 @@ import { GoogleFailure, callGoogle, driveReady, loadGoogleStatus, useGoogleStatu
 import type { DocumentRow } from '../../services/files'
 import { useStore } from '../../store/store'
 import type { ID, Student } from '../../types'
-import { Button, Card, CardHeader, Pill, useToast } from '../ui'
+import { Button, Card, CardHeader, Pill, ProgressBar, useConfirm, useToast } from '../ui'
 
 interface SyncAnswer {
   folder: LinkedFolder
@@ -132,6 +132,7 @@ export const goneFromDrive = (folders: LinkedFolder[]) => new Set(folders.flatMa
 export function DriveFolders({ student, linked, onLink }: { student: Student; linked: LinkedFolders; onLink: () => void }) {
   const status = useGoogleStatus()
   const toast = useToast()
+  const confirm = useConfirm()
   const [open, setOpen] = useState<string>()
   const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
   if (!status?.available || linked.folders.length === 0) return null
@@ -185,15 +186,15 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                       Open in Drive
                     </a>
                   )}
-                  <Button disabled={working || folder.status === 'reconnect'} onClick={() => void linked.sync(folder.id, true)}>
+                  <Button busy={working} disabled={folder.status === 'reconnect'} onClick={() => void linked.sync(folder.id, true)}>
                     {working ? 'Syncing…' : 'Sync now'}
                   </Button>
                   <Button
                     variant="quiet"
                     disabled={busy}
                     aria-label={`Unlink the folder ${folder.name}`}
-                    onClick={() => {
-                      if (!window.confirm(`Unlink “${folder.name}”? Files already imported stay. New files in the folder are no longer imported.`)) return
+                    onClick={async () => {
+                      if (!(await confirm({ title: 'Unlink folder', body: `Unlink “${folder.name}”? Files already imported stay. New files in the folder are no longer imported.`, action: 'Unlink folder' }))) return
                       linked.unlink(folder.id).then(
                         () => toast('Folder unlinked. The files already imported are still here.'),
                         (e) => toast(reasonOf(e)),
@@ -206,9 +207,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
               </div>
 
               {working && folder.total > 0 && (
-                <div role="progressbar" aria-label={`Importing from ${folder.name}`} aria-valuemin={0} aria-valuemax={folder.total} aria-valuenow={folder.done} className="h-2 overflow-hidden rounded-full bg-track">
-                  <div className="motion-progress h-2 bg-accent" style={{ width: `${Math.round((folder.done / folder.total) * 100)}%` }} />
-                </div>
+                <ProgressBar label={`Importing from ${folder.name}`} done={folder.done} total={folder.total} />
               )}
 
               {(folder.skipped.length > 0 || folder.removedHere > 0 || folder.missingFileIds.length > 0) && (
@@ -234,7 +233,7 @@ export function DriveFolders({ student, linked, onLink }: { student: Student; li
                 </div>
               )}
               {open === folder.id && folder.skipped.length > 0 && (
-                <ul className="flex flex-col gap-1 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+                <ul className="motion-rise flex flex-col gap-1 rounded-control bg-surface-2 px-3 py-2 text-[13px]">
                   {notes.map((s, i) => (
                     <li key={`note-${i}`} className="text-ink-soft">
                       {s.reason}

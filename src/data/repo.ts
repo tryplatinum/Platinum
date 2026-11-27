@@ -25,7 +25,9 @@ import type {
   OutboxMessage,
   Parent,
   ParentReport,
+  MessageDraft,
   PersonalNote,
+  Template,
   ReminderRule,
   Student,
   StudentDocument,
@@ -125,6 +127,7 @@ const taskFrom = (r: Row<'tasks'>): Task => ({
   approval: from<Task['approval']>(r.approval),
   expectsDocument: u(r.expects_document) as Task['expectsDocument'],
   attachments: from<Task['attachments']>(r.attachments) ?? [],
+  templateId: u(r.template_id),
 })
 
 const meetingFrom = (r: Row<'meetings'>): Meeting => ({
@@ -141,6 +144,8 @@ const meetingFrom = (r: Row<'meetings'>): Meeting => ({
   brief: from<Meeting['brief']>(r.brief),
   ai: from<Meeting['ai']>(r.ai),
   recap: from<Meeting['recap']>(r.recap),
+  googleEventId: u(r.google_event_id),
+  googleSync: u(r.google_sync),
 })
 
 const collegeFrom = (r: Row<'colleges'>): CollegeApp => ({
@@ -304,6 +309,34 @@ const weeklyTextFrom = (r: Row<'weekly_texts'>): WeeklyText => ({
   parentCopy: from<WeeklyText['parentCopy']>(r.parent_copy),
 })
 
+const templateFrom = (r: Row<'templates'>): Template => ({
+  id: r.id,
+  kind: r.kind as Template['kind'],
+  name: r.name,
+  content: from<Template['content']>(r.content)!,
+  archived: r.archived,
+  createdBy: u(r.created_by),
+})
+
+const messageDraftFrom = (r: Row<'message_drafts'>): MessageDraft => ({
+  id: r.id,
+  studentId: r.student_id,
+  templateId: u(r.template_id),
+  batchId: r.batch_id,
+  toKind: r.to_kind as MessageDraft['toKind'],
+  parentId: u(r.parent_id),
+  toName: r.to_name,
+  channel: r.channel as MessageDraft['channel'],
+  language: r.language as MessageDraft['language'],
+  kind: r.kind as MessageDraft['kind'],
+  subject: u(r.subject),
+  body: r.body,
+  untranslated: r.untranslated || undefined,
+  status: r.status as MessageDraft['status'],
+  approval: from<MessageDraft['approval']>(r.approval),
+  createdAt: stamp(r.created_at),
+})
+
 const personalNoteFrom = (r: Row<'personal_notes'>): PersonalNote => ({
   id: r.id,
   studentId: r.student_id,
@@ -386,6 +419,7 @@ const taskRow = (t: Task): Out<'tasks'> => ({
   created_on: t.createdOn,
   source: t.source,
   meeting_id: n(t.meetingId),
+  template_id: n(t.templateId),
   approval: json(t.approval),
   expects_document: n(t.expectsDocument),
   attachments: json(t.attachments),
@@ -405,6 +439,8 @@ const meetingRow = (m: Meeting): Out<'meetings'> => ({
   brief: json(m.brief),
   ai: json(m.ai),
   recap: json(m.recap),
+  google_event_id: n(m.googleEventId),
+  google_sync: n(m.googleSync),
 })
 
 const collegeRow = (c: CollegeApp): Out<'colleges'> => ({
@@ -554,11 +590,39 @@ const personalNoteRow = (p: PersonalNote): Out<'personal_notes'> => ({
   approval: json(p.approval),
 })
 
+const templateRow = (t: Template): Out<'templates'> => ({
+  id: t.id,
+  kind: t.kind,
+  name: t.name,
+  content: json(t.content),
+  archived: t.archived,
+  created_by: n(t.createdBy),
+})
+
+// created_at is the database's: a draft is dated when it is saved.
+const messageDraftRow = (d: MessageDraft): Out<'message_drafts'> => ({
+  id: d.id,
+  student_id: d.studentId,
+  template_id: n(d.templateId),
+  batch_id: d.batchId,
+  to_kind: d.toKind,
+  parent_id: n(d.parentId),
+  to_name: d.toName,
+  channel: d.channel,
+  language: d.language,
+  kind: d.kind,
+  subject: n(d.subject),
+  body: d.body,
+  untranslated: Boolean(d.untranslated),
+  status: d.status,
+  approval: json(d.approval),
+})
+
 const ruleRow = (r: ReminderRule) => ({ rule: r.id, days: r.days, mode: r.mode })
 
 // ── Changes ─────────────────────────────────────────────────────────────────
 
-type WriteTable = DataTable | 'reminder_rules' | 'document_types' | 'college_list_drafts' | 'college_list_draft_items'
+type WriteTable = DataTable | 'reminder_rules' | 'document_types' | 'college_list_drafts' | 'college_list_draft_items' | 'templates' | 'message_drafts'
 
 /** One batch for apply_changes. See supabase/migrations/…_apply_changes.sql. */
 export interface Changes {
@@ -632,6 +696,8 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
     put(table, d.changed.map(row))
     drop(table, d.removed)
   }
+  // Templates are archived and drafts are decided, never deleted. Templates go first: a task can point at one.
+  put('templates', diffList(before.templates ?? [], after.templates ?? []).changed.map(templateRow))
   appended('meetings', before.meetings, after.meetings, meetingRow)
   appended('tasks', before.tasks, after.tasks, taskRow)
   appended('colleges', before.colleges, after.colleges, collegeRow)
@@ -641,6 +707,7 @@ export function diffData(before: AppData, after: AppData): Changes | undefined {
   appended('college_list_draft_items', before.collegeListDraftItems, after.collegeListDraftItems, listDraftItemRow)
   // Folders are archived, never deleted.
   put('document_types', diffList(before.documentTypes, after.documentTypes).changed.map(documentTypeRow))
+  put('message_drafts', diffList(before.messageDrafts ?? [], after.messageDrafts ?? []).changed.map(messageDraftRow))
 
   // Lists the app adds to at the front (newest first). Rows are sent oldest
   // first, so insertion order in the database matches and loading can reverse it.
@@ -722,7 +789,7 @@ export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || 'Cou
 
 /** Everything the firm has, in the shape the store holds. */
 export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
-  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems, skips, proposals] = await Promise.all([
+  const [firm, member, students, parents, tasks, meetings, colleges, documents, reports, outbox, activity, rules, weeklyTexts, personalNotes, documentTypes, listDrafts, listDraftItems, skips, proposals, templates, messageDrafts] = await Promise.all([
     supabase.from('firms').select('name, weekly_text_day, sort_files_automatically').eq('id', firmId).single(),
     supabase.from('firm_members').select('display_name').eq('firm_id', firmId).eq('user_id', userId).single(),
     all('students', firmId, false),
@@ -742,6 +809,9 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     supabase.from('college_list_draft_items').select('*').eq('firm_id', firmId).order('position').limit(5000),
     supabase.from('reminder_skips').select('*').eq('firm_id', firmId).order('skipped_at', { ascending: false }),
     supabase.from('agent_proposals').select('*').eq('firm_id', firmId).eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
+    supabase.from('templates').select('*').eq('firm_id', firmId).order('seq'),
+    // Decided drafts are history the Sent log already holds as messages; only the waiting ones are loaded.
+    supabase.from('message_drafts').select('*').eq('firm_id', firmId).eq('status', 'draft').order('seq').limit(2000),
   ])
   if (firm.error) fail(firm.error, 'Could not load your firm')
   if (member.error) fail(member.error, 'Could not load your account')
@@ -750,6 +820,8 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
   if (listDraftItems.error) fail(listDraftItems.error, 'Could not load your draft lists')
   if (skips.error) fail(skips.error, 'Could not load reminder skips')
   if (proposals.error) fail(proposals.error, 'Could not load assistant proposals')
+  if (templates.error) fail(templates.error, 'Could not load your templates')
+  if (messageDrafts.error) fail(messageDrafts.error, 'Could not load your drafts')
 
   const parentsOf = new Map<ID, Parent[]>()
   for (const p of parents) parentsOf.set(p.student_id, [...(parentsOf.get(p.student_id) ?? []), parentFrom(p)])
@@ -778,6 +850,8 @@ export async function loadAll(firmId: ID, userId: ID): Promise<AppData> {
     collegeListDraftItems: listDraftItems.data.map(listDraftItemFrom),
     reminderSkips: skips.data.map(reminderSkipFrom),
     agentProposals: proposals.data.map(agentProposalFrom),
+    templates: templates.data.map(templateFrom),
+    messageDrafts: messageDrafts.data.map(messageDraftFrom),
   }
 }
 

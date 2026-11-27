@@ -5,7 +5,8 @@
 // work on. It never contains replacement text (the schema in
 // shared/contract.ts has no field for it), and the panel says so.
 
-import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApprovalCard } from '../../../components/ApprovalCard'
 import {
@@ -14,6 +15,7 @@ import {
   ApprovalStamp,
   Button,
   Card,
+  Disclosure,
   Empty,
   Field,
   FilterChips,
@@ -26,12 +28,14 @@ import {
   inputClass,
   textareaClass,
   useAi,
+  useConfirm,
 } from '../../../components/ui'
 import { formatDate } from '../../../lib/dates'
 import { ESSAY_STATUS, currentDraft, essayApproval, essayGroups, wordCount, type EssayGroup } from '../../../lib/derive'
 import { essayFeedback } from '../../../services/ai'
 import { useData, useStore } from '../../../store/store'
-import type { EssayFeedback, EssayStatus, Student, StudentDocument } from '../../../types'
+import { ApplyTemplate, TemplatePicker } from '../../../components/templates'
+import type { EssayFeedback, EssayStatus, Student, StudentDocument, Template } from '../../../types'
 
 type Filter = 'all' | 'college' | 'summer' | 'feedback'
 
@@ -50,10 +54,16 @@ export default function EssaysTab({ student }: { student: Student }) {
   const [params, setParams] = useSearchParams()
   const [filter, setFilter] = useState<Filter>('all')
   const [adding, setAdding] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [giving, setGiving] = useState<Template>()
   const { college, summer, counts } = essayGroups(data, student.id)
   const selectedId = params.get('essay')
   const selected = data.documents.find((d) => d.id === selectedId && d.studentId === student.id && d.kind === 'essay')
+  const [pressed, setPressed] = useState<string>()
   const select = (id?: string) => {
+    setPressed(id)
+    // Back to the row it was opened from.
+    if (!id && selectedId) requestAnimationFrame(() => document.getElementById(`essay-${selectedId}`)?.focus())
     const next = new URLSearchParams(params)
     if (id) next.set('essay', id)
     else next.delete('essay')
@@ -83,6 +93,7 @@ export default function EssaysTab({ student }: { student: Student }) {
             <li key={e.id} className="border-t border-line">
               <button
                 type="button"
+                id={`essay-${e.id}`}
                 aria-current={selected?.id === e.id}
                 onClick={() => select(e.id)}
                 className={cx('flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-left', selected?.id === e.id ? 'bg-accent-soft' : 'hover:bg-surface-2')}
@@ -120,10 +131,23 @@ export default function EssaysTab({ student }: { student: Student }) {
             { value: 'feedback', label: 'Needs your feedback', count: counts.needsFeedback },
           ]}
         />
-        <Button variant="primary" onClick={() => setAdding(true)}>
-          Add essay
-        </Button>
+        <span className="flex flex-wrap gap-2">
+          <Button onClick={() => setPicking(true)}>From a template</Button>
+          <Button onClick={() => setAdding(true)}>Add essay</Button>
+        </span>
       </div>
+      {picking && (
+        <TemplatePicker
+          kinds={['handout']}
+          title="Give a handout"
+          onClose={() => setPicking(false)}
+          onPick={(t) => {
+            setPicking(false)
+            setGiving(t)
+          }}
+        />
+      )}
+      {giving && <ApplyTemplate template={giving} students={[student]} onClose={() => setGiving(undefined)} />}
 
       {adding && <AddEssayForm student={student} onDone={(id) => (setAdding(false), id && select(id))} />}
 
@@ -132,7 +156,7 @@ export default function EssaysTab({ student }: { student: Student }) {
           {counts.all === 0 && !adding ? (
             <Card>
               <Empty title={`No essays for ${student.firstName} yet. Add the essays this student has to write, then paste drafts in as they arrive.`}>
-                <Button variant="primary" onClick={() => setAdding(true)}>
+                <Button onClick={() => setAdding(true)}>
                   Add essay
                 </Button>
               </Empty>
@@ -150,7 +174,7 @@ export default function EssaysTab({ student }: { student: Student }) {
             </>
           )}
         </div>
-        {selected && <EssayPanel key={selected.id} doc={selected} student={student} onClose={() => select()} />}
+        {selected && <EssayPanel key={selected.id} doc={selected} student={student} pressed={pressed === selected.id} onClose={() => select()} />}
       </div>
     </>
   )
@@ -222,9 +246,10 @@ function AddEssayForm({ student, onDone }: { student: Student; onDone: (id?: str
 
 // ── The selected essay ──────────────────────────────────────────────────────
 
-function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: Student; onClose: () => void }) {
+function EssayPanel({ doc, student, pressed, onClose }: { doc: StudentDocument; student: Student; /** Opened by a press just now, not by the address. */ pressed: boolean; onClose: () => void }) {
   const { saveEssayDraft, updateDocument, removeDocument, setEssayFeedback } = useStore.getState()
   const data = useData()
+  const confirm = useConfirm()
   const { busy, error, run } = useAi()
   const draft = currentDraft(doc)
   const [text, setText] = useState(draft?.text ?? '')
@@ -232,6 +257,14 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
   const [showHistory, setShowHistory] = useState(false)
   // Keep the editor in step when the saved draft changes underneath it.
   useEffect(() => setText(draft?.text ?? ''), [draft?.n, draft?.text])
+
+  // On a phone the panel opens under the list, out of sight: go to it. Not when the page opened with it.
+  const panel = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!pressed || window.innerWidth >= 1280) return
+    panel.current?.focus({ preventScroll: true })
+    panel.current?.scrollIntoView({ block: 'start' })
+  }, [pressed])
 
   const feedback = doc.feedback
   const pending = feedback?.review === 'pending'
@@ -241,17 +274,17 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
   const getFeedback = () => run(async () => setEssayFeedback(doc.id, await essayFeedback(doc, student)))
 
   return (
-    <aside aria-label="Selected essay" className="flex min-w-0 flex-col gap-4 rounded-xl border border-line bg-surface p-5 xl:sticky xl:top-6">
+    <aside ref={panel} tabIndex={-1} aria-label="Selected essay" className="motion-rise flex min-w-0 flex-col gap-4 rounded-card border border-line bg-surface p-5 focus:outline-none xl:sticky xl:top-6">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <SectionLabel>Selected</SectionLabel>
-          <h2 className="text-lg font-bold">{doc.name}</h2>
+          <h2 className="text-lg font-semibold">{doc.name}</h2>
           <p className="text-[13px] text-muted">
             {doc.target} · {draft ? `Draft ${draft.n} · ${wordCount(draft.text)}${doc.wordLimit ? ` of ${doc.wordLimit}` : ''} words · saved ${formatDate(draft.savedOn)}` : 'no draft pasted yet'}
           </p>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-xl text-muted hover:bg-surface-2">
-          ×
+        <button type="button" onClick={onClose} aria-label="Close essay panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-surface-2 hover:text-heading">
+          <X size={20} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
 
@@ -319,19 +352,16 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
         <ul className="flex flex-col gap-2">
           {[...(doc.drafts ?? [])].reverse().map((d) => (
             <li key={d.n}>
-              <details className="rounded-lg border border-line">
-                <summary className="flex min-h-11 items-center px-3 text-sm font-semibold">
-                  Draft {d.n} · {formatDate(d.savedOn)} · {wordCount(d.text)} words
-                </summary>
-                <p className="whitespace-pre-wrap border-t border-line p-3 font-serif text-sm leading-relaxed">{d.text}</p>
-              </details>
+              <Disclosure label={`Draft ${d.n} · ${formatDate(d.savedOn)} · ${wordCount(d.text)} words`}>
+                <p className="max-w-prose whitespace-pre-wrap rounded-control border border-line p-3 font-serif text-sm leading-relaxed">{d.text}</p>
+              </Disclosure>
             </li>
           ))}
         </ul>
       )}
 
       {/* Feedback */}
-      <div className="flex flex-col gap-3 rounded-lg border border-accent-line bg-accent-soft p-4">
+      <div tabIndex={-1} data-focus-home className="flex flex-col gap-3 rounded-control border border-accent-line bg-accent-soft p-4 focus:outline-none">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-semibold">{feedback?.review === 'approved' ? 'Feedback sent' : 'Feedback draft'}</span>
           {feedback && (pending ? <AiTag source={feedback.source}>AI draft · not sent</AiTag> : <Pill tone={feedback.review === 'approved' ? 'good' : 'neutral'}>{feedback.review === 'approved' ? `Shared with ${student.firstName}` : 'Discarded'}</Pill>)}
@@ -346,7 +376,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
             <PlaceholderNote source={feedback.source} />
             {stale && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">This feedback was written about draft {feedback.draftN}. The current draft is {draft.n}.</p>}
             {pending ? (
-              <ApprovalCard item={essayApproval(data, doc)} as="div" compact>
+              <ApprovalCard item={essayApproval(data, doc)} compact>
                 <Feedback feedback={feedback} student={student} />
               </ApprovalCard>
             ) : (
@@ -358,7 +388,7 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
 
         <div className="flex flex-wrap gap-2">
           {!busy && (!feedback || !pending || stale) && (
-            <Button variant={feedback ? 'secondary' : 'primary'} onClick={getFeedback} disabled={!draft?.text.trim()}>
+            <Button onClick={getFeedback} disabled={!draft?.text.trim()}>
               {feedback ? 'Get feedback on the current draft' : 'Get AI feedback'}
             </Button>
           )}
@@ -372,11 +402,10 @@ function EssayPanel({ doc, student, onClose }: { doc: StudentDocument; student: 
       <Button
         variant="danger"
         className="self-start"
-        onClick={() => {
-          if (window.confirm(`Delete “${doc.name}” and its drafts?`)) {
-            removeDocument(doc.id)
-            onClose()
-          }
+        onClick={async () => {
+          if (!(await confirm({ title: 'Delete essay', body: `Delete “${doc.name}” and its drafts?`, action: 'Delete essay' }))) return
+          removeDocument(doc.id)
+          onClose()
         }}
       >
         Delete essay

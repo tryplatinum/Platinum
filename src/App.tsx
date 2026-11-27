@@ -15,9 +15,11 @@ import Meetings from './screens/counselor/Meetings'
 import Messages from './screens/counselor/Messages'
 import PhoneSetup from './screens/PhoneSetup'
 import Settings from './screens/counselor/Settings'
+import Templates from './screens/counselor/Templates'
 import SignIn, { FirmSetup, ResetPassword } from './screens/counselor/SignIn'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
+import Today from './screens/counselor/Today'
 import { StudentLinkLayout } from './screens/student/StudentLinkLayout'
 import { StudentHome, StudentProfile } from './screens/student/StudentView'
 import ListDraft from './screens/counselor/ListDraft'
@@ -57,13 +59,16 @@ export default function App() {
 
       <Route element={<RequireFirm />}>
         <Route path="/app" element={<CounselorLayout />}>
+          {/* The Inbox keeps the address it has always had; Today is where the day starts. */}
           <Route index element={<Inbox />} />
+          <Route path="today" element={<Today />} />
           <Route path="activity" element={<Activity />} />
           <Route path="students" element={<Students />} />
           <Route path="students/:studentId" element={<StudentPage />} />
           <Route path="meetings" element={<Meetings />} />
           <Route path="messages" element={<Messages />} />
           <Route path="documents" element={<Documents />} />
+          <Route path="templates" element={<Templates />} />
           <Route path="settings" element={<Settings />} />
 
           <Route path="students/:studentId/meetings/:meetingId" element={<MeetingRedirect />} />
@@ -85,7 +90,7 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<Navigate to="/app/today" replace />} />
     </Routes>
   )
 }

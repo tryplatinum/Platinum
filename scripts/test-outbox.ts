@@ -11,6 +11,7 @@
 // There Google is the invented one in server/google/fakeDrive.ts and the
 // database is the in-memory stand-in in scripts/fakeSupabase.ts. Nothing is sent.
 
+import { BY_HAND_CHANNELS, canDeliver, messageStatusLabel, sentByHand } from '../src/lib/delivery'
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,8 +32,9 @@ import {
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
-import { QUEUE_KINDS, QUEUE_LANGUAGES, UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
-import { dispatchFirm } from '../server/dispatch.js'
+import { HAND_SENT_NOTE } from '../shared/phoneGateway.js'
+import { QUEUE_CHANNELS, QUEUE_KINDS, QUEUE_LANGUAGES, UNDO_SECONDS, outboxStatusLabel, validateQueuePayload } from '../shared/outbox.js'
+import { approvedToSendByHand, dispatchFirm } from '../server/dispatch.js'
 import { google } from '../server/google/config.js'
 import { forgetAccessTokens } from '../server/google/connection.js'
 import { fakeGoogle } from '../server/google/fakeDrive.js'
@@ -192,6 +194,17 @@ const routed = (channel: 'email' | 'text' | 'line' | 'wechat' | undefined, email
     else process.env.TRANSPORT = before.all
   }
 }
+
+// The screen asks the same rule, so it never offers to send what the dispatcher refuses.
+for (const channel of QUEUE_CHANNELS) {
+  check(`screen and dispatcher agree on ${channel}`, canDeliver(channel) === resolveAddress(channel, { phone: '+15551234567', email: 'a@example.com' }).ok)
+}
+check('by hand: wechat and line only', BY_HAND_CHANNELS.join() === 'wechat,line')
+check('a send on wechat is by hand', sentByHand({ isSend: true, channel: 'wechat' }) && !sentByHand({ isSend: true, channel: 'text' }) && !sentByHand({ isSend: false, channel: 'wechat' }))
+check('a by-hand row never reads as queued or sending', (['queued', 'sending'] as const).every((status) => !/[Ss]ending|Queued/.test(messageStatusLabel({ channel: 'line', status, sendAfter: new Date(0).toISOString() }))))
+check('…reads as sent once the dispatcher has recorded it', messageStatusLabel({ channel: 'wechat', status: 'sent', sendAfter: new Date(0).toISOString() }) === 'Sent')
+check('…and one nobody copied says it was not sent, without the raw error', messageStatusLabel({ channel: 'line', status: 'failed', sendAfter: new Date(0).toISOString(), error: 'channel not connected yet.' }) === 'Not sent: LINE is not connected')
+check('a connected row reads as before', messageStatusLabel({ channel: 'email', status: 'sent', sendAfter: new Date(0).toISOString() }) === 'Sent')
 check('email stays on the log transport when TRANSPORT_EMAIL is unset', routed('email', undefined) instanceof LogTransport)
 check('email goes through Gmail when TRANSPORT_EMAIL=gmail', routed('email', 'gmail') instanceof GmailTransport)
 check('…whatever the case or spacing', routed('email', ' Gmail ') instanceof GmailTransport)
@@ -364,8 +377,31 @@ check('…and never reaches GmailTransport', !gmailSends.some((s) => s.message.h
 check('a row with no approved_by fails with “No counselor on this message”', rowOf(noApprover).status === 'failed' && rowOf(noApprover).error === 'No counselor on this message')
 check('a counselor without Gmail fails with their name', rowOf(notConnected).status === 'failed' && rowOf(notConnected).error === 'Gmail not connected for Priya Raman')
 check('text still goes through the log transport', rowOf(text).status === 'sent' && String(rowOf(text).provider_message_id).startsWith('log_'))
-check('LINE still fails as not connected', rowOf(line).status === 'failed' && rowOf(line).error === 'channel not connected yet.')
+check('a LINE row a rule queued by itself still fails as not connected', rowOf(line).status === 'failed' && rowOf(line).error === 'channel not connected yet.')
 check('the dispatcher’s count matches', summary.processed === 6 && summary.sent === 2 && summary.failed === 4)
+
+// A counselor approved it with Copy on a channel with no transport: it was sent by hand, it did not fail.
+check('by hand: approved on WeChat or LINE only', approvedToSendByHand({ channel: 'wechat', trigger: 'approved' }) && approvedToSendByHand({ channel: 'line', trigger: 'approved' }) && !approvedToSendByHand({ channel: 'line', trigger: 'automatic' }) && !approvedToSendByHand({ channel: 'line' }) && !approvedToSendByHand({ channel: 'email', trigger: 'approved' }) && !approvedToSendByHand({ channel: 'text', trigger: 'approved' }) && !approvedToSendByHand({ channel: 'pigeon', trigger: 'approved' }))
+{
+  const sendsBefore = gmailSends.length
+  const activityBefore = db.table('activity').length
+  const byHand = queue({ channel: 'wechat', trigger: 'approved', parent_id: OTHER_PARENT, to_name: '王媽媽', kind: 'reminder_late', note: null })
+  const noted = queue({ channel: 'line', trigger: 'approved', note: 'Parent copy of a reminder' })
+  const byRule = queue({ channel: 'wechat', trigger: 'automatic', note: null })
+  const cancelled = queue({ channel: 'wechat', trigger: 'approved', status: 'cancelled' })
+  const held = queue({ channel: 'wechat', trigger: 'approved', send_after: new Date(Date.now() + 60_000).toISOString() })
+  const handSummary = await dispatch({ email: 'gmail', allowlist: ALLOW })
+  check('an approved WeChat message is stored as sent, not failed', rowOf(byHand).status === 'sent' && rowOf(byHand).error === null)
+  check('…recorded the way a hand-sent weekly text is: a hand_ id and “Sent from your own phone”', String(rowOf(byHand).provider_message_id).startsWith('hand_') && rowOf(byHand).note === HAND_SENT_NOTE && typeof rowOf(byHand).sent_at === 'string')
+  check('…a note the row already had is kept', rowOf(noted).status === 'sent' && rowOf(noted).note === 'Parent copy of a reminder')
+  const lines = db.table('activity').slice(activityBefore).map((a) => String(a.text))
+  check('Activity says sent, never “Failed to send”, for the two sent by hand', lines.filter((t) => /^Sent a /.test(t)).length === 2 && lines.filter((t) => /^Failed to send/.test(t)).length === 1, lines.join(' | '))
+  check('one a rule queued by itself still fails', rowOf(byRule).status === 'failed' && rowOf(byRule).error === 'channel not connected yet.')
+  check('Undo still works: a cancelled one is never touched', rowOf(cancelled).status === 'cancelled')
+  check('the hold before sending still applies', rowOf(held).status === 'queued')
+  check('no transport was called for any of them', gmailSends.length === sendsBefore && handSummary.processed === 3 && handSummary.sent === 2 && handSummary.failed === 1)
+  rowOf(held).status = 'cancelled'
+}
 check('with an empty allowlist nothing reaches Gmail', await (async () => {
   const blocked = queue({})
   await dispatch({ email: 'gmail', allowlist: '' })

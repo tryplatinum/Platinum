@@ -2,13 +2,14 @@
 // student's own view. Open tasks are bordered rows with a check circle; late
 // ones get the red left edge and tint. Done tasks are quiet grey rows.
 
+import { BellRing } from 'lucide-react'
 import { useState } from 'react'
 import { formatDate } from '../lib/dates'
 import { DOC_CATEGORIES, daysLate, isLate, isOpen, ownerLabel } from '../lib/derive'
 import { useData, useStore } from '../store/store'
 import type { Actor, DocCategory, Student, Task } from '../types'
 import { ReminderComposer, reminderRecipient } from './ReminderComposer'
-import { Button, CheckCircle, Pill, SectionLabel, cx, inputBase, inputClass } from './ui'
+import { Button, CheckCircle, Pill, SectionLabel, cx, inputBase, inputClass, useConfirm } from './ui'
 
 type Viewer = Extract<Actor, 'student' | 'counselor'>
 
@@ -28,8 +29,11 @@ function DueChip({ task }: { task: Task }) {
 
 /** Where a task came from, e.g. "from the Nov 10 meeting". */
 function useSourceText(task: Task): string | undefined {
-  const meeting = useData().meetings.find((m) => m.id === task.meetingId)
+  const data = useData()
+  const meeting = data.meetings.find((m) => m.id === task.meetingId)
   if (meeting) return `from the ${formatDate(meeting.date)} meeting`
+  const template = task.templateId ? data.templates?.find((t) => t.id === task.templateId) : undefined
+  if (template) return `from the ${template.name} template`
   return task.source === 'ai_notes' ? 'from your notes' : undefined
 }
 
@@ -45,21 +49,21 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
 
   if (!isOpen(task)) {
     return (
-      <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-canvas px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-canvas px-4 py-2.5">
         <CheckCircle done label={task.title} onToggle={toggle} />
         <span className="min-w-0 flex-1 text-sm text-muted line-through">{task.title}</span>
         <span className="text-[13px] text-muted">
           Done{task.completedOn && ` ${formatDate(task.completedOn)}`}
           {task.completedBy && ` by ${WHO[task.completedBy](student)}`}
         </span>
-      </li>
+      </div>
     )
   }
 
   return (
-    <li
+    <div
       className={cx(
-        'rounded-lg border border-l-4',
+        'rounded-control border border-l-4',
         late ? 'border-bad-line border-l-bad-bar bg-bad-tint' : task.owner === 'counselor' && viewer === 'counselor' ? 'border-line border-l-accent bg-surface' : 'border-line border-l-line-strong bg-surface',
       )}
     >
@@ -73,8 +77,9 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
         </button>
         <DueChip task={task} />
         {viewer === 'counselor' && reminderRecipient(student, task) && (
-          <Button variant={late ? 'remind' : 'secondary'} onClick={() => setReminding(!reminding)} aria-expanded={reminding}>
-            Remind
+          // A late task says "Remind". One that is not late keeps the same button as an icon, so the list is not a column of them.
+          <Button variant={late ? 'remind' : 'secondary'} className={late ? undefined : 'w-11 px-0!'} title={late ? undefined : 'Remind'} onClick={() => setReminding(!reminding)} aria-expanded={reminding} aria-label={`Remind about ${task.title}`}>
+            {late ? 'Remind' : <BellRing size={20} strokeWidth={1.75} className="shrink-0" aria-hidden />}
           </Button>
         )}
         {viewer === 'student' && (
@@ -84,17 +89,22 @@ export function TaskItem({ task, student, viewer }: { task: Task; student: Stude
         )}
       </div>
       {reminding && (
-        <div className="px-4 pb-3">
+        <div className="motion-rise px-4 pb-3">
           <ReminderComposer student={student} task={task} onDone={() => setReminding(false)} />
         </div>
       )}
-      {open && <TaskDetails task={task} student={student} viewer={viewer} onDeleted={() => setOpen(false)} />}
-    </li>
+      {open && (
+        <div className="motion-rise">
+          <TaskDetails task={task} student={student} viewer={viewer} onDeleted={() => setOpen(false)} />
+        </div>
+      )}
+    </div>
   )
 }
 
 function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student: Student; viewer: Viewer; onDeleted: () => void }) {
   const { updateTaskProgress, updateTask, attachToTask, deleteTask } = useStore.getState()
+  const confirm = useConfirm()
   // A student on their secret link can attach a link, not a file.
   const onLink = useStore((s) => s.mode === 'student_link')
   const [note, setNote] = useState(task.progressNote ?? '')
@@ -110,7 +120,8 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
 
   return (
     <div className="flex flex-col gap-3 border-t border-line px-4 py-3">
-      {task.detail && <p className="text-sm text-ink-soft">{task.detail}</p>}
+      {/* A handout written in Platinum is the task's own text: kept line for line. */}
+      {task.detail && <p className="whitespace-pre-wrap text-sm text-ink-soft">{task.detail}</p>}
       {task.progressNote && viewer === 'counselor' && <p className="text-sm italic text-ink-soft">“{task.progressNote}”</p>}
 
       {task.attachments.length > 0 && (
@@ -118,7 +129,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           {task.attachments.map((a) => (
             <li key={a.id} className="text-sm">
               {a.url ? (
-                <a href={a.url} target="_blank" rel="noreferrer" className="font-medium text-accent underline">
+                <a href={a.url} target="_blank" rel="noreferrer" className="tap-link font-medium text-accent underline">
                   {a.name}
                 </a>
               ) : (
@@ -158,7 +169,7 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           Add a file
         </label>}
       </form>
-      <p className="-mt-1 text-xs text-muted">v0 records the file’s name only. The file itself is not stored.</p>
+      <p className="-mt-1 text-xs text-muted">Only the file’s name is recorded here. The file itself is not stored.</p>
 
       <form
         className="flex flex-wrap gap-2"
@@ -198,11 +209,10 @@ function TaskDetails({ task, student, viewer, onDeleted }: { task: Task; student
           </label>
           <Button
             variant="danger"
-            onClick={() => {
-              if (window.confirm(`Delete “${task.title}”?`)) {
-                deleteTask(task.id)
-                onDeleted()
-              }
+            onClick={async () => {
+              if (!(await confirm({ title: 'Delete task', body: `Delete “${task.title}”?`, action: 'Delete task' }))) return
+              deleteTask(task.id)
+              onDeleted()
             }}
           >
             Delete task
