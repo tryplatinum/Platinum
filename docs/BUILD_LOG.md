@@ -1,5 +1,35 @@
 # Build log
 
+## Accounts and landing (branch `accounts-and-landing`, from `main` at `c23ea84`)
+
+One branch, one pull request, a commit or more per part. **No migration in this branch has been pushed**, and no account flow has run against the real database. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261207000001` (templates and calendar included) on the remote.
+
+**PGlite is not a dependency.** The database checks (`scripts/test-accounts-db.ts`, helper `scripts/pgliteChain.ts`) run the whole migration chain in PGlite with stand-ins for the `auth` and `storage` schemas. Adding the package was not allowed in this run, so the script looks for it in `node_modules` or in `PGLITE_DIR` and, when it is missing, prints that it was skipped and exits 0. `npm run test:notes` on a clean checkout therefore skips those checks. To run them: `npm install --no-save --no-package-lock @electric-sql/pglite`.
+
+### Part A: roles and invitations in the database
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261208000001_roles_and_invitations.sql`.
+
+- `firm_members`: the three write policies are dropped and insert, update and delete are revoked from signed-in people. Members still read their firm's rows.
+- `invitations` (one table for both kinds; the student kind is used from Part B). Members read every column but `token_hash`. No direct writes.
+- Functions: `invite_counselor(email, token_hash, replace)`, `revoke_invitation`, `accept_counselor_invitation` (service role only), `set_member_role`, `member_removal_summary`, `remove_member`, `leave_firm`, `rename_self`. Two helpers nobody can call: `claim_invitation_`, `end_membership_`.
+- A deferred constraint trigger, `firm_keeps_an_owner`, refuses any path that leaves a firm with members and no owner. Deleting a whole firm still works.
+- `apply_changes` restated whole with two changes: renaming yourself calls `rename_self`, and deleting a student or clearing the caseload is refused for anyone but an owner (Part F's first point, placed here because it is the same function).
+- `activity.student_id` may be null, for a line about the firm itself. `activityFrom` in `src/data/repo.ts` reads it as an empty id; the Activity screen already shows a line with no student.
+
+**Choices the brief did not settle.**
+- *An owner cannot demote or remove another owner.* An owner steps down themselves, and only then can be removed. The brief lists "make a counselor an owner" and "step down or leave"; taking an owner's role away from them is not in it.
+- *A counselor can leave.* Leaving does what removal does (Google, phone, queued messages, one line).
+- *Activity lines about the firm are `system` lines* that name the people in their text ("Avery Stone removed Dana Whitlock from the firm: …"), because the Activity screen shows every `counselor` line under the name of whoever is looking.
+- *"Queued and unsent"* is every outbox row that person approved that is still `queued`, plus a text handed to their phone that the phone has not taken yet (the job is cancelled and its words cleared).
+- *Error codes.* The functions raise `PI001` (the invitation does not work: unknown, expired, revoked or used, one answer), `PI002` (address not confirmed), `PI003` (another address), `PI004` (already in a firm), `PI005` (an invitation is already waiting), and `23514` for the last owner. `server/account.ts` turns them into the reasons in `shared/account.ts`.
+- *The address and its confirmation are read twice:* by the server from Supabase's own answer about the sign-in, and again inside the accept function from `auth.users`, with the invitation row locked.
+- *Deleting the sign-in of a firm's only owner* in the Supabase dashboard is now refused while the firm has other members. Make another owner first.
+
+**Server:** `api/account.ts` (added to `FUNCTIONS` in `vite.config.ts`), `server/account.ts`, `shared/account.ts`. `server/supabase.ts` gained `signedIn()` (who is signed in, without a firm, for `accept`); `identify()` is unchanged. `server/google/connection.ts` gained `disconnectMember()`, which revokes the grant at Google before the database deletes the row.
+
+**Checked.** `npm run test:accounts` (55 checks, in-memory Supabase): one answer for unknown, expired, revoked, used and malformed previews; the rate limit; accept needs a verified sign-in, the right address and a confirmed one; only the hash reaches the database; the caller's id never comes from the body; counselors are refused every owner action before the database is asked; removal revokes at Google and calls the database once. `npm run test:accounts:db` (67 checks, PGlite): everything above as the database enforces it, including the last owner, direct writes to `firm_members`, the hash column, "New link", and that removal does all four things and writes one line. **Not run:** a real database, real Supabase Auth, two accepts truly at once (PGlite has one connection; the check is that the second is refused and that the row is locked).
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

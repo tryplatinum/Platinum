@@ -44,6 +44,12 @@ export function fakeSupabase() {
   const functions = new Map<string, (args: Row) => unknown>()
   /** Access token to user id, for /auth/v1/user. */
   const users = new Map<string, string>()
+  /** What Supabase Auth knows about a person, for tests that need an address: user id to email and whether it is confirmed. */
+  const people = new Map<string, { email: string; confirmed: boolean }>()
+  const authUser = (id: string) => {
+    const known = people.get(id)
+    return { id, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date(0).toISOString(), ...(known ? { email: known.email, email_confirmed_at: known.confirmed ? new Date(0).toISOString() : null } : {}) }
+  }
   const table = (name: string) => tables.get(name) ?? tables.set(name, []).get(name)!
   let seq = 0
 
@@ -188,6 +194,7 @@ export function fakeSupabase() {
     objects,
     table,
     users,
+    people,
     /** Registers a stand-in for a database function called with supabase.rpc(name, args). */
     rpc(name: string, handler: (args: Row) => unknown) {
       functions.set(name, handler)
@@ -202,11 +209,29 @@ export function fakeSupabase() {
         const handler = functions.get(url.pathname.slice('/rest/v1/rpc/'.length))
         if (!handler) return json({ code: 'PGRST202', message: 'function not found', details: null, hint: null }, 404)
         const body = options.body === undefined || options.body === null ? '{}' : typeof options.body === 'string' ? options.body : new TextDecoder().decode(options.body as ArrayBuffer)
-        return json(handler(JSON.parse(body || '{}') as Row))
+        try {
+          return json(handler(JSON.parse(body || '{}') as Row))
+        } catch (error) {
+          // A database function's refusal: thrown as { code, message }, answered as PostgREST would.
+          const refusal = error as { code?: string; message?: string }
+          if (typeof refusal.code !== 'string') throw error
+          return json({ code: refusal.code, message: refusal.message ?? '', details: null, hint: null }, 400)
+        }
       }
       if (url.pathname === '/auth/v1/user') {
         const id = users.get(new Headers(options.headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '')
-        return id ? json({ id, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date(0).toISOString() }) : json({ message: 'invalid token' }, 401)
+        return id ? json(authUser(id)) : json({ message: 'invalid token' }, 401)
+      }
+      // The admin API the service role uses to read, or delete, one sign-in.
+      if (url.pathname.startsWith('/auth/v1/admin/users/')) {
+        const id = url.pathname.slice('/auth/v1/admin/users/'.length)
+        if (!people.has(id)) return json({ code: 404, error_code: 'user_not_found', msg: 'User not found' }, 404)
+        if ((options.method ?? 'GET').toUpperCase() === 'DELETE') {
+          people.delete(id)
+          for (const [token, user] of users) if (user === id) users.delete(token)
+          return json({})
+        }
+        return json(authUser(id))
       }
       if (url.pathname.startsWith('/rest/v1/')) return rest(url.pathname.slice('/rest/v1/'.length), url, options)
       if (url.pathname.startsWith('/storage/v1/object/')) return storage(url, options)

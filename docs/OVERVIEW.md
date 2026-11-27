@@ -89,7 +89,7 @@ Status: **Working** (in use end to end), **Partial** (works with a stated piece 
 
 | Feature | What the user sees | How it works | Main files | Status |
 | --- | --- | --- | --- | --- |
-| Sign-in and firms | Email and password sign-in, sign-up, password reset. First sign-in asks for a firm name | Supabase Auth. `create_firm` makes the firm with the caller as owner and seeds folders. One account belongs to one firm. No invitations | `src/screens/counselor/SignIn.tsx`, `src/store/session.ts`, `src/components/RequireFirm.tsx` | Working |
+| Sign-in and firms | Email and password sign-in, sign-up, password reset. First sign-in asks for a firm name | Supabase Auth. `create_firm` makes the firm with the caller as owner and seeds folders. One account belongs to one firm. A second person joins by invitation (see Accounts) | `src/screens/counselor/SignIn.tsx`, `src/store/session.ts`, `src/components/RequireFirm.tsx` | Working |
 | Today | Where a counselor lands after signing in (`/app/today`): three numbers (meetings today, waiting, slipping), the oldest draft for three different students as short rows that open in place, meetings today and tomorrow, up to five students behind or slipping, and four ways to start something | Computed from data already loaded. No AI call and no extra request on opening | `src/screens/counselor/Today.tsx`, `src/lib/today.ts` | Working |
 | Templates | A firm's reusable task plans, messages and handouts, managed at `/app/templates` and used from a student's tasks, the Students table (tick students, then "Assign a template"), the reminder box and Essays | A plan's offsets become dates in code and are shown before anything is added. A message template only makes drafts in `message_drafts`; approving one calls `sendMessage` like any other send. Blanks come from a fixed list filled by code; one that cannot be filled blocks approval. No model call | `shared/templates.ts`, `src/store/templates.ts`, `src/components/templates.tsx`, `src/screens/counselor/Templates.tsx`, `supabase/migrations/20261206000001_templates.sql` | Working in the preview and offline. **The migration is not on the database yet** |
 | Google Calendar | Optional add-on to the Google connection, turned on in Settings: each meeting scheduled in Platinum gets one event on the counselor's own calendar, and the counselor's events are shown beside meetings on Today and the Meetings calendar, where one can be linked to a student | One permission, `calendar.events.owned`, asked for on its own. Every write passes `sendUpdates=none` and holds no guest (`assertQuiet`), so Google contacts nobody. The description is a link back and nothing else. Platinum deletes only an event it made. Events are read live and not stored | `shared/calendar.ts`, `server/google/calendar.ts`, `api/google.ts`, `src/lib/calendarSync.ts`, `src/components/google/CalendarBits.tsx`, `supabase/migrations/20261207000001_calendar.sql` | Working offline against the invented calendar and in the preview. **Never run against real Google. The migration is not on the database yet** |
@@ -224,7 +224,8 @@ For phone texts, `outbox.delivery_detail` adds the case: `phone_waiting` (handed
 | Who | How they prove it | Where |
 | --- | --- | --- |
 | Counselor | Supabase email and password. The browser holds the session and sends the access token as `Authorization: Bearer` to every `/api` route | `src/store/session.ts`, `server/supabase.ts` |
-| Firm membership | `firm_members` row with role `owner` or `counselor`. One firm per account. `create_firm` is the only way a firm is made, and makes the caller its owner | `supabase/migrations/20261123000001_schema_and_policies.sql` |
+| Firm membership | `firm_members` row with role `owner` or `counselor`. One firm per account. `create_firm` is the only way a firm is made, and makes the caller its owner. Nobody writes the table directly: a person joins by accepting an invitation, and roles, removal, leaving and renaming yourself go through database functions. A firm with members always has an owner | `supabase/migrations/20261123000001_schema_and_policies.sql`, `20261208000001_roles_and_invitations.sql` |
+| Invitation | A link a person copies, `/join#<secret>`. 32 random bytes, only the SHA-256 hash stored, 7 days, used once. Platinum sends nothing. Accepting needs a sign-in whose confirmed address is the invited one, and happens on the server in one transaction | `server/account.ts`, `api/account.ts`, `shared/account.ts` |
 | Student | A link token: 32 random bytes, only its SHA-256 hash stored. Expires 30 days after it is made or rotated. Created from the student page, or minted by the dispatcher when a message needs one. Sent in the `x-student-token` header | `server/studentLink.ts`, `src/data/repo.ts`, `server/dispatch.ts` |
 | Phone | An 8-character setup code (hash stored, single use, 10 minutes) typed on `/phone-setup`, exchanged for a device key (hash stored, shown once, 90 days). Pairing revokes any earlier phone. The counselor can revoke it | `server/phoneGateway/counselor.ts`, `server/phoneGateway/device.ts`, `server/phoneGateway/keys.ts` |
 | Google | OAuth web flow with an HMAC-signed `state` tied to an HttpOnly cookie, ten-minute expiry. Refresh tokens encrypted with AES-256-GCM under `GOOGLE_TOKEN_KEY` | `server/google/connection.ts`, `server/google/secrets.ts` |
@@ -270,9 +271,10 @@ Consent uses `include_granted_scopes=false`, so an older, broader Drive grant is
 | `/api/colleges` | POST | `search`, `get`, `band`, `draft` (list draft) | Firm member | `identify()`; user client only; 10 drafts per person per 5 min | `api/colleges.ts` |
 | `/api/google` | POST | `status`, `picker`, `connect`, `disconnect`, `browse`, `import`, `folders`, `link`, `unlink`, `sync`, `import_removed` | Firm member | `identify()`; Zod per action | `api/google.ts` |
 | `/api/google` | GET | OAuth redirect back from Google | Browser that started connect | Signed `state` plus cookie | `api/google.ts` |
+| `/api/account` | POST | Nobody: `preview` (what an invitation is for, address masked; one 404 for unknown, expired, revoked and used). Signed in: `accept`. Owner: `firm`, `invite_counselor`, `new_link`, `revoke_invitation`, `set_role`, `removal_summary`, `remove_member`. Member: `leave` | Anyone, a signed-in person, or a firm member | None for `preview` (30 per address per 5 min); verified sign-in for `accept`; `identify()` for the rest. Zod per action; 4 KB cap | `api/account.ts` |
 | `/api/phone` | POST | Phone: `pair`, `claim`, `report`. Counselor: `status`, `connect`, `number`, `test`, `wake`, `disconnect`, `resolve`, `cancel` | Phone or firm member | Setup code (`pair`), device key (`claim`, `report`), `identify()` (the rest) | `api/phone.ts` |
 
-All routes answer `cache-control: no-store`. Server failures return a fixed sentence; the real error is logged on the server only. In `npm run dev`, `vite.config.ts` mounts all nine routes.
+All routes answer `cache-control: no-store`. Server failures return a fixed sentence; the real error is logged on the server only. In `npm run dev`, `vite.config.ts` mounts all ten routes.
 
 ### External services
 
@@ -296,7 +298,8 @@ Row level security is enabled on every table below. "Members" means policies lim
 | Table | Holds | Access |
 | --- | --- | --- |
 | `firms` | Firm name, weekly text day, sorting switch | Members read; owner updates |
-| `firm_members` | User, firm, role, display name | Members read; owner writes |
+| `firm_members` | User, firm, role, display name | Members read. No direct writes for anyone signed in: `create_firm`, `accept_counselor_invitation`, `set_member_role`, `remove_member`, `leave_firm`, `rename_self` |
+| `invitations` | Firm, kind (counselor or student), invited address in lower case, the student for a student invitation, hash of the secret, who made it, expiry, accepted, revoked | Members read every column except the hash. No direct writes |
 | `students` | Profile, contact, settings | Members |
 | `parents` | Contact, language, channel | Members |
 | `meetings` | Schedule, notes, drafts, recap | Members |
@@ -306,7 +309,7 @@ Row level security is enabled on every table below. "Members" means policies lim
 | `reports` | Parent reports; an AI report needs an approval before it can be marked sent | Members |
 | `outbox` | Queued and sent messages | Members read; writes only through `queue_message` and `cancel_message` |
 | `reminder_rules` | Per-firm reminder rules | Members |
-| `activity` | Firm log; `actor_user` on counselor lines | Members read; may write only their own counselor lines |
+| `activity` | Firm log; `actor_user` on counselor lines. `student_id` is empty on a line about the firm itself (a member joined, left, was removed, changed role) | Members read; may write only their own counselor lines |
 | `student_links` | Link hash, expiry, revoked time | Members read every column except the hash |
 | `weekly_texts` | Each week's draft and sent or skipped state | Members |
 | `personal_notes` | Things to remember | Members |
@@ -329,7 +332,10 @@ Storage: bucket `documents` is private. Object policies require the first path s
 | --- | --- |
 | `is_firm_member`, `is_firm_owner` | Used by every policy |
 | `create_firm` | Makes a firm with the caller as owner and seeds folders |
-| `apply_changes` | The store's one write path: a batch of upserts and deletes in one transaction, as the caller. Refuses the outbox |
+| `apply_changes` | The store's one write path: a batch of upserts and deletes in one transaction, as the caller. Refuses the outbox. Deleting a student or clearing the caseload is the owner's only. Renaming yourself goes through `rename_self` |
+| `invite_counselor`, `revoke_invitation` | An owner makes or revokes a counselor's invitation; `replace` is "New link" |
+| `accept_counselor_invitation` | Server only. Locks the invitation, checks it is live, that the person's address is confirmed and is the invited one, and that they belong to no firm, then makes the `counselor` membership and marks the invitation used, in one transaction |
+| `set_member_role`, `remove_member`, `leave_firm`, `member_removal_summary`, `rename_self` | The only ways a membership changes. Removal and leaving also delete the person's Google connection, revoke their phone, cancel their queued messages and write one activity line |
 | `queue_message` | The only insert into `outbox`; records the approver and holds 10 seconds |
 | `cancel_message` | Cancels a queued row inside its 10 seconds |
 | `student_link_write` | The student's task write; server only |
@@ -347,6 +353,7 @@ Storage: bucket `documents` is private. Object policies require the first path s
 
 - **Approval enforced in the database.** `outbox` has no write policies; `queue_message` is the only insert and records the approver. `apply_changes` refuses any batch that names the outbox. An AI-drafted report cannot be marked sent without an approval.
 - **Undo.** Every approved message waits 10 seconds and can be cancelled.
+- **Roles enforced in the database.** A signed-in person cannot insert, update or delete a `firm_members` row. Only an owner can invite a counselor, change a role or remove a member; a firm with members cannot be left without an owner by any path; only an owner can delete a student. An invitation's secret is stored as a hash that signed-in people cannot read, works once, and is tied to one address.
 - **Allowlist.** The dispatcher checks `SEND_ALLOWLIST` before choosing a transport. An empty list sends nothing. Phone claims and the wake address are checked again.
 - **Only the dispatcher calls a transport.** The one other send is the fixed "Wake." email to the counselor's own allowlisted Gmail.
 - **Row level security on every table**, with explicit revokes for `anon` and narrow grants for signed-in people. Server-only tables have no grants at all.
@@ -407,12 +414,14 @@ Set in `.env` (or `.env.local`, which overrides) locally and in Vercel project s
 
 | Script | What it does | Outside service or live database |
 | --- | --- | --- |
-| `dev` | Vite dev server with all nine `/api` routes | Live Supabase; Anthropic and Google when used |
+| `dev` | Vite dev server with all ten `/api` routes | Live Supabase; Anthropic and Google when used |
 | `build` | Typecheck, then build to `dist/` | No |
 | `preview` | Serve `dist/` (no functions) | No |
 | `typecheck` | TypeScript only | No |
 | `lint` | ESLint | No |
-| `test:notes` | Things-to-remember checks, then `test:google` | No (offline) |
+| `test:notes` | Things-to-remember checks, then `test:google`, `test:templates`, `test:calendar`, `test:accounts` and `test:accounts:db` | No (offline) |
+| `test:accounts` | `/api/account` against the in-memory Supabase: who may ask, what reaches the database, what comes back | No (offline) |
+| `test:accounts:db` | What the database enforces about roles and invitations: the whole migration chain in PGlite, each check run as a signed-in person. PGlite is not a dependency; without it the script says it was skipped and checks nothing (`npm install --no-save --no-package-lock @electric-sql/pglite`, or set `PGLITE_DIR`) | No (offline) |
 | `test:google` | Google connection and Drive import against fakes | No (offline) |
 | `test:outbox` | Outbox and dispatch rules, then `test:phone` | No (offline) |
 | `test:phone` | Phone gateway against the in-memory Supabase | No (offline) |
@@ -468,6 +477,9 @@ Before reporting work done: `typecheck`, `lint`, `test:notes`. Do not run `test:
 | `20261203000001_phone_pairing.sql` | Setup codes, 90-day keys, 10-minute lease, finished jobs drop their text |
 | `20261204000001_links_agent_activity_grants.sql` | Required link expiry, narrower assistant grants, proposal functions, daily budget, activity authors |
 | `20261205000001_undo_ten_seconds.sql` | `queue_message` holds a message 10 seconds, not 60 |
+| `20261206000001_templates.sql` | Templates, message drafts, `tasks.template_id` |
+| `20261207000001_calendar.sql` | Google Calendar columns on meetings |
+| `20261208000001_roles_and_invitations.sql` | **Not pushed.** `firm_members` is read-only for signed-in people; invitations; role, removal, leave and rename functions; a firm keeps an owner; only an owner deletes a student; `activity.student_id` may be empty |
 
 ## 15. Known limitations and roadmap
 

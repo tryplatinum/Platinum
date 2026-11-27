@@ -6,7 +6,8 @@ import { FAVICON, PRODUCT_NAME } from './src/brand'
 // The app is a static single-page site plus its server functions: api/ai.ts
 // (AI drafts), api/documents.ts (stored files), api/colleges.ts (the college
 // directory and list drafts), api/google.ts (the Google connection and Drive),
-// all for signed-in counselors, and api/student.ts (the student link).
+// all for signed-in counselors, api/account.ts (invitations and members), and
+// api/student.ts (the student link).
 // On Vercel those files deploy as functions. In `npm run dev` the plugin below
 // mounts the very same files under /api/, so the checks they
 // make are the ones production makes, and there is nothing else to run locally.
@@ -43,7 +44,7 @@ const SERVER_ENV = [
   'ALLOW_LOG_TRANSPORT',
 ]
 
-const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent', 'phone', 'translate']
+const FUNCTIONS = ['ai', 'student', 'documents', 'colleges', 'dispatch', 'google', 'agent', 'phone', 'translate', 'account']
 
 function devApi(): Plugin {
   return {

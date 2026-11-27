@@ -23,7 +23,7 @@ export type Database = {
           firm_id: string
           id: string
           seq: number
-          student_id: string
+          student_id: string | null
           text: string
           updated_at: string
         }
@@ -35,7 +35,7 @@ export type Database = {
           firm_id: string
           id?: string
           seq?: number
-          student_id: string
+          student_id?: string | null
           text: string
           updated_at?: string
         }
@@ -47,7 +47,7 @@ export type Database = {
           firm_id?: string
           id?: string
           seq?: number
-          student_id?: string
+          student_id?: string | null
           text?: string
           updated_at?: string
         }
@@ -984,6 +984,66 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "firms"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          created_by: string | null
+          email: string
+          expires_at: string
+          firm_id: string
+          id: string
+          kind: string
+          revoked_at: string | null
+          student_id: string | null
+          token_hash: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          email: string
+          expires_at?: string
+          firm_id: string
+          id?: string
+          kind: string
+          revoked_at?: string | null
+          student_id?: string | null
+          token_hash: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          expires_at?: string
+          firm_id?: string
+          id?: string
+          kind?: string
+          revoked_at?: string | null
+          student_id?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitations_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invitations_firm_id_student_id_fkey"
+            columns: ["firm_id", "student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["firm_id", "id"]
           },
         ]
       }
@@ -2235,6 +2295,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_counselor_invitation: {
+        Args: { display_name: string; hash: string; person: string }
+        Returns: Json
+      }
       add_draft_to_college_list: { Args: { draft: string }; Returns: number }
       apply_changes: {
         Args: { changes: Json; firm: string }
@@ -2311,6 +2375,19 @@ export type Database = {
       reserve_agent_call: {
         Args: { day_limit: number; firm: string }
         Returns: boolean
+      }
+      invite_counselor: {
+        Args: { email: string; replace?: string; token_hash: string }
+        Returns: Json
+      }
+      leave_firm: { Args: never; Returns: Json }
+      member_removal_summary: { Args: { member: string }; Returns: Json }
+      remove_member: { Args: { member: string }; Returns: Json }
+      rename_self: { Args: { display_name: string }; Returns: undefined }
+      revoke_invitation: { Args: { invitation: string }; Returns: undefined }
+      set_member_role: {
+        Args: { member: string; new_role: string }
+        Returns: undefined
       }
       seed_document_types: { Args: { firm: string }; Returns: undefined }
       student_link_write: {

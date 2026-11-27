@@ -288,7 +288,8 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
 const activityFrom = (r: Row<'activity'>): ActivityEvent => ({
   id: r.id,
   at: stamp(r.at),
-  studentId: r.student_id,
+  // Empty for a line about the firm itself (a member joined, left or was removed).
+  studentId: r.student_id ?? '',
   actor: r.actor as ActivityEvent['actor'],
   text: r.text,
   actorUser: u(r.actor_user),
@@ -555,7 +556,7 @@ const reportRow = (r: ParentReport): Out<'reports'> => ({
 
 const activityRow = (e: ActivityEvent): Out<'activity'> => ({
   id: e.id,
-  student_id: e.studentId,
+  student_id: e.studentId || null,
   at: e.at,
   actor: e.actor,
   text: e.text,
