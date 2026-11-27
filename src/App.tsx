@@ -22,7 +22,7 @@ import Settings from './screens/counselor/Settings'
 import Templates from './screens/counselor/Templates'
 import SignIn, { FirmSetup, ResetPassword, SignUp, Start } from './screens/counselor/SignIn'
 import Join from './screens/Join'
-import { StudentAccountLayout } from './screens/student/Me'
+import { StudentAccount, StudentAccountLayout } from './screens/student/Me'
 import StudentPage from './screens/counselor/StudentPage'
 import Students from './screens/counselor/Students'
 import Today from './screens/counselor/Today'
@@ -69,6 +69,7 @@ export default function App() {
       {/* A student's sign-in: the same screens as the link, fed by their session. */}
       <Route path="/me" element={<StudentAccountLayout />}>
         <Route index element={<StudentHome />} />
+        <Route path="account" element={<StudentAccount />} />
       </Route>
 
       <Route element={<RequireFirm />}>

@@ -87,6 +87,14 @@ No student-to-counselor assignment was added and nothing is counted per counselo
 
 **Checked** by hand from `preview.html`: 25 states at 375 and 1440, light and dark (`docs/accounts/d*.png`), no console error and no sideways scroll. **Not run:** a real database.
 
+### Part E: the student screen
+
+No migration. `/me` is `StudentAccountLayout` in `src/screens/student/Me.tsx`: a header that names the firm and the student's first name with two places, Home and Account, and nothing from the counselor's navigation. Home is `StudentHome`, the very component the link page renders; the only change to it is that it leaves out its own firm line when the header above already says it. `/me/account` is new: the address, change password (Supabase `updateUser`), sign out, delete my sign-in behind `ConfirmDialog` with the word DELETE and a sentence saying the firm's record stays, and the list of what counselors can see (`COUNSELORS_CAN_SEE` in `shared/account.ts`, the same list the join page shows).
+
+`docs/student-api.md` is for the phone app: signing in and refreshing with Supabase, every `/api/student` request and answer for an account, the three upload steps, deleting the sign-in, and every error with what to show. No secret is in it.
+
+**Checked** by hand from `preview.html`: 9 states at 375 and 1440, light and dark (`docs/accounts/e*.png`), including a member opening `/me` (sent to Today), a student opening `/app/students` (sent to `/me`), and the link page unchanged. **Not run:** a real database, a phone.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.
