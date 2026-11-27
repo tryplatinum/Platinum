@@ -628,12 +628,8 @@ export const ownerOnlyRefusal = (count: number, doing: string) =>
  */
 export async function deleteStoredFiles(caller: SignedIn, scope: DeleteScope): Promise<{ removed: string[] }> {
   const one = 'documentId' in scope
-  if (!one && caller.role !== 'owner') {
-    const student = 'studentId' in scope ? scope.studentId : undefined
-    const counted = await caller.client.rpc('owner_only_file_count', { firm: caller.firmId, ...(student ? { students: [student] } : {}) })
-    if (counted.error) throw failed('counting owner-only files failed', counted.error)
-    if (counted.data > 0) throw new FileError(ownerOnlyRefusal(counted.data, student ? 'delete this student' : 'clear the caseload'), 403)
-  }
+  // Every file of a student, or of the firm, goes only when the student or the caseload is deleted, and that is the owner's alone.
+  if (!one && caller.role !== 'owner') throw new FileError('studentId' in scope ? 'Only the firm’s owner can delete a student.' : 'Only the firm’s owner can clear the caseload.', 403)
   const db = !one && serviceConfigured() ? serviceClient() : caller.client
   const folders = new Map((await foldersOf(db, caller.firmId)).map((f) => [f.id, f]))
   const removed: string[] = []

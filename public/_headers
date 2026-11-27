@@ -1,0 +1,7 @@
+# Pages opened from a secret link tell no other site where the visitor came from.
+/s
+  Referrer-Policy: no-referrer
+/s/*
+  Referrer-Policy: no-referrer
+/join
+  Referrer-Policy: no-referrer

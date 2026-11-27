@@ -482,6 +482,48 @@ const acceptStudent = (secretValue: string, who: string, age: string | null = 'a
   check('and keeps the record of who agreed to what', record.rows.length === 2)
 }
 
+// ── Only an owner deletes a student, by any path ────────────────────────────
+{
+  const doomed = randomUUID()
+  await service(`insert into public.students (id, firm_id, first_name, last_name, grad_year) values ($1, $2, 'Doomed', 'Student', 2027)`, [doomed, firm])
+  await service(`insert into public.tasks (firm_id, student_id, title, category, owner, due_date, status, source) values ($1, $2, 'A task', 'essay', 'student', current_date, 'todo', 'counselor')`, [firm, doomed])
+  const direct = await asUser(db, kai, (tx) => tx.query(`delete from public.students where id = $1`, [doomed]))
+  const still = await service(`select 1 from public.students where id = $1`, [doomed])
+  check('a counselor cannot delete a student directly through the Data API: the row is not theirs to delete', (direct.affectedRows ?? 0) === 0 && still.rows.length === 1)
+  const viaChild = await asUser(db, kai, (tx) => tx.query(`delete from public.tasks where student_id = $1`, [doomed]))
+  check('a counselor can still delete a task, as before', (viaChild.affectedRows ?? 0) === 1)
+  const archive = await refused(kai, `update public.students set archived = true where id = $1`, [doomed])
+  check('and can still archive a student', archive === undefined, archive?.message)
+  const foreign = await asUser(db, otherOwner, (tx) => tx.query(`delete from public.students where id = $1`, [doomed]))
+  check('an owner of another firm cannot delete it either', (foreign.affectedRows ?? 0) === 0)
+  const byOwner = await asUser(db, owner, (tx) => tx.query(`delete from public.students where id = $1`, [doomed]))
+  check('an owner deletes a student directly, as before', (byOwner.affectedRows ?? 0) === 1)
+}
+
+// ── A stored file whose document row is gone is never readable ──────────────
+{
+  const withRow = randomUUID()
+  const orphan = randomUUID()
+  const elsewhere = randomUUID()
+  const path = (f: string, doc: string) => `${f}/${student}/${doc}/transcript.pdf`
+  await service(`insert into public.documents (id, firm_id, student_id, name, kind, category, added_by, storage_path, file_status) values ($1, $2, $3, 'Transcript', 'transcript', 'academic', 'counselor', $4, 'suggested')`, [withRow, firm, student, path(firm, withRow)])
+  await service(`insert into public.documents (id, firm_id, student_id, name, kind, category, added_by) values ($1, $2, $3, 'Other firm file', 'transcript', 'academic', 'counselor')`, [elsewhere, otherFirm, otherStudent])
+  await service(`insert into storage.objects (bucket_id, name) values ('documents', $1), ('documents', $2), ('documents', $3)`, [path(firm, withRow), path(firm, orphan), path(firm, elsewhere)])
+  const seen = (await rpc(kai, `select name from storage.objects`)).rows.map((r) => (r as { name: string }).name)
+  check('a member reads a stored file whose document row exists', seen.includes(path(firm, withRow)), seen.join(' '))
+  check('a stored file with no document row is not readable: a missing row means no', !seen.includes(path(firm, orphan)))
+  check('nor one whose path names a document of another firm', !seen.includes(path(firm, elsewhere)))
+  const byOwner = (await rpc(owner, `select name from storage.objects`)).rows.map((r) => (r as { name: string }).name)
+  check('not even for an owner', !byOwner.includes(path(firm, orphan)) && byOwner.includes(path(firm, withRow)))
+  const removed = await asUser(db, kai, (tx) => tx.query(`delete from storage.objects where name = $1`, [path(firm, orphan)]))
+  check('and it cannot be deleted by a member either', (removed.affectedRows ?? 0) === 0)
+  await service(`delete from public.documents where id = $1`, [withRow])
+  const after = (await rpc(kai, `select name from storage.objects`)).rows.length
+  check('once a document row is deleted, its stored file stops being readable', after === 0, String(after))
+  const log = await one<{ ok: boolean }>(db, `select public.document_is_readable($1) as ok`, [orphan])
+  check('the file log’s own rule is untouched (it still answers for deleted documents)', log.ok === true)
+}
+
 // ── A counselor leaves ──────────────────────────────────────────────────────
 {
   const leaving = await person('sam@northgate.example')

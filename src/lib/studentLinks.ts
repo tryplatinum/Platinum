@@ -5,7 +5,7 @@
 // The address is a secret. It is kept in memory for this session only, one per
 // student, and is never stored: what is saved keeps the placeholder.
 
-import { STUDENT_LINK_PLACEHOLDER, fillStudentLink } from '../../shared/dispatch'
+import { STUDENT_LINK_PLACEHOLDER, fillStudentLink, studentLinkUrl } from '../../shared/dispatch'
 import { useStore } from '../store/store'
 import type { ID } from '../types'
 
@@ -37,7 +37,7 @@ function linkFor(studentId: ID): Promise<string> {
     .getState()
     .createStudentLink(studentId)
     .then((token) => {
-      const address = `${window.location.origin}/s/${token}`
+      const address = studentLinkUrl(window.location.origin, token)
       // Not kept if it was forgotten while it was being made.
       if (making.get(studentId) === made) ready.set(studentId, address)
       return address

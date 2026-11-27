@@ -3,7 +3,7 @@
 
 import { QUEUE_CHANNELS, type QueueChannel } from './outbox.js'
 
-/** Replaced in the body at send time with a fresh /s/... URL. Never stored. */
+/** Replaced in the body at send time with a fresh /s#... URL. Never stored. */
 export const STUDENT_LINK_PLACEHOLDER = '{{student_link}}'
 
 /** Shown in the counselor UI instead of the raw placeholder. */
@@ -95,9 +95,16 @@ export function fillStudentLink(body: string, url: string): string {
   return body.split(STUDENT_LINK_PLACEHOLDER).join(url)
 }
 
-/** Replaces any student link (an address with /s/ in it) so the text can be logged or stored. */
+/**
+ * A student's address: the site, "/s#" and the secret. The secret is in the
+ * fragment, which a browser never sends to a server, so it reaches no server
+ * log and no Referer. Links made before this were "/s/<secret>"; those still open.
+ */
+export const studentLinkUrl = (origin: string, token: string) => `${origin.replace(/\/$/, '')}/s#${token}`
+
+/** Replaces any student link (an address with /s# or the older /s/ in it) so the text can be logged or stored. */
 export function withoutStudentLinks(text: string): string {
-  return text.replace(/\S*\/s\/\S*/g, '[student link]')
+  return text.replace(/\S*\/s[#/]\S*/g, '[student link]')
 }
 
 /** Counselor-facing preview of a body that still has the placeholder. */

@@ -186,6 +186,15 @@ function DemoData() {
   const confirm = useConfirm()
   const { resetDemo, startEmpty } = useStore.getState()
   const [busy, setBusy] = useState<'reset' | 'empty'>()
+  const owner = useStore((s) => s.account.status === 'ready' && s.account.role === 'owner')
+  // Both delete students, which only an owner can do. The database refuses anyone else; this says so first.
+  if (!owner) {
+    return (
+      <Card className="flex flex-col gap-2 p-5">
+        <CardHeader size="section" title="Demo data" sub="Resetting or emptying the firm deletes every student, so only an owner can do it. Ask an owner of your firm." />
+      </Card>
+    )
+  }
   return (
     <Card className="flex flex-col gap-4 p-5">
       <CardHeader size="section" title="Demo data" sub="Both delete every student, task, meeting and message in your firm. Each asks you to type a word first." />

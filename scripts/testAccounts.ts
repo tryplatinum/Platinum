@@ -66,6 +66,26 @@ export async function createMember(firm: TestAccount, label: string): Promise<Te
   return { label, userId: created.data.user.id, firmId: firm.firmId, token: signedIn.data.session.access_token, client }
 }
 
+export interface TestPerson {
+  userId: string
+  email: string
+  token: string
+  /** Signed in as this person. Row level security applies. */
+  client: SupabaseClient<Database>
+}
+
+/** A sign-in that belongs to nothing yet: no firm and no student account. `confirmed: false` leaves the address unconfirmed. */
+export async function createPerson(confirmed = true): Promise<TestPerson> {
+  const email = `platinum-test-${randomUUID()}@example.com`
+  const password = randomBytes(18).toString('base64url')
+  const created = await admin().auth.admin.createUser({ email, password, email_confirm: confirmed })
+  if (created.error) throw new Error(`could not create test user: ${created.error.message}`)
+  const client = anonClient()
+  const signedIn = confirmed ? await client.auth.signInWithPassword({ email, password }) : undefined
+  if (confirmed && (signedIn?.error || !signedIn?.data.session)) throw new Error(`could not sign in test user: ${signedIn?.error?.message}`)
+  return { userId: created.data.user.id, email, token: signedIn?.data.session?.access_token ?? '', client }
+}
+
 /** Removes the firm (and everything in it) and the user. */
 export async function removeAccount(account: TestAccount): Promise<void> {
   await admin().from('firms').delete().eq('id', account.firmId)

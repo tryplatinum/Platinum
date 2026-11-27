@@ -5,7 +5,7 @@
 //   /app/…            counselor screens, behind sign-in and a firm (RequireFirm)
 //   /app/styleguide   every shared component in each state; not in the navigation
 //   /student/:id      the counselor's preview of a student's page, also behind sign-in
-//   /s/:token         the student's own page, opened from their secret link, no login
+//   /s#<secret>       the student's own page, opened from their secret link, no login (/s/<secret> still opens)
 //   /phone-setup      opened on the counselor's own phone from the QR code in Settings, no login
 
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
@@ -62,6 +62,10 @@ export default function App() {
 
       <Route path="/phone-setup" element={<PhoneSetup />} />
 
+      {/* /s#<secret> is the address a new link has. /s/<secret> is what older links have; it still opens. */}
+      <Route path="/s" element={<StudentLinkLayout />}>
+        <Route index element={<StudentHome />} />
+      </Route>
       <Route path="/s/:token" element={<StudentLinkLayout />}>
         <Route index element={<StudentHome />} />
       </Route>

@@ -95,6 +95,20 @@ No migration. `/me` is `StudentAccountLayout` in `src/screens/student/Me.tsx`: a
 
 **Checked** by hand from `preview.html`: 9 states at 375 and 1440, light and dark (`docs/accounts/e*.png`), including a member opening `/me` (sent to Today), a student opening `/app/students` (sent to `/me`), and the link page unchanged. **Not run:** a real database, a phone.
 
+### Part F: hardening that belongs with roles
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261210000001_owner_delete_and_stored_files.sql`, after `20261209000001`. Two policies on `students` and `storage.objects` are replaced by stricter ones and one function is added. Nothing is loosened.
+
+1. **Only an owner can delete a student.** `apply_changes` refuses a counselor (Part A's migration); this file makes the table's own delete policy owner-only, so the Data API refuses too. `/api/documents` no longer removes all of a student's or the firm's stored files for a counselor. Settings shows a counselor a sentence in place of Reset demo and Start empty. Editing and archiving a student are unchanged for every member, and everything an owner could do still works.
+2. **A stored file needs its row.** The bucket's read and delete policies now ask `stored_file_is_readable(firm, document)`, which is false when the row is missing or belongs to another firm. `document_is_readable` is left as it was, because the file log still has to answer for documents that were deleted. The app removes objects before rows, so nothing it does depends on the old answer.
+3. **Student links are `/s#<secret>`.** `studentLinkUrl` in `shared/dispatch.ts` is the one place a link is built (the student link window, the weekly text copy, and the dispatcher). `StudentLinkLayout` reads the fragment, or the path of an older link, removes it from the address with a replacing navigation, and keeps the token in `sessionStorage` for the tab so a reload still works. `Referrer-Policy: no-referrer` is sent for `/s`, `/s/*` and `/join` (`vercel.json`, `public/_headers`) and set as a meta tag by the page. `withoutStudentLinks` strips both forms from anything logged or stored. Links already sent keep working.
+
+**Known limit:** once the address is `/s`, a bookmark of the open page does not carry the secret. The student keeps the message their link came in.
+
+**Added to `scripts/test-isolation.ts`, not run:** a section covering Parts A, B and F against the real database, including two accepts truly at once. It needs the three migrations pushed. `createPerson` in `scripts/testAccounts.ts` makes a sign-in with no firm. Older checks in that script were not changed; any that had a counselor delete a student will now fail by design and should be read with that in mind.
+
+**Checked.** `test:accounts:db` is 132 checks: a counselor's direct delete of a student removes nothing, an owner's does; a stored file with no row, or with another firm's row, is not listed or deletable, and stops being listed when its row is deleted. `test:outbox` checks the new link form and that neither form reaches a log. By hand in the preview: the fragment link, an old path link, no link, the counselor's Settings (`docs/accounts/f*.png`). **Not run:** a real database or real storage.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.
