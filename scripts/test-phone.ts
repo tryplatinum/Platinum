@@ -348,7 +348,7 @@ let linked!: string
   check('…for the phone of the counselor who approved it', jobOf(one)?.device_id === DEVICE && jobOf(one)?.status === 'pending')
   check('…with the exact recipient, as E.164, and the exact text', jobOf(one)?.to_phone === PARENT_PHONE && jobOf(one)?.body === BODY)
   linked = String(jobOf(toStudent)?.body)
-  check('…including the student link the dispatcher added', jobOf(toStudent)?.to_phone === STUDENT_PHONE && /^Hi Kai, your tasks: http:\/\/localhost:5173\/s\/[A-Za-z0-9_-]{43}$/.test(linked) && !linked.includes(STUDENT_LINK_PLACEHOLDER))
+  check('…including the student link the dispatcher added', jobOf(toStudent)?.to_phone === STUDENT_PHONE && /^Hi Kai, your tasks: http:\/\/localhost:5173\/s#[A-Za-z0-9_-]{43}$/.test(linked) && !linked.includes(STUDENT_LINK_PLACEHOLDER))
   check('the row waits for the phone: still “sending”, so the dispatcher will not pick it up again', rowOf(one).status === 'sending' && rowOf(one).delivery_detail === 'phone_waiting' && rowOf(one).provider_message_id === null)
   check('two jobs made inside 20 seconds ride on one wake email', mails.length === 1 && jobs().length === 2)
   check('the wake goes from the counselor’s own Gmail to that same address', mails[0].headers.to === `<${WAKE_ADDRESS}>` && mails[0].headers.from === `"Dana Whitfield" <${WAKE_ADDRESS}>`)
@@ -729,7 +729,7 @@ check('a submitted job no longer holds its text', jobOf(one)?.body === null)
   check('…and the next text goes straight to send by hand', rowOf(orphan).error === PHONE_REASON.noDevice && !jobOf(orphan))
 
   const log = printed.join('\n')
-  check('nothing printed holds a device key, a setup code, a hash, a phone number, message text or a student link', ![KEY_NOW, firstKey, firstCode, second, hash, PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1555', BODY, TEST_BODY, linked, '/s/'].some((secret) => log.includes(secret)))
+  check('nothing printed holds a device key, a setup code, a hash, a phone number, message text or a student link', ![KEY_NOW, firstKey, firstCode, second, hash, PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1555', BODY, TEST_BODY, linked, '/s/', '/s#'].some((secret) => log.includes(secret)))
   check('no failure reason holds a key or a number', outbox().every((r) => ![KEY_NOW, hash, PARENT_PHONE, STUDENT_PHONE].some((secret) => String(r.error ?? '').includes(secret))))
   check('no event row holds a number or message text', ![PARENT_PHONE, STUDENT_PHONE, OWN_PHONE, '+1', 'reminder that', TEST_BODY].some((secret) => JSON.stringify(events()).includes(secret)))
   // phoneStatus with nothing configured hides the section instead of failing.

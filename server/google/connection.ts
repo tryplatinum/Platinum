@@ -221,6 +221,25 @@ export async function disconnect(caller: SignedIn): Promise<GoogleStatus> {
 }
 
 /**
+ * The same for a member who is being removed from the firm, or is leaving: the
+ * grant is revoked at Google when it can be, and the row is deleted. Never
+ * throws: removing the member deletes the row in any case, and this only adds
+ * the revocation at Google. The caller has already checked who is asking.
+ */
+export async function disconnectMember(who: Who): Promise<void> {
+  cached.delete(who.userId)
+  if (!googleAvailable()) return
+  try {
+    const row = await rowOf(who.userId)
+    if (!row || row.firm_id !== who.firmId) return
+    const refresh = decryptToken(row.refresh_token_encrypted, who.userId, tokenKey())
+    await google.fetch(REVOKE_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: refresh }) })
+  } catch {
+    // Already revoked, unreadable, or Google is unreachable.
+  }
+}
+
+/**
  * Turns the calendar off for this connection: Platinum stops reading and
  * writing it at once. The permission itself stays at Google until the whole
  * connection is disconnected, because Google has no way to give back one part.

@@ -89,7 +89,10 @@ export type Account =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'error'; message: string }
+  /** Signed in, and neither a member of a firm nor a student. */
   | { status: 'needs_firm'; userId: ID; email: string }
+  /** A student's own sign-in. `data` is their page, as for a student link. `off`: a counselor turned the sign-in off. */
+  | { status: 'student'; userId: ID; email: string; off?: boolean }
   | { status: 'ready'; userId: ID; email: string; firmId: ID; role: 'owner' | 'counselor' }
 
 interface State {
@@ -99,7 +102,8 @@ interface State {
   loadError?: string
   /**
    * 'firm': a signed-in counselor; changes are written to the database.
-   * 'student_link': a student on their secret link; `data` is the small slice
+   * 'student_link': a student on their secret link, or signed in with a student
+   * account (then there is no linkToken); `data` is the small slice
    * api/student.ts returned and only its three writes are possible.
    */
   mode: 'firm' | 'student_link'
@@ -549,11 +553,16 @@ export const useStore = create<State & Actions>()((set, get) => {
     const state = get()
     const before = state.data
     if (state.mode === 'student_link') {
-      if (!asStudent || !state.linkToken) return
+      // A link's token, or a signed-in student's session. Anything else on this page changes nothing.
+      if (!asStudent || !(state.linkToken || state.account.status === 'student')) return
       set({ data: fn(before) })
+      // The answer is kept only if the same student, by the same way in, is still the one on screen.
+      const who = 'userId' in state.account ? state.account.userId : undefined
+      const still = () => get().mode === 'student_link' && get().linkToken === state.linkToken && ('userId' in get().account ? (get().account as { userId: ID }).userId : undefined) === who
       studentLinkWrite(state.linkToken, asStudent)
-        .then((data) => set({ data }))
+        .then((data) => still() && set({ data }))
         .catch((error) => {
+          if (!still()) return
           set({ data: before })
           notify(`That was not saved. ${reasonOf(error)}`)
         })

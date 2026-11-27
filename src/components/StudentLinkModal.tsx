@@ -3,6 +3,7 @@
 // Replacing a link changes the hash, so the previous address stops working.
 
 import { useState } from 'react'
+import { studentLinkUrl } from '../../shared/dispatch'
 import { formatTimestamp } from '../lib/dates'
 import { forgetStudentLink } from '../lib/studentLinks'
 import { useStore } from '../store/store'
@@ -63,7 +64,7 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
                 onClick={() =>
                   void attempt(async () => {
                     const token = await createStudentLink(student.id)
-                    setFresh(`${window.location.origin}/s/${token}`)
+                    setFresh(studentLinkUrl(window.location.origin, token))
                   })
                 }
                 disabled={busy}
@@ -89,7 +90,7 @@ export function StudentLinkModal({ student, onClose }: { student: Student; onClo
                       void attempt(async () => {
                         const token = await rotateStudentLink(link.id)
                         forgetStudentLink(student.id)
-                        setFresh(`${window.location.origin}/s/${token}`)
+                        setFresh(studentLinkUrl(window.location.origin, token))
                         toast('New link ready. The previous one has stopped working.')
                       })
                     }

@@ -20,7 +20,8 @@ import type { SortPromptInput } from '../server/prompts.js'
 import { MIME, sniffMime, tinyPdf } from '../shared/files.js'
 import { STUDENT_TOKEN_HEADER } from '../shared/constants.js'
 import type { Json } from '../src/lib/database.types.js'
-import { adminClient, anonClient, createAccount, createMember, removeAccount, requireSettings, type TestAccount } from './testAccounts.js'
+import { adminClient, anonClient, createAccount, createMember, createPerson, removeAccount, requireSettings, type TestAccount, type TestPerson } from './testAccounts.js'
+import { POST as accountPost } from '../api/account.js'
 import { POST as collegesPost } from '../api/colleges.js'
 import { CollegeToolError, getStudentCollegeList } from '../server/collegeTools.js'
 
@@ -838,6 +839,140 @@ try {
   check('if the AI call fails, a draft of banded candidates is still returned, marked as not from the AI', fallback.status === 200 && fallbackBody.data?.byModel === false && (fallbackDraft?.source as { kind?: string } | null)?.kind === 'placeholder' && fallbackDraft?.note === null && fallbackItems.length > 0 && fallbackItems.every((i) => !i.kept && !i.ai_explained && i.reason === 'Matches your filters' && Boolean((i.fit_basis as { summary?: string }).summary)))
   check('…and the failure’s own text is not shown', !JSON.stringify(fallbackDraft?.source).includes('stand-in failure'))
   Object.assign(listModel, realModel)
+
+  // ── Accounts: roles, invitations and student sign-ins ──
+  // Needs migrations 20261208000001, 20261209000001 and 20261210000001. The
+  // same cases as scripts/test-accounts-db.ts, here against the real database
+  // and real Supabase Auth, including two accepts truly at once.
+  {
+    const secret = () => randomBytes(32).toString('base64url')
+    const account = (token: string | undefined, body: unknown) =>
+      accountPost(new Request('http://localhost/api/account', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.51.100.${Math.floor(Math.random() * 250)}`, ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) }))
+    const answer = async (response: Response) => ({ status: response.status, body: (await response.json()) as { ok: boolean; code?: string; message?: string; data?: Record<string, unknown> } })
+    const people: TestPerson[] = []
+    const person = async (confirmed = true) => {
+      const made = await createPerson(confirmed)
+      people.push(made)
+      return made
+    }
+    try {
+      // Members cannot write firm_members.
+      const stranger = await person()
+      const planted = await a.client.from('firm_members').insert({ firm_id: a.firmId, user_id: stranger.userId, role: 'counselor', display_name: 'Planted' })
+      check('an owner cannot insert a firm_members row', Boolean(planted.error))
+      const promoted = await c.client.from('firm_members').update({ role: 'owner' }).eq('user_id', c.userId).select('user_id')
+      check('a counselor cannot make themselves an owner', Boolean(promoted.error) || (promoted.data ?? []).length === 0)
+      const removed = await a.client.from('firm_members').delete().eq('user_id', c.userId).select('user_id')
+      check('an owner cannot delete a firm_members row directly', Boolean(removed.error) || (removed.data ?? []).length === 0)
+
+      // Who can invite, and what an invitation shows.
+      check('a counselor cannot invite a counselor', (await answer(await account(c.token, { action: 'invite_counselor', email: stranger.email }))).status === 403)
+      const invited = await answer(await account(a.token, { action: 'invite_counselor', email: stranger.email.toUpperCase() }))
+      const link = String(invited.body.data?.secret ?? '')
+      check('an owner invites a counselor and gets a secret once', invited.status === 200 && link.length === 43)
+      check('a member cannot read the hash column', Boolean((await a.client.from('invitations').select('token_hash')).error))
+      check('another firm reads none of this firm’s invitations', ((await b.client.from('invitations').select('id')).data ?? []).length === 0)
+      check('a second invitation for the same address is refused', (await answer(await account(a.token, { action: 'invite_counselor', email: stranger.email }))).body.code === 'pending_exists')
+      const shown = await answer(await account(undefined, { action: 'preview', secret: link }))
+      check('the preview masks the address', shown.status === 200 && !JSON.stringify(shown.body).includes(stranger.email))
+      const dead = await Promise.all([secret(), 'short'].map(async (s) => answer(await account(undefined, { action: 'preview', secret: s }))))
+      check('an unknown invitation and a malformed one get the same answer', dead.every((d) => d.status === 404 && JSON.stringify(d.body) === JSON.stringify(dead[0].body)))
+
+      // Accepting: the wrong address, an unconfirmed one, a member, and two at once.
+      const other = await person()
+      check('a person with another address is refused', (await answer(await account(other.token, { action: 'accept', secret: link, displayName: 'Other' }))).body.code === 'wrong_email')
+      check('a member of a firm cannot accept', ['wrong_email', 'already_member'].includes((await answer(await account(b.token, { action: 'accept', secret: link, displayName: 'B' }))).body.code ?? ''))
+      const both = await Promise.all([1, 2].map(async () => answer(await account(stranger.token, { action: 'accept', secret: link, displayName: 'Stranger Joined' }))))
+      check('of two accepts at once, exactly one wins', both.filter((r) => r.status === 200).length === 1, both.map((r) => r.status).join())
+      const membership = await adminClient().from('firm_members').select('role').eq('user_id', stranger.userId)
+      check('and makes exactly one counselor membership', (membership.data ?? []).length === 1 && membership.data?.[0].role === 'counselor')
+      const used = await answer(await account(undefined, { action: 'preview', secret: link }))
+      check('a used invitation previews exactly like an unknown one', used.status === 404 && JSON.stringify(used.body) === JSON.stringify(dead[0].body))
+
+      // The last owner, roles, and removal.
+      check('the only owner cannot step down', (await answer(await account(a.token, { action: 'set_role', userId: a.userId, role: 'counselor' }))).body.code === 'last_owner')
+      check('the only owner cannot leave', (await answer(await account(a.token, { action: 'leave' }))).body.code === 'last_owner')
+      check('a counselor cannot remove a member', (await answer(await account(c.token, { action: 'remove_member', userId: stranger.userId }))).status === 403)
+      check('an owner of another firm cannot remove this firm’s member', (await answer(await account(b.token, { action: 'remove_member', userId: stranger.userId }))).status === 403)
+      const queued = await stranger.client.rpc('queue_message', { payload: { id: randomUUID(), studentId: seeded.A.studentId, toKind: 'student', toName: 'N', channel: 'wechat', language: 'en', kind: 'reminder_late', body: 'B', trigger: 'approved' } })
+      const queuedId = (queued.data as { message?: { id?: string } } | null)?.message?.id ?? ''
+      check('setup: the new counselor queued a message', !queued.error && queuedId.length > 0, queued.error?.message)
+      const gone = await answer(await account(a.token, { action: 'remove_member', userId: stranger.userId }))
+      check('an owner removes a counselor', gone.status === 200, JSON.stringify(gone.body))
+      check('the membership is gone and the sign-in is not', ((await adminClient().from('firm_members').select('user_id').eq('user_id', stranger.userId)).data ?? []).length === 0 && Boolean((await adminClient().auth.admin.getUserById(stranger.userId)).data.user))
+      check('their queued message is cancelled', (await adminClient().from('outbox').select('status').eq('id', queuedId).maybeSingle()).data?.status === 'cancelled')
+      check('one activity line records the removal', ((await adminClient().from('activity').select('id').eq('firm_id', a.firmId).is('student_id', null).like('text', '%removed%from the firm%')).data ?? []).length === 1)
+      check('the removed person reads nothing of the firm', ((await stranger.client.from('students').select('id')).data ?? []).length === 0)
+
+      // Only an owner deletes a student, by any path.
+      const spare = randomUUID()
+      const madeSpare = await a.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { students: [{ id: spare, first_name: 'Spare', last_name: 'Invented', grad_year: new Date().getFullYear() + 1 }] } } as unknown as Json })
+      check('setup: a spare student exists', !madeSpare.error, madeSpare.error?.message)
+      check('a counselor cannot delete a student through apply_changes', Boolean((await c.client.rpc('apply_changes', { firm: a.firmId, changes: { delete: { students: [spare] } } as unknown as Json })).error))
+      check('nor directly through the Data API', ((await c.client.from('students').delete().eq('id', spare).select('id')).data ?? []).length === 0 && ((await adminClient().from('students').select('id').eq('id', spare)).data ?? []).length === 1)
+
+      // Student sign-ins.
+      const young = randomUUID()
+      const madeYoung = await a.client.rpc('apply_changes', { firm: a.firmId, changes: { upsert: { students: [{ id: young, first_name: 'Young', last_name: 'Invented', grad_year: new Date().getFullYear() + 8 }] } } as unknown as Json })
+      check('setup: a young student exists', !madeYoung.error, madeYoung.error?.message)
+      const kid = await person()
+      check('a student below 9th grade cannot be invited', (await answer(await account(c.token, { action: 'invite_student', studentId: young, email: kid.email, guardianKnows: true }))).body.code === 'too_young')
+      check('a student invitation needs the guardian tick', (await answer(await account(c.token, { action: 'invite_student', studentId: spare, email: kid.email }))).status === 400)
+      const forStudent = await answer(await account(c.token, { action: 'invite_student', studentId: spare, email: kid.email, guardianKnows: true }))
+      const studentSecret = String(forStudent.body.data?.secret ?? '')
+      check('any member invites a student', forStudent.status === 200 && studentSecret.length === 43, JSON.stringify(forStudent.body))
+      check('the student cannot join without the age tick', (await answer(await account(kid.token, { action: 'accept', secret: studentSecret }))).body.code === 'consent_missing')
+      const twice = await Promise.all([1, 2].map(async () => answer(await account(kid.token, { action: 'accept', secret: studentSecret, ageConfirmed: true }))))
+      check('of two student accepts at once, exactly one wins', twice.filter((r) => r.status === 200).length === 1, twice.map((r) => r.status).join())
+      check('both ticks are on record', ((await adminClient().from('student_account_consents').select('kind').eq('student_id', spare)).data ?? []).length === 2)
+      check('a student cannot create a firm', Boolean((await kid.client.rpc('create_firm', { name: 'Mine', display_name: 'Kid' })).error))
+      check('a student is not a member', ((await adminClient().from('firm_members').select('user_id').eq('user_id', kid.userId)).data ?? []).length === 0)
+
+      // What a student session reaches.
+      // Columns a member can read are named, so "zero rows" is an answer and not an error mistaken for one.
+      const reached: string[] = []
+      for (const table of [...ALL_TABLES, 'invitations', 'student_account_consents', 'templates', 'message_drafts', 'agent_proposals', 'college_list_drafts'] as const) {
+        const rows = await kid.client.from(table as 'students').select(table === 'firm_members' ? 'user_id' : 'id')
+        if (rows.error) reached.push(`${table}: ${rows.error.message}`)
+        else if (rows.data.length > 0) reached.push(table)
+        const asMember = await a.client.from(table as 'students').select(table === 'firm_members' ? 'user_id' : 'id').limit(1)
+        if (asMember.error) reached.push(`${table} (as a member): ${asMember.error.message}`)
+      }
+      check('a student session selects zero rows from every firm table', reached.length === 0, reached.join('; '))
+      const own = await kid.client.from('student_accounts').select('user_id, student_id')
+      check('but reads its own account row, and only that', (own.data ?? []).length === 1 && own.data?.[0].user_id === kid.userId)
+      check('and the shared college directory', !(await kid.client.from('college_directory').select('unitid').limit(1)).error)
+      check('a student cannot update a task or delete a student directly', ((await kid.client.from('tasks').update({ title: 'x' }).eq('firm_id', a.firmId).select('id')).data ?? []).length === 0 && ((await kid.client.from('students').delete().eq('firm_id', a.firmId).select('id')).data ?? []).length === 0)
+      check('a student cannot save through apply_changes', Boolean((await kid.client.rpc('apply_changes', { firm: a.firmId, changes: {} })).error))
+      check('a counselor route refuses a student', [401, 403].includes((await account(kid.token, { action: 'firm' })).status) && [401, 403].includes((await documents(kid, { action: 'open', documentId: randomUUID() })).status))
+
+      // One page, by sign-in. Turned off, it is refused on the next request.
+      const bearer = (token: string) => studentGet(new Request('http://localhost/api/student', { headers: { authorization: `Bearer ${token}`, 'x-forwarded-for': `198.51.100.${Math.floor(Math.random() * 250)}` } }))
+      const page = await bearer(kid.token)
+      const pageText = await page.text()
+      check('a student’s sign-in opens their own page', page.status === 200 && pageText.includes('"firstName":"Spare"') && !pageText.includes('PRIVATE'))
+      check('a counselor’s sign-in opens no student page', (await bearer(c.token)).status === 403)
+      check('any member turns the sign-in off', (await answer(await account(c.token, { action: 'set_student_signin', studentId: spare, on: false }))).status === 200)
+      const off = await bearer(kid.token)
+      check('and the very next request is refused', off.status === 403 && ((await off.json()) as { code?: string }).code === 'signin_off')
+      check('and on again', (await answer(await account(a.token, { action: 'set_student_signin', studentId: spare, on: true }))).status === 200 && (await bearer(kid.token)).status === 200)
+      check('another firm cannot turn it off', (await answer(await account(b.token, { action: 'set_student_signin', studentId: spare, on: false }))).status === 403)
+
+      // The student deletes their own sign-in; the firm's record stays.
+      check('a student deletes their own sign-in', (await answer(await account(kid.token, { action: 'delete_my_signin' }))).status === 200)
+      check('the auth user and the account row are gone, the student row is not', !(await adminClient().auth.admin.getUserById(kid.userId)).data.user && ((await adminClient().from('student_accounts').select('user_id').eq('user_id', kid.userId)).data ?? []).length === 0 && ((await adminClient().from('students').select('id').eq('id', spare)).data ?? []).length === 1)
+
+      // A stored file whose document row is gone.
+      const orphan = `${a.firmId}/${seeded.A.studentId}/${randomUUID()}/orphan.pdf`
+      objects.push(orphan)
+      const stored = await adminClient().storage.from(BUCKET).upload(orphan, PDF, { contentType: 'application/pdf' })
+      check('setup: a stored file with no document row exists', !stored.error && !(await adminClient().storage.from(BUCKET).download(orphan)).error, stored.error?.message)
+      check('a stored file with no document row cannot be downloaded, even by the owner', Boolean((await a.client.storage.from(BUCKET).download(orphan)).error))
+      check('nor signed', Boolean((await a.client.storage.from(BUCKET).createSignedUrl(orphan, 60)).error))
+    } finally {
+      for (const p of people) await adminClient().auth.admin.deleteUser(p.userId).catch(() => undefined)
+    }
+  }
 } catch (error) {
   failed++
   console.error('\nThe run stopped early:', error instanceof Error ? error.message : error)

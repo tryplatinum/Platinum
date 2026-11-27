@@ -22,6 +22,8 @@ interface Item {
 }
 
 export function AddFile({ counselorName }: { counselorName: string }) {
+  // On the student's own page: by their link (a token), or signed in (no token; their session is the credential).
+  const own = useStore((s) => s.mode === 'student_link')
   const token = useStore((s) => (s.mode === 'student_link' ? s.linkToken : undefined))
   const [items, setItems] = useState<Item[]>([])
   const pick = useRef<HTMLInputElement>(null)
@@ -29,7 +31,7 @@ export function AddFile({ counselorName }: { counselorName: string }) {
   const patch = (key: string, change: Partial<Item>) => setItems((all) => all.map((i) => (i.key === key ? { ...i, ...change } : i)))
 
   const send = async (key: string, file: File) => {
-    if (!token) return
+    if (!own) return
     patch(key, { stage: 'sending', progress: 0, error: undefined })
     try {
       const name = await studentLinkUpload(token, file, (progress) => patch(key, { progress }))
@@ -51,7 +53,7 @@ export function AddFile({ counselorName }: { counselorName: string }) {
   return (
     <Card className="flex flex-col gap-3 p-4">
       <h2 className="text-[15px] font-semibold">Add a file</h2>
-      {!token ? (
+      {!own ? (
         // The counselor's preview of this page: there is no link to upload through.
         <p className="text-sm text-muted">On their own link, the student can drop, pick or photograph a file here. It is sorted into their folders for you.</p>
       ) : (

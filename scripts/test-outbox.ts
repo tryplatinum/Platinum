@@ -28,7 +28,7 @@ import {
   previewStudentLink,
   resolveAddress,
   studentLinkExpiry,
-  withoutStudentLinks,
+  studentLinkUrl, withoutStudentLinks,
 } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import { DRIVE_SCOPE, GMAIL_SEND_SCOPE } from '../shared/google.js'
@@ -162,7 +162,10 @@ check('a new link expires in 30 days', Math.abs(Date.parse(studentLinkExpiry()) 
 
 check('a phone is masked to its last 4 digits', maskRecipient('+1 (555) 123-4567') === '…4567')
 check('an email is masked to its first letter and domain', maskRecipient('Ada.Example@example.com') === 'A…@example.com')
+check('the landing page counts down the same hold the database gives', new RegExp(`UNDO_SECONDS = ${UNDO_SECONDS}\\b`).test(readFileSync(new URL('../src/landing/story.ts', import.meta.url), 'utf8')))
 check('a student link is removed from text', withoutStudentLinks('failed at https://app.example/s/abc123 today') === 'failed at [student link] today')
+check('a student link in its new form, with the secret in the fragment, is removed from text too', withoutStudentLinks('failed at https://app.example/s#abc123 today') === 'failed at [student link] today')
+check('a new student link is /s#<secret>: the secret is in the fragment, never in the path or the query', studentLinkUrl('https://app.example/', 'abc123') === 'https://app.example/s#abc123' && new URL(studentLinkUrl('https://app.example', 'abc123')).pathname === '/s' && new URL(studentLinkUrl('https://app.example', 'abc123')).search === '')
 
 // ── Email subject ───────────────────────────────────────────────────────────
 
@@ -464,10 +467,10 @@ check('every message handed to Gmail carried a bearer token in the header only',
   check('…and a link row was made for it', db.table('student_links').some((l) => l.student_id === STUDENT && typeof l.expires_at === 'string'))
   check('the failing email failed', rowOf(failing).status === 'failed')
   check('something was logged', lines.length > 0, `${lines.length} lines`)
-  check('no logged line contains /s/', lines.every((l) => !l.includes('/s/')), lines.find((l) => l.includes('/s/')))
+  check('no logged line contains a student link, old form or new', lines.every((l) => !l.includes('/s/') && !l.includes('/s#')), lines.find((l) => l.includes('/s/') || l.includes('/s#')))
   check('no logged line contains the body', lines.every((l) => !l.includes(BODY.trim())))
   check('the log transport names the channel, a masked recipient and the body length', lines.some((l) => l.includes('[transport:log]') && l.includes('…0001') && l.includes('bodyLength') && !l.includes('555 000 0001')))
-  check('the stored failure reason holds no link either', !String(rowOf(failing).error).includes('/s/'))
+  check('the stored failure reason holds no link either', !String(rowOf(failing).error).includes('/s/') && !String(rowOf(failing).error).includes('/s#'))
 }
 
 // ── Reminder skips ──────────────────────────────────────────────────────────

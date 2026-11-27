@@ -50,7 +50,7 @@ export async function draftWeeklyText(studentId: ID, { useNotes = true, tellPare
   // and leaves out anything out of date or already mentioned.
   const notes = useNotes ? notesForDraft(data, student, 'student') : []
   // With something personal to say, the task list gives up room for it.
-  // The real /s/... URL is minted at send time. The draft carries a placeholder.
+  // The real /s#... URL is minted at send time. The draft carries a placeholder.
   const facts = weeklyTextFacts(student, data.firm.counselorFirstName, items, STUDENT_LINK_PLACEHOLDER, undefined, notes.length ? WEEKLY_NOTE_ROOM : 0)
   // Students have no language setting yet, so the text is in English.
   const draft = await weeklyText(facts, 'en', notes)

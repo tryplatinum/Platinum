@@ -288,7 +288,8 @@ const outboxFrom = (r: Row<'outbox'>): OutboxMessage => ({
 const activityFrom = (r: Row<'activity'>): ActivityEvent => ({
   id: r.id,
   at: stamp(r.at),
-  studentId: r.student_id,
+  // Empty for a line about the firm itself (a member joined, left or was removed).
+  studentId: r.student_id ?? '',
   actor: r.actor as ActivityEvent['actor'],
   text: r.text,
   actorUser: u(r.actor_user),
@@ -555,7 +556,7 @@ const reportRow = (r: ParentReport): Out<'reports'> => ({
 
 const activityRow = (e: ActivityEvent): Out<'activity'> => ({
   id: e.id,
-  student_id: e.studentId,
+  student_id: e.studentId || null,
   at: e.at,
   actor: e.actor,
   text: e.text,
@@ -776,6 +777,16 @@ export async function myMembership(userId: ID): Promise<Membership | undefined> 
   const { data, error } = await supabase.from('firm_members').select('firm_id, role').eq('user_id', userId).maybeSingle()
   if (error) fail(error, 'Could not check your account')
   return data ? { firmId: data.firm_id, role: data.role as Membership['role'] } : undefined
+}
+
+/**
+ * Whether this sign-in is a student's, and if so whether a counselor has turned
+ * it off. A student can read their own account row and nothing else.
+ */
+export async function myStudentAccount(userId: ID): Promise<{ off: boolean } | undefined> {
+  const { data, error } = await supabase.from('student_accounts').select('disabled_at').eq('user_id', userId).maybeSingle()
+  if (error) fail(error, 'Could not check your account')
+  return data ? { off: Boolean(data.disabled_at) } : undefined
 }
 
 /** Creates a firm with the signed-in person as its owner. */

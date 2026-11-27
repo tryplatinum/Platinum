@@ -57,3 +57,13 @@ export interface StudentUploadTicket {
 
 /** Tokens are 32 random bytes in base64url: 43 characters. */
 export const STUDENT_TOKEN = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
+
+/**
+ * Why a request made with a student sign-in was refused. Requests made with a
+ * link token carry no code, as before. An app goes by the code, not the words.
+ *
+ *   unauthorized   the access token is missing, expired or not Supabase's: sign in again
+ *   signin_off     a counselor turned the sign-in off, or the student is archived
+ *   not_a_student  the person signed in has no student account
+ */
+export type StudentErrorCode = 'unauthorized' | 'signin_off' | 'not_a_student'

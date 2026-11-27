@@ -61,3 +61,19 @@ export async function identify(request: Request): Promise<Caller> {
   if (member.error || !member.data) return { ok: false, reason: 'no_firm' }
   return { ok: true, userId: data.user.id, firmId: member.data.firm_id, role: member.data.role === 'owner' ? 'owner' : 'counselor', client }
 }
+
+export type Person = { ok: true; userId: string; email: string; emailConfirmed: boolean } | { ok: false }
+
+/**
+ * Who is signed in, without asking which firm they belong to. For the few
+ * requests a person makes before they are a member or a student of anything:
+ * accepting an invitation. The token is verified with Supabase, and the address
+ * and whether it is confirmed are what Supabase reports, never the request's word.
+ */
+export async function signedIn(request: Request): Promise<Person> {
+  const token = request.headers.get('authorization')?.match(/^Bearer\s+(\S+)$/i)?.[1]
+  if (!token) return { ok: false }
+  const { data, error } = await asUser(token).auth.getUser(token)
+  if (error || !data.user) return { ok: false }
+  return { ok: true, userId: data.user.id, email: (data.user.email ?? '').toLowerCase(), emailConfirmed: Boolean(data.user.email_confirmed_at) }
+}

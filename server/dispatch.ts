@@ -11,8 +11,7 @@ import {
   resolveAddress,
   studentLinkExpiry,
   withoutStudentLinks,
-  type RecipientContact,
-} from '../shared/dispatch.js'
+  type RecipientContact, studentLinkUrl } from '../shared/dispatch.js'
 import { emailSubject } from '../shared/emailSubject.js'
 import { QUEUE_CHANNELS, type QueueChannel, type QueueLanguage } from '../shared/outbox.js'
 import { HAND_SENT_NOTE } from '../shared/phoneGateway.js'
@@ -169,7 +168,7 @@ async function withStudentLink(row: OutboxRow, body: string, bodyEn: string | nu
     })
   if (error) throw new Error(`student link insert failed: ${error.message}`)
 
-  const url = `${base}/s/${token}`
+  const url = studentLinkUrl(base, token)
   return {
     body: fillStudentLink(body, url),
     bodyEn: bodyEn && bodyEn.includes(STUDENT_LINK_PLACEHOLDER) ? fillStudentLink(bodyEn, url) : bodyEn,

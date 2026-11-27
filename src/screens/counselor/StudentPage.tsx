@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { LogMeetingModal } from '../../components/forms'
+import { StudentSignInModal } from '../../components/account/StudentSignIn'
 import { StudentLinkModal } from '../../components/StudentLinkModal'
 import { Button, PageHeader, StatusPill, TabPanel, Tabs, usePageTitle, useTab, type TabItem } from '../../components/ui'
 import { MEETING_APPROVAL_KINDS, essaysFor, findStudent, fullName, summarize } from '../../lib/derive'
@@ -22,7 +23,7 @@ export default function StudentPage() {
   const data = useData()
   const { studentId } = useParams()
   const student = findStudent(data, studentId)
-  const [modal, setModal] = useState<'log' | 'link'>()
+  const [modal, setModal] = useState<'log' | 'link' | 'signin'>()
 
   const inbox = inboxContents(data, studentId)
   const approvals = student ? inbox.approvals : []
@@ -84,6 +85,7 @@ export default function StudentPage() {
         actions={
           <>
             <Button onClick={() => setModal('link')}>Student link</Button>
+            <Button onClick={() => setModal('signin')}>Sign-in</Button>
             <Button variant="primary" onClick={() => setModal('log')}>
               Log a meeting
             </Button>
@@ -102,6 +104,7 @@ export default function StudentPage() {
       </TabPanel>
 
       {modal === 'link' && <StudentLinkModal student={student} onClose={() => setModal(undefined)} />}
+      {modal === 'signin' && <StudentSignInModal student={student} onClose={() => setModal(undefined)} />}
       {modal === 'log' && <LogMeetingModal studentId={student.id} onClose={() => setModal(undefined)} />}
     </>
   )

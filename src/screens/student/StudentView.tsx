@@ -23,6 +23,8 @@ export function StudentHome() {
   const student = useStudent()
   // The profile form is part of the counselor's preview only; the student link allows three writes, all on tasks.
   const onLink = useStore((s) => s.mode === 'student_link')
+  // Signed in with a student account: the bar above already names the firm.
+  const signedIn = useStore((s) => s.account.status === 'student')
   const [showDone, setShowDone] = useState(false)
   usePageTitle(onLink ? 'Your page' : `${student.firstName}’s page`)
   const all = tasksFor(data, student.id)
@@ -39,11 +41,13 @@ export function StudentHome() {
   return (
     <>
       <header>
-        <p className="flex items-center gap-2 text-[13px] font-medium text-muted">
-          <Logo variant="symbol" width={40} />
-          {data.firm.name}
-        </p>
-        <h1 tabIndex={-1} className="mt-2 text-2xl font-semibold focus:outline-none">Hi {student.firstName}</h1>
+        {!signedIn && (
+          <p className="flex items-center gap-2 text-[13px] font-medium text-muted">
+            <Logo variant="symbol" width={40} />
+            {data.firm.name}
+          </p>
+        )}
+        <h1 tabIndex={-1} className={`${signedIn ? '' : 'mt-2 '}text-2xl font-semibold focus:outline-none`}>Hi {student.firstName}</h1>
       </header>
 
       <Card className="grid grid-cols-2 divide-x divide-line">

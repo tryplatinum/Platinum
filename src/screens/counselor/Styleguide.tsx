@@ -54,6 +54,10 @@ import {
   type TabItem,
 } from '../../components/ui'
 import { todayISO } from '../../lib/dates'
+import { GUARDIAN_CONSENT, STUDENT_AGE } from '../../../shared/account'
+import { PASSWORD_HINT, PasswordInput } from './SignIn'
+import { InvitationLink, SignInPill } from '../../components/account/StudentSignIn'
+import type { StudentSignIn } from '../../../shared/account'
 import type { Review } from '../../types'
 
 const COLORS = [
@@ -79,6 +83,14 @@ const COLORS = [
   ['bad-soft', 'bg-bad-soft', ''],
   ['bad-tint', 'bg-bad-tint', 'late rows, error notes'],
 ] as const
+
+const SIGN_IN_SAMPLES: StudentSignIn[] = [
+  { studentId: 'a', name: 'Kevin Zhang', state: 'none', tooYoung: false },
+  { studentId: 'b', name: 'Kevin Zhang', state: 'invited', tooYoung: false, expired: false },
+  { studentId: 'c', name: 'Kevin Zhang', state: 'invited', tooYoung: false, expired: true },
+  { studentId: 'd', name: 'Kevin Zhang', state: 'on', tooYoung: false },
+  { studentId: 'e', name: 'Kevin Zhang', state: 'off', tooYoung: false },
+]
 
 const TABS: TabItem<'one' | 'two' | 'three'>[] = [
   { key: 'one', label: 'Overview' },
@@ -228,6 +240,8 @@ function SampleRow({ name, onDecide }: { name: string; onDecide: () => void }) {
 }
 
 export default function Styleguide() {
+  const [password, setPassword] = useState('')
+  const [tick, setTick] = useState(false)
   const toast = useToast()
   usePageTitle('Styleguide')
   const ai = useAi()
@@ -615,6 +629,47 @@ export default function Styleguide() {
       </Block>
 
       <Motion />
+
+      <Block title="Account screens">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          Sign in, Start a firm, the join page and the “no firm yet” screen are one card under the logo (<code>Splash</code>), with one filled button. A password field shows and hides, names the rule before it is broken, and
+          tells a password manager whether it is a current or a new password.
+        </p>
+        <div className="grid max-w-md gap-3">
+          <Field label="Choose a password" hint={PASSWORD_HINT}>
+            <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+          </Field>
+          <CheckRow checked={tick} onChange={setTick}>
+            {STUDENT_AGE.text}
+          </CheckRow>
+          <CheckRow checked={tick} onChange={setTick}>
+            {GUARDIAN_CONSENT.text('Kevin')}
+          </CheckRow>
+        </div>
+      </Block>
+
+      <Block title="Sign-ins and invitations">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          A student’s sign-in has four states, each a pill with its own actions. An invitation’s link is shown once, in the tinted box, with Copy as the one filled button and a line saying Platinum does not send it. Destructive actions
+          (Remove, Revoke, Leave firm) are outlined in red and ask first with <code>ConfirmDialog</code>.
+        </p>
+        <Row>
+          {SIGN_IN_SAMPLES.map((s) => (
+            <SignInPill key={s.studentId} signIn={s} />
+          ))}
+        </Row>
+        <div className="max-w-md">
+          <InvitationLink made={{ id: 'sample', email: 'kevin.zhang@students.example', expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(), secret: 'A'.repeat(43) }} />
+        </div>
+      </Block>
+
+      <Block title="Landing page">
+        <p className="max-w-2xl text-sm text-ink-soft">
+          The page at <code>/</code> has its own stylesheet (<code>src/landing/landing.css</code>, every class prefixed <code>lp-</code>) and uses the same tokens as everything here, so it follows the theme without its own colours. It
+          adds two faces that are not downloaded: the reader’s own serif for one accent line, and the system’s handwriting face for the page of notes. Its motion is scroll position written into custom properties; only transform
+          and opacity move, and reduced motion shows every end state. Nothing from it is used in the workspace.
+        </p>
+      </Block>
 
       {modal && (
         <Modal title="A modal" onClose={() => setModal(false)}>

@@ -1,5 +1,169 @@
 # Build log
 
+## Accounts and landing (branch `accounts-and-landing`, from `main` at `c23ea84`)
+
+One branch, one pull request, a commit or more per part. **No migration in this branch has been pushed**, and no account flow has run against the real database. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261207000001` (templates and calendar included) on the remote.
+
+**PGlite is not a dependency.** The database checks (`scripts/test-accounts-db.ts`, helper `scripts/pgliteChain.ts`) run the whole migration chain in PGlite with stand-ins for the `auth` and `storage` schemas. Adding the package was not allowed in this run, so the script looks for it in `node_modules` or in `PGLITE_DIR` and, when it is missing, prints that it was skipped and exits 0. `npm run test:notes` on a clean checkout therefore skips those checks. To run them: `npm install --no-save --no-package-lock @electric-sql/pglite`.
+
+### Part A: roles and invitations in the database
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261208000001_roles_and_invitations.sql`.
+
+- `firm_members`: the three write policies are dropped and insert, update and delete are revoked from signed-in people. Members still read their firm's rows.
+- `invitations` (one table for both kinds; the student kind is used from Part B). Members read every column but `token_hash`. No direct writes.
+- Functions: `invite_counselor(email, token_hash, replace)`, `revoke_invitation`, `accept_counselor_invitation` (service role only), `set_member_role`, `member_removal_summary`, `remove_member`, `leave_firm`, `rename_self`. Two helpers nobody can call: `claim_invitation_`, `end_membership_`.
+- A deferred constraint trigger, `firm_keeps_an_owner`, refuses any path that leaves a firm with members and no owner. Deleting a whole firm still works.
+- `apply_changes` restated whole with two changes: renaming yourself calls `rename_self`, and deleting a student or clearing the caseload is refused for anyone but an owner (Part F's first point, placed here because it is the same function).
+- `activity.student_id` may be null, for a line about the firm itself. `activityFrom` in `src/data/repo.ts` reads it as an empty id; the Activity screen already shows a line with no student.
+
+**Choices the brief did not settle.**
+- *An owner cannot demote or remove another owner.* An owner steps down themselves, and only then can be removed. The brief lists "make a counselor an owner" and "step down or leave"; taking an owner's role away from them is not in it.
+- *A counselor can leave.* Leaving does what removal does (Google, phone, queued messages, one line).
+- *Activity lines about the firm are `system` lines* that name the people in their text ("Avery Stone removed Dana Whitlock from the firm: …"), because the Activity screen shows every `counselor` line under the name of whoever is looking.
+- *"Queued and unsent"* is every outbox row that person approved that is still `queued`, plus a text handed to their phone that the phone has not taken yet (the job is cancelled and its words cleared).
+- *Error codes.* The functions raise `PI001` (the invitation does not work: unknown, expired, revoked or used, one answer), `PI002` (address not confirmed), `PI003` (another address), `PI004` (already in a firm), `PI005` (an invitation is already waiting), and `23514` for the last owner. `server/account.ts` turns them into the reasons in `shared/account.ts`.
+- *The address and its confirmation are read twice:* by the server from Supabase's own answer about the sign-in, and again inside the accept function from `auth.users`, with the invitation row locked.
+- *Deleting the sign-in of a firm's only owner* in the Supabase dashboard is now refused while the firm has other members. Make another owner first.
+
+**Server:** `api/account.ts` (added to `FUNCTIONS` in `vite.config.ts`), `server/account.ts`, `shared/account.ts`. `server/supabase.ts` gained `signedIn()` (who is signed in, without a firm, for `accept`); `identify()` is unchanged. `server/google/connection.ts` gained `disconnectMember()`, which revokes the grant at Google before the database deletes the row.
+
+**Checked.** `npm run test:accounts` (55 checks, in-memory Supabase): one answer for unknown, expired, revoked, used and malformed previews; the rate limit; accept needs a verified sign-in, the right address and a confirmed one; only the hash reaches the database; the caller's id never comes from the body; counselors are refused every owner action before the database is asked; removal revokes at Google and calls the database once. `npm run test:accounts:db` (67 checks, PGlite): everything above as the database enforces it, including the last owner, direct writes to `firm_members`, the hash column, "New link", and that removal does all four things and writes one line. **Not run:** a real database, real Supabase Auth, two accepts truly at once (PGlite has one connection; the check is that the second is refused and that the row is locked).
+
+### Part B: student accounts
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261209000001_student_accounts.sql`, after `20261208000001`.
+
+- `student_accounts` (auth user as the key, `(firm_id, student_id)` unique and a composite foreign key, the invitation, `disabled_at`). The student reads their own row, members read their firm's, nobody writes it directly.
+- `student_account_consents`: insert only for every role. A trigger refuses an update, and refuses a delete unless it arrives as a cascade from deleting the whole firm.
+- `one_kind_of_account` triggers on `firm_members` and `student_accounts`; `create_firm` restated whole with one refusal added.
+- `invite_student`, `accept_student_invitation` (service role only), `set_student_account_disabled`, `student_grade`.
+
+**The school-year boundary is July 1.** A student who graduates in the calendar year the current school year ends in is in 12th grade; grade = 12 − (grad_year − that year); below 9 is refused. The rule is in `shared/account.ts` (`gradeFor`, `maySignIn`) and again in the database (`student_grade`), and `test:accounts:db` checks the two agree for ten graduation years on both sides of the boundary.
+
+**`/api/student`** takes the link token as before, or a student sign-in's Bearer token when no link token is sent. `findStudentAccount` returns the same `Link` the link path makes, so the page, the three writes and the two upload steps are the same code. The link path's answers are unchanged; the sign-in path adds a `code` (`unauthorized`, `signin_off`, `not_a_student`). A file added by a signed-in student is recorded like a link upload with no link row.
+
+**Choices the brief did not settle.**
+- *"New link" for a student does not ask for the guardian tick again*; the tick already on record for that student stands.
+- *An archived student cannot be invited*, and an invitation made before the student was archived stops working.
+- *A student deleting their sign-in* deletes the auth user (the account row goes with it) and writes one activity line. The consent records stay. The firm's record of the student is untouched.
+- *A student deleted by the firm* loses the account row with the student; the auth user is left with no kind of account, and sees the "no firm, no invitation" screen.
+- *Wording versions* are `guardian-2026-11-27` and `age-2026-11-27` in `shared/account.ts`. The server sends its own version, never the request's.
+
+**From the review of Part A** (fixed in this commit, in the two unpushed migrations): an owner acting on an invitation that was just used now gets "no longer waiting" (`PI009`) instead of the invitee's dead-link sentence; the last-owner refusal has its own code (`PI010`); accept takes the firm lock before the invitation lock, the order "New link" uses; a person who starts a firm in another tab mid-accept is told they already belong to a firm; `invite_counselor` re-checks the caller after the lock; rate-limit keys for addresses and people no longer share a prefix.
+
+**Checked.** `test:accounts` is now 95 checks and `test:accounts:db` 119. New: the same page byte for byte by link and by sign-in; a turned-off or archived sign-in refused on the next request; 16 requests across the 9 counselor routes with a student's token, all 401 or 403; a student session against all 37 tables; deleting a sign-in. **Not run:** a real database, real Supabase Auth.
+
+### Part C: sign-in, sign-up and join screens
+
+No migration. Front end, plus fixes from the review of Part B in the unpushed `20261209000001` and the server.
+
+- **One place decides where a signed-in person belongs:** `homeOf(account)` in `src/store/session.ts`. Member: `/app/today`. Student: `/me`. Neither: `/start`. `RequireFirm`, `/signin`, `/signup`, `/setup`, `/start`, `/join`, `/me` and `/reset-password` all apply it. A page asked for before sign-in is honoured for members only, and only when it is an `/app` or `/student` address.
+- **`Account` gained `student`** (with `off` when a counselor turned the sign-in off). `enter()` reads the membership, then the student's own `student_accounts` row, then falls to `needs_firm`. A signed-in student's page is held like a link's (`mode: 'student_link'`, no `linkToken`); `src/services/studentLink.ts` sends the link token when there is one and the session's token when there is not.
+- **`/signin`** is for everyone. The sign-up toggle is gone; "Start a firm" goes to `/signup`.
+- **`/signup`**: name, email, password, firm name. With a session straight away the firm is made and the person lands on Today as owner. When Supabase wants the address confirmed first, the firm's name and the person's name are kept in `sessionStorage` (`pending-firm`) and `/setup` is filled in with them at the first sign-in.
+- **`/join#<secret>`** (`src/screens/Join.tsx`): the secret is read from the fragment, kept in memory for the tab, and removed from the address at once with a replacing navigation. Preview, then "Create a password" or "I have a sign-in", then accept. States: loading, dead link (one message for all four causes, and for no link at all), could not be checked (Try again), confirm your email first (open the invitation link again afterwards), another address (Sign out), a sign-in already in use, and done.
+- **`/start`**: "Start a firm", "I was invited", Sign out, and Delete this sign-in (behind `ConfirmDialog`).
+- **`/me`** exists with the student home on it and the turned-off screen. Its header and Account page are Part E.
+- `signUp` now sends the confirmation link back to `/signin` (it was `/app`).
+
+**From the review of Part B.** `invite_student` re-checks membership after the firm lock; the guardian tick can be left out only by "New link"; the grade is checked again at accept; a consent row's wording version must start `guardian-` or `age-`; the service role has only select and insert on consent rows, and a delete is allowed only once the firm row is gone; a student cannot read who turned their sign-in off; one student's sign-in is answered even when archived, so it can still be turned off; the address shown for a sign-in is read from the sign-in itself; a person who belongs to nothing can delete their leftover sign-in (a student whose record the firm deleted).
+
+**Choices the brief did not settle.** The join page asks the person to type the invited address (the preview shows it masked). A counselor gives their name on the join page, because `firm_members` needs one. `/start` is a new address; `/setup` still works and links to it.
+
+**Checked** by hand from `preview.html`, 22 states at 375 and 1440, light and dark (`docs/accounts/c*.png`): no console error and no sideways scroll in any. `preview.tsx` now stands in for Supabase Auth and `/api/account`, with switches listed at its top. **Not run:** real Supabase Auth, a real confirmation or reset email, Safari, a phone.
+
+### Part D: the owner screen
+
+No migration. `src/screens/counselor/Firm.tsx` at `/app/firm`, behind `RequireOwner` (a counselor goes to Today), with a "Firm" link in the sidebar footer above Settings for owners only. Hiding it is tidiness; the server and the database refuse every action.
+
+- **Counts** in the header: counselors (every member), active students, students with a sign-in (on or turned off).
+- **Team**: name, address, role, joined, a "You" mark. Make owner and Remove on a counselor; Step down and Leave firm on yourself; nothing on another owner. Remove first asks the server what removal will do and says only that (`removalWords`). Leave asks for the word LEAVE. The only owner trying to step down or leave gets the server's refusal as an amber note that says what to do.
+- **Invitations**: an email makes a link, shown once with its expiry and "Platinum does not email this". Waiting invitations list with New link and Revoke; an expired one is marked. Asking for a second invitation for an address offers New link in place.
+- **Student sign-ins**: every active student with the state pill, address and expiry, filtered by state, with Invite, New link, Revoke, Turn off, Turn on.
+- **For counselors**: a "Sign-in" button beside "Student link" on the student page opens the same panel for that one student (`src/components/account/StudentSignIn.tsx`): the consent tick, the link to copy, and a QR code (`src/components/account/QrCode.tsx`, drawn in the browser with `qrcode-generator`).
+
+No student-to-counselor assignment was added and nothing is counted per counselor.
+
+**Checked** by hand from `preview.html`: 25 states at 375 and 1440, light and dark (`docs/accounts/d*.png`), no console error and no sideways scroll. **Not run:** a real database.
+
+### Part E: the student screen
+
+No migration. `/me` is `StudentAccountLayout` in `src/screens/student/Me.tsx`: a header that names the firm and the student's first name with two places, Home and Account, and nothing from the counselor's navigation. Home is `StudentHome`, the very component the link page renders; the only change to it is that it leaves out its own firm line when the header above already says it. `/me/account` is new: the address, change password (Supabase `updateUser`), sign out, delete my sign-in behind `ConfirmDialog` with the word DELETE and a sentence saying the firm's record stays, and the list of what counselors can see (`COUNSELORS_CAN_SEE` in `shared/account.ts`, the same list the join page shows).
+
+`docs/student-api.md` is for the phone app: signing in and refreshing with Supabase, every `/api/student` request and answer for an account, the three upload steps, deleting the sign-in, and every error with what to show. No secret is in it.
+
+**Checked** by hand from `preview.html`: 9 states at 375 and 1440, light and dark (`docs/accounts/e*.png`), including a member opening `/me` (sent to Today), a student opening `/app/students` (sent to `/me`), and the link page unchanged. **Not run:** a real database, a phone.
+
+### Part F: hardening that belongs with roles
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261210000001_owner_delete_and_stored_files.sql`, after `20261209000001`. Two policies on `students` and `storage.objects` are replaced by stricter ones and one function is added. Nothing is loosened.
+
+1. **Only an owner can delete a student.** `apply_changes` refuses a counselor (Part A's migration); this file makes the table's own delete policy owner-only, so the Data API refuses too. `/api/documents` no longer removes all of a student's or the firm's stored files for a counselor. Settings shows a counselor a sentence in place of Reset demo and Start empty. Editing and archiving a student are unchanged for every member, and everything an owner could do still works.
+2. **A stored file needs its row.** The bucket's read and delete policies now ask `stored_file_is_readable(firm, document)`, which is false when the row is missing or belongs to another firm. `document_is_readable` is left as it was, because the file log still has to answer for documents that were deleted. The app removes objects before rows, so nothing it does depends on the old answer.
+3. **Student links are `/s#<secret>`.** `studentLinkUrl` in `shared/dispatch.ts` is the one place a link is built (the student link window, the weekly text copy, and the dispatcher). `StudentLinkLayout` reads the fragment, or the path of an older link, removes it from the address with a replacing navigation, and keeps the token in `sessionStorage` for the tab so a reload still works. `Referrer-Policy: no-referrer` is sent for `/s`, `/s/*` and `/join` (`vercel.json`, `public/_headers`) and set as a meta tag by the page. `withoutStudentLinks` strips both forms from anything logged or stored. Links already sent keep working.
+
+**Known limit:** once the address is `/s`, a bookmark of the open page does not carry the secret. The student keeps the message their link came in.
+
+**Added to `scripts/test-isolation.ts`, not run:** a section covering Parts A, B and F against the real database, including two accepts truly at once. It needs the three migrations pushed. `createPerson` in `scripts/testAccounts.ts` makes a sign-in with no firm. Older checks in that script were not changed; any that had a counselor delete a student will now fail by design and should be read with that in mind.
+
+**Checked.** `test:accounts:db` is 132 checks: a counselor's direct delete of a student removes nothing, an owner's does; a stored file with no row, or with another firm's row, is not listed or deletable, and stops being listed when its row is deleted. `test:outbox` checks the new link form and that neither form reaches a log. By hand in the preview: the fragment link, an old path link, no link, the counselor's Settings (`docs/accounts/f*.png`). **Not run:** a real database or real storage.
+
+### Parts C to F: fixes from the review
+
+A read-only review of the four commits found no secret reaching a server, a log or storage, no open redirect and no redirect loop. What it did find, now fixed:
+
+- **An older account lookup could overwrite a newer one.** `enter()` in `src/store/session.ts` now counts each decision (`generation`); a lookup that finishes after a newer one started, or after a sign-out, writes nothing. The student page refresh and a student's task write check that the same student is still the one on screen before keeping the answer.
+- **A student link and a student sign-in in one tab.** While a link's page is open, an account lookup notes who is signed in and leaves the page alone. Opening `/me` from there lets go of the link and loads the student's own page.
+- **Sign-up with a confirmation step did not make the firm**, though the screen said it would. The firm's name is now kept with the address it was typed for, in `localStorage`, and the firm is made on that person's first sign-in in the same browser. One promise makes it, so two lookups cannot make two. The join page clears a leftover name.
+- **Reset password** now says the same sentence whatever Supabase answers; only having no connection is reported.
+- **A second link pasted into an open tab** (`/s#…` or `/join#…`) is adopted and removed from the address bar like the first. A student link the server does not know is no longer kept for the next reload.
+- **Join**: reloading after the secret was removed says "Open your invitation link again", not that the link is dead; the confirm screen has a way back; the form waits until it is known who is signed in; a message that replaces the form takes focus.
+- **`/me/account` opens even when the sign-in is off or the page failed to load**, so a student can always delete their sign-in.
+- **Firm page**: two sign-in changes in a row no longer overwrite each other on screen; row buttons name who they act on; a window showing a one-time link no longer closes on an outside click.
+- **`scripts/test-isolation.ts`**: setup steps are asserted, the orphan file is confirmed to exist before it is tested, and "zero rows" names columns so an error is not mistaken for an empty answer.
+
+Not changed: `/reset-password` still shows its form to anyone already signed in (as before this branch).
+
+### Part G: landing page
+
+`/` shows the landing page to a signed-out visitor and sends a signed-in one to their home. No migration, no server change, no new dependency.
+
+- **Its own chunk.** `src/main.tsx` is now a few lines: it starts the theme, and loads either `src/landing/entry.tsx` or the app (`src/appMain.tsx`, which is the old `main.tsx`). It decides by looking for Supabase's session key in `localStorage`, without loading Supabase. If that session turns out to be over, the app's `/` route shows the same page, lazily. The built landing chunk has no store, Supabase client or router in it.
+- **Files:** `src/landing/Landing.tsx` (the scroll reader, the notes, the chapters), `Workspace.tsx` (the eight areas), `story.ts` (the invented meeting and the settled copy), `landing.css` (all of the motion). `src/services/earlyAccess.ts` is the form's one way out.
+- **How it moves.** `useStory` reads the scroll position at most once a frame and writes `--page` on the root and `--p` and `data-step` on each chapter. Everything else is CSS reading those, so scenes play backwards when scrolled back and are right wherever the page is opened. Scrolling is the browser's own. Only transform and opacity are animated. A scene pins (sticky) only when all of it fits on the screen.
+- **The early access form sends nothing and stores nothing.** `requestEarlyAccess` answers "not open"; the form says so before and after submitting and never shows success. This is the one thing left to wire up.
+- `index.html` has a real title, description and share image (`public/brand/share.png`, made from the brand); `noindex` is kept.
+- `test:outbox` checks that the page counts down the same 10 seconds the database holds.
+
+**Where it differs from the brief.**
+- *No serif or handwriting font was downloaded.* Adding the font package would be a new dependency, which was not allowed in this run. The accent is the reader's own serif (Iowan, Palatino, Georgia) and the notes use the system's handwriting face, so both vary by device.
+- *The four drafts "fly" a short way*, into a row at the top of the student's page with a label saying where each lives; they do not travel across the screen from the chapter above.
+- *The update turns from English to Chinese letter by letter at one point in the scroll* (and back when scrolled back), not continuously with the scroll. The facts are highlighted in the sentence in each language and repeated in a row beneath that does not move.
+- *The notes page "changes at each chapter"* as: tilting with the pointer in the hero; phrases lighting up; shrinking with a "filed" tag; turning over to show the record; a tag for the gate; a tag for sent or still waiting.
+- *On a phone* the notes are a strip held at the top, the Inbox card is part of the hero, and the chapter index is the browser's own menu in the header.
+- *Lighthouse was not run* (not installed, and nothing was added). `docs/landing/README.md` has an equivalent phone-profile check with its numbers.
+
+**Sentences in the copy that the overview does not mark Working**, kept as written: "Approved emails send from your own Gmail address" and "Parent update, from your Gmail" (Gmail sending is off by default); "bring them in from Google Drive" (off by default); "Updates are drafted in English, Traditional Chinese or Simplified Chinese" (working, but the Chinese has not been reviewed by a native speaker); "One click to send a reminder" (one click drafts it; it still waits for approval); "Schedule, log and search every meeting" (no dedicated meeting search was found); "We will reply by email" (the form sends nothing yet).
+
+**Checked** in headless Chrome from the preview and the build: 50 states at each of 1440, 768 and 375 in light and dark, scroll sequences, a reduced-motion pass and a keyboard pass (`docs/landing/README.md`). **Not run:** Safari, Firefox, a real phone, a screen reader.
+
+### Part G: fixes from the review
+
+A read-only review of the landing page found nothing wrong with its isolation from the workspace, its scrolling, its form or its requests. What it found, now fixed:
+
+- A card that mounts after the page (the hero's Inbox card, when a wide window is made narrow) now arrives: each `Reveal` watches itself.
+- With reduced motion on a phone the notes no longer disappear during Families.
+- `/` for a signed-in person whose account lookup failed goes to the workspace's "could not load" screen, not the landing page.
+- The line from a draft to the notes is redrawn at most once a frame and only when it has moved. `--page` is written on the thread alone, `--p` is gone, and a scene far from the screen is not measured.
+- A tap elsewhere lets go of a highlighted line or fact (Safari does not focus a tapped button).
+- Jumps move focus to the chapter; "Request early access" lands on the form; a jump on a short screen now counts the chapter as current.
+- A control that takes focus before its scene reaches it is shown. The college keeps focus when it changes band. Approve and Undo keep focus without taking it from a visitor who has moved on.
+- The gate's and the log's dots say "Done" or "Not yet" to a screen reader. The header marks the current chapter.
+- A scene that grows after load is checked again before it is pinned.
+
+Left as it is: the form's last line, "We will reply by email. No newsletter.", is settled copy and sits under a notice that nothing is sent; a failed chunk load shows a blank page, as for the app; the back button after signing in can show the landing page from the browser's cache until it is reloaded; turning reduced motion on in the middle of a visit takes effect at the next load.
+
 ## Google Calendar (branch `google-calendar`, on top of `templates`)
 
 The counselor's meetings in Platinum and their own Google Calendar, kept in step both ways. Optional: asked for on its own in Settings, and the Google connection works without it.

@@ -156,9 +156,9 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
 export const WEEKLY_TEXT_MAX = 480
 const WEEKLY_TEXT_MAX_ITEMS = 4
 
-/** A student's address is this site, "/s/" and a 43-character token. */
+/** A student's address is this site, "/s#" and a 43-character token. */
 const STUDENT_TOKEN_LENGTH = 43
-const studentUrlLength = () => (typeof window === 'undefined' ? 0 : `${window.location.origin}/s/`.length + STUDENT_TOKEN_LENGTH)
+const studentUrlLength = () => (typeof window === 'undefined' ? 0 : `${window.location.origin}/s#`.length + STUDENT_TOKEN_LENGTH)
 
 /** How much longer a text gets when the placeholders in it become the student's real address. 0 without one. */
 export const linkRoom = (text: string): number =>

@@ -1,8 +1,9 @@
-// Everything the student link can read and change. There is no signed-in
-// person on this path, so it uses the service role, which bypasses row level
-// security. That makes this file the security boundary for students:
+// Everything a student can read and change, whether they came by their secret
+// link or with a student sign-in. A student is never a member of the firm, so
+// no table is open to them; this path uses the service role, which bypasses
+// row level security. That makes this file the security boundary for students:
 //
-//   * every query is filtered by the link's firm AND student,
+//   * every query is filtered by the link's (or the account's) firm AND student,
 //   * the page is built field by field from an allow-list (no parent details,
 //     no counselor notes, no drafts, no transcripts, no other students),
 //   * the only write is the database function student_link_write, which
@@ -51,6 +52,28 @@ export async function findLink(token: string): Promise<Link | undefined> {
   if (!data) return undefined
   if (linkIsExpired(data.expires_at)) return undefined
   return { firmId: data.firm_id, studentId: data.student_id, id: data.id }
+}
+
+/**
+ * The student a sign-in opens. A student account gets exactly what the link
+ * gets: the result is the same `Link` (firm and student, no link row), and
+ * studentPage, studentWrite and the two upload steps below run on it unchanged.
+ *
+ * 'off' when a member has turned the sign-in off or the student is archived:
+ * checked on every request, so turning it off takes effect on the next one.
+ * undefined when this person has no student account at all (a counselor, or
+ * someone who belongs to nothing).
+ */
+export async function findStudentAccount(userId: string): Promise<Link | 'off' | undefined> {
+  const db = serviceClient()
+  const { data, error } = await db.from('student_accounts').select('firm_id, student_id, disabled_at').eq('user_id', userId).maybeSingle()
+  if (error) throw new Error(`student account lookup failed: ${error.message}`)
+  if (!data) return undefined
+  if (data.disabled_at) return 'off'
+  const student = await db.from('students').select('archived').eq('firm_id', data.firm_id).eq('id', data.student_id).maybeSingle()
+  if (student.error) throw new Error(`student account lookup failed: ${student.error.message}`)
+  if (!student.data || student.data.archived) return 'off'
+  return { firmId: data.firm_id, studentId: data.student_id }
 }
 
 /** Done tasks stay on the page this long. */
