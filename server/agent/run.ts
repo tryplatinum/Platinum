@@ -7,6 +7,8 @@ import type { AgentProposalOut, AgentTiming, AgentTurnSource } from '../../share
 import { modelName } from '../claude.js'
 import { agentSystemPrompt } from '../prompts.js'
 import type { Json } from '../../src/lib/database.types.js'
+import type { AgentPage } from '../../shared/agent.js'
+import { pageLine } from './page.js'
 import { clearProgress, setProgress, stepFor } from './progress.js'
 import { dedupeSources, sourcesFromTool } from './sources.js'
 import { buildStudentHeader } from './summary.js'
@@ -164,6 +166,8 @@ export async function runAgent(args: {
   studentId: string | null
   message: string
   requestId?: string
+  /** Where the counselor is. Already checked against the fixed list of routes; the item is looked up again here. */
+  page?: AgentPage
 }): Promise<AgentRunResult> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     throw new AgentHttpError('no_key', 'ANTHROPIC_API_KEY is not set on the server.', 503)
@@ -178,10 +182,11 @@ export async function runAgent(args: {
     if (args.requestId) setProgress(args.requestId, args.counselorId, step)
   }
 
-  const [counselor, firmName, header] = await Promise.all([
+  const [counselor, firmName, header, page] = await Promise.all([
     loadCounselorName(args.user, args.counselorId),
     loadFirmName(args.user, args.firmId),
     args.studentId ? buildStudentHeader(args.user, args.firmId, args.counselorId, args.studentId) : Promise.resolve(''),
+    pageLine(args.user, args.firmId, args.page, args.studentId).catch(() => ''),
   ])
   let studentName: string | undefined
   let studentGradYear: number | undefined
@@ -225,6 +230,8 @@ export async function runAgent(args: {
     student: args.studentId
       ? { name: studentName!, gradYear: studentGradYear!, onboardedOn: studentOnboarded, header }
       : null,
+    page,
+    today: new Date().toISOString().slice(0, 10),
   })
 
   const client = new Anthropic()

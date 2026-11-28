@@ -14,75 +14,32 @@ import {
   TEMPLATE_KIND_LABEL,
   TEMPLATE_KIND_PURPOSE,
   addDaysISO,
-  bodyFor,
-  fillPlaceholders,
   offsetWords,
   placeholderToken,
-  planDates,
   planNeedsDate,
-  templateOutboxKind,
   unknownPlaceholders,
   type HandoutContent,
   type MessageContent,
-  type PlaceholderValues,
   type PlanTask,
   type TaskPlanContent,
   type TemplateKind,
 } from '../../shared/templates'
-import { formatDateLong, todayISO, type ISODate } from '../lib/dates'
-import { fullName, nextMeeting } from '../lib/derive'
+import { todayISO } from '../lib/dates'
+import { fullName } from '../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../lib/language'
-import type { NewMessageDraft, TemplateTask } from '../store/templates'
+import { draftFor, mainParent, placeholderValues, planRows } from '../lib/templateUse'
+import type { TemplateTask } from '../store/templates'
 import { useData, useStore } from '../store/store'
-import type { AppData, ID, OwnerType, Parent, Student, Template } from '../types'
+import type { AppData, ID, OwnerType, Student, Template } from '../types'
 import { Button, Disclosure, Empty, Field, Modal, Note, Pill, cx, inputBase, inputClass, textareaClass, useConfirm, useToast } from './ui'
+
+// Working out what a template makes for one student is in src/lib/templateUse.ts, shared with the assistant's proposals.
+export { draftFor, mainParent, placeholderValues }
 
 export const liveTemplates = (data: AppData, kinds?: TemplateKind[]) => (data.templates ?? []).filter((t) => !t.archived && (!kinds || kinds.includes(t.kind)))
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** The parent a message "to the parent" goes to: the main contact, or the first on file. */
-export const mainParent = (student: Student): Parent | undefined => student.parents.find((p) => p.isPrimary) ?? student.parents[0]
-
-/** What the code knows for one student. Each value comes from the record; none is written by a model. */
-export function placeholderValues(data: AppData, student: Student, parent: Parent | undefined, dueDate?: ISODate): PlaceholderValues {
-  const meeting = nextMeeting(data, student.id)
-  return {
-    student_first_name: student.firstName,
-    student_full_name: fullName(student),
-    parent_name: parent?.name,
-    counselor_name: data.firm.counselorName,
-    firm_name: data.firm.name,
-    next_meeting_date: meeting ? formatDateLong(meeting.date) : undefined,
-    due_date: dueDate ? formatDateLong(dueDate) : undefined,
-  }
-}
-
-/** The draft a message template makes for one student, or why it makes none. */
-export function draftFor(data: AppData, template: Template, student: Student, dueDate?: ISODate): { draft?: NewMessageDraft; problems: string[]; skipped?: string } {
-  const content = template.content as MessageContent
-  const parent = content.to === 'parent' ? mainParent(student) : undefined
-  if (content.to === 'parent' && !parent) return { problems: [], skipped: `${student.firstName} has no parent on file.` }
-  const language = parent?.language ?? 'en'
-  const chosen = bodyFor(content, language)
-  const filled = fillPlaceholders(chosen.body, placeholderValues(data, student, parent, dueDate), content.to === 'student')
-  return {
-    problems: filled.problems,
-    draft: {
-      studentId: student.id,
-      templateId: template.id,
-      toKind: content.to,
-      parentId: parent?.id,
-      toName: parent ? parent.name : fullName(student),
-      channel: parent ? parent.channel : (student.preferredChannel ?? 'text'),
-      language,
-      kind: templateOutboxKind(content.to),
-      subject: content.subject?.trim() || undefined,
-      body: filled.text,
-      untranslated: chosen.missing || undefined,
-    },
-  }
-}
 
 // ── Pick one ────────────────────────────────────────────────────────────────
 
@@ -159,12 +116,11 @@ function ApplyPlan({ template, students, onClose }: { template: Template; studen
   const rows = useMemo(() => {
     const out: Row[] = []
     for (const s of students) {
-      planDates(plan, today, anchor || undefined).forEach((t: PlanTask & { dueDate?: ISODate; past: boolean }, i) => {
+      planRows(plan, s, today, anchor || undefined).forEach((row, i) => {
         const key = `${s.id}:${i}`
         const edit = edits[key]
         if (edit === null) return
-        const parent = t.owner === 'parent' ? mainParent(s) : undefined
-        out.push({ key, studentId: s.id, title: t.title, owner: t.owner === 'parent' && !parent ? 'counselor' : t.owner, ownerParentId: parent?.id, dueDate: t.dueDate ?? '', detail: t.note, past: t.past, ...edit })
+        out.push({ key, ...row, ...edit })
       })
     }
     return out

@@ -9,14 +9,14 @@ import { useState } from 'react'
 import { formatDateLong, formatRelative, formatTime } from '../../lib/dates'
 import { briefFacts } from '../../lib/facts'
 import { prepareBrief } from '../../services/workflows'
-import { useData, useStore } from '../../store/store'
+import { useData } from '../../store/store'
+import { changeMeeting } from '../../lib/meetings'
 import type { Meeting, Student } from '../../types'
 import { LogMeetingModal, MeetingFormModal } from '../forms'
 import { AiErrorNote, AiTag, Button, Card, PlaceholderNote, SectionLabel, Thinking, textareaClass, useAi } from '../ui'
 
 export function BriefCard({ meeting, student, heading = 'Before your next meeting' }: { meeting: Meeting; student: Student; heading?: string }) {
   const data = useData()
-  const updateMeeting = useStore((s) => s.updateMeeting)
   const { busy, error, run } = useAi()
   const [modal, setModal] = useState<'reschedule' | 'log'>()
   const [editingAgenda, setEditingAgenda] = useState(false)
@@ -76,7 +76,7 @@ export function BriefCard({ meeting, student, heading = 'Before your next meetin
             aria-label="Agenda, one item per line"
             defaultValue={agenda.join('\n')}
             placeholder="One item per line"
-            onBlur={(e) => updateMeeting(meeting.id, { agenda: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })}
+            onBlur={(e) => changeMeeting(meeting.id, { agenda: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })}
           />
         ) : agenda.length ? (
           <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-relaxed">

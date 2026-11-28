@@ -7,16 +7,15 @@ import { LogMeetingModal, MeetingFormModal } from '../../../components/forms'
 import { BriefCard } from '../../../components/meeting/BriefCard'
 import { MeetingReport, meetingHeading } from '../../../components/meeting/MeetingReport'
 import { MeetingReview } from '../../../components/meeting/MeetingReview'
-import { removeMeetingFromCalendar } from '../../../lib/calendarSync'
+import { removeMeeting } from '../../../lib/meetings'
 import { Button, Card, CardHeader, Empty, PhoneFold, Pill, SectionLabel, useConfirm } from '../../../components/ui'
 import { formatDate, formatDateLong, formatTime } from '../../../lib/dates'
 import { meetingBuckets, meetingOneLine, pendingInMeeting, taskProgress, tasksFromMeeting } from '../../../lib/derive'
-import { useData, useStore } from '../../../store/store'
+import { useData } from '../../../store/store'
 import type { Student } from '../../../types'
 
 export default function MeetingsTab({ student }: { student: Student }) {
   const data = useData()
-  const deleteMeeting = useStore((s) => s.deleteMeeting)
   const confirm = useConfirm()
   const [modal, setModal] = useState<'log' | 'schedule'>()
   const [viewing, setViewing] = useState<string>()
@@ -83,8 +82,7 @@ export default function MeetingsTab({ student }: { student: Student }) {
                           className="self-start"
                           onClick={async () => {
                             if (await confirm({ title: 'Delete meeting', body: 'Delete this meeting and its notes? Tasks that came from it are kept.', action: 'Delete meeting' })) {
-                              deleteMeeting(m.id)
-                              void removeMeetingFromCalendar(m)
+                              removeMeeting(m)
                             }
                           }}
                         >

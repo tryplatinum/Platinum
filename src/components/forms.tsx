@@ -2,7 +2,7 @@
 // meetings, and logging a meeting that has happened. Each is a modal that
 // writes through a store action.
 
-import { removeMeetingFromCalendar, syncMeetingToCalendar } from '../lib/calendarSync'
+import { changeMeeting, removeMeeting, scheduleMeeting } from '../lib/meetings'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MAX_TEXT_CHARS } from '../../shared/constants'
@@ -217,7 +217,6 @@ export function ParentFormModal({ studentId, parent, onClose }: { studentId: ID;
 
 export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: ID; meeting?: Meeting; onClose: () => void }) {
   const data = useData()
-  const { addMeeting, updateMeeting, deleteMeeting } = useStore.getState()
   const confirm = useConfirm()
   const students = activeStudents(data)
   const [f, setF] = useState({
@@ -241,8 +240,8 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
             e.preventDefault()
             const fields = { title: f.title.trim() || 'Check-in', date: f.date, time: f.time, durationMin: Number(f.durationMin) || 45, location: f.location.trim() || undefined }
             // The meeting is saved first and never waits for Google: its event follows, or it says "Not on your calendar yet".
-            const id = meeting ? (updateMeeting(meeting.id, fields), meeting.id) : addMeeting({ studentId: f.studentId, ...fields })
-            void syncMeetingToCalendar(id)
+            if (meeting) changeMeeting(meeting.id, fields)
+            else scheduleMeeting({ studentId: f.studentId, ...fields })
             onClose()
           }}
         >
@@ -283,8 +282,7 @@ export function MeetingFormModal({ studentId, meeting, onClose }: { studentId?: 
               meeting
                 ? async () => {
                     if (!(await confirm({ title: 'Cancel this meeting', body: 'Cancel this meeting and remove it from the schedule?', action: 'Cancel this meeting' }))) return
-                    deleteMeeting(meeting.id)
-                    void removeMeetingFromCalendar(meeting)
+                    removeMeeting(meeting)
                     onClose()
                   }
                 : undefined
@@ -309,7 +307,7 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
   const data = useData()
   const navigate = useNavigate()
   const toast = useToast()
-  const { addMeeting, completeMeeting } = useStore.getState()
+  const { completeMeeting } = useStore.getState()
   const students = activeStudents(data)
   const [student, setStudent] = useState(studentId ?? students[0]?.id ?? '')
   const scheduled = (() => {
@@ -342,7 +340,8 @@ export function LogMeetingModal({ studentId, meetingId, onClose }: { studentId?:
       // Log the meeting first so nothing typed is lost if drafting fails.
       let id = logged
       if (!id) {
-        id = which === NEW_MEETING ? addMeeting({ studentId: student, title: title.trim() || 'Meeting', date: heldOn, time: '16:00' }) : which
+        // A meeting logged after it was held is a record, not an appointment: it does not go on the calendar.
+        id = which === NEW_MEETING ? scheduleMeeting({ studentId: student, title: title.trim() || 'Meeting', date: heldOn, time: '16:00' }, { calendar: false }) : which
         completeMeeting(id, notes, heldOn)
         setLogged(id)
       }

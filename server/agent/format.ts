@@ -69,10 +69,17 @@ export function formatDraftConfirmation(data: unknown): string {
   return `I drafted ${/^[aeiou]/i.test(channel) ? 'an' : 'a'} ${channel} to ${row.toName} in ${language}. You can approve it below.`
 }
 
+const SAID_BY_THE_TOOL = ['propose_schedule_meeting', 'propose_apply_template', 'propose_task_change', 'propose_add_college']
+
 /** The reply for a tool whose output is the whole answer. Empty when this tool is not one of those. */
 export function formatAnswer(name: string, data: unknown): string {
   if (name === 'prepare_meeting_brief') return formatBrief(data)
   if (name === 'essay_brainstorm') return formatBrainstorm(data)
   if (name === 'propose_message' || name === 'propose_parent_update') return formatDraftConfirmation(data)
+  // The newer proposals write their own one-line confirmation on the server, from the record, not from the model.
+  if (SAID_BY_THE_TOOL.includes(name)) {
+    const say = data && typeof data === 'object' ? (data as { say?: unknown }).say : undefined
+    return typeof say === 'string' ? say : ''
+  }
   return ''
 }

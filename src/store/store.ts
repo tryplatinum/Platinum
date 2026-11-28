@@ -9,6 +9,7 @@
 
 import { create } from 'zustand'
 import { withFreshIds } from '../data/ids'
+import { applyProposal } from '../lib/proposals'
 import { ACTIVITY_LIMIT, applyChanges, cancelMessage, createStudentLink, decideAgentProposal, diffData, firstNameOf, listStudentLinks, loadAll, logMeetingDraftsReady, queueMessage, revokeStudentLink, rotateStudentLink, skipReminder as writeSkip, undoReminderSkip, updateAgentProposalPayload, type Changes } from '../data/repo'
 import { buildSeed, DEFAULT_REMINDER_RULES } from '../data/seed'
 import { notify, notifyQueued, notifySkipUndo } from '../lib/notify'
@@ -38,9 +39,7 @@ import type {
   ParentCopy,
   ParentReport,
   MeetingAI,
-  OwnerType,
   ProfilePatch,
-  TaskCategory,
   Recap,
   ReminderRule,
   SavedBrief,
@@ -1169,51 +1168,22 @@ export const useStore = create<State & Actions>()((set, get) => {
       if (account.status !== 'ready') throw new Error('Sign in first.')
       const proposal = data.agentProposals.find((p) => p.id === id && p.status === 'pending')
       if (!proposal) return undefined
-      const payload = proposal.payload
-      const student = data.students.find((s) => s.id === proposal.studentId)
-      let messageId: ID | undefined
-
-      if (proposal.kind === 'message' || proposal.kind === 'parent_update') {
-        const body = String(payload.body ?? '')
-        const toKind = proposal.kind === 'parent_update' || payload.recipientKind === 'parent' ? 'parent' : 'student'
-        const message: OutgoingMessage = {
-          studentId: proposal.studentId,
-          toKind,
-          toName: String(payload.toName ?? (toKind === 'student' ? student?.firstName : 'Parent') ?? 'Recipient'),
-          parentId: typeof payload.parentId === 'string' ? payload.parentId : undefined,
-          channel: (payload.channel as OutgoingMessage['channel']) ?? 'text',
-          language: (payload.language as OutgoingMessage['language']) ?? 'en',
-          kind: proposal.kind === 'parent_update' ? 'parent_report' : ((payload.outboxKind as OutgoingMessage['kind']) ?? 'reminder_upcoming'),
-          body,
-          bodyEn: typeof payload.bodyEn === 'string' ? payload.bodyEn : undefined,
-          trigger: 'approved',
-        }
-        messageId = get().sendMessage(message)
-      } else if (proposal.kind === 'task') {
-        get().addTask({
-          studentId: proposal.studentId,
-          title: String(payload.title ?? 'Task'),
-          detail: typeof payload.detail === 'string' ? payload.detail : undefined,
-          category: (payload.category as TaskCategory) ?? 'planning',
-          owner: (payload.owner as OwnerType) ?? 'student',
-          ownerParentId: typeof payload.ownerParentId === 'string' ? payload.ownerParentId : undefined,
-          dueDate: String(payload.dueDate ?? todayISO()),
-        })
-      } else if (proposal.kind === 'profile_change' && student && payload.patch) {
-        change((d) => {
-          const next = patchStudent(d, proposal.studentId, (s) => applyProfilePatch(s, payload.patch as ProfilePatch))
-          return logActivity(next, proposal.studentId, 'counselor', `Approved profile change from the assistant: ${String(payload.field ?? 'field')}`)
-        })
-      } else if (proposal.kind === 'meeting_times') {
-        change((d) =>
-          logActivity(
-            d,
-            proposal.studentId,
-            'counselor',
-            `Recorded meeting times from the assistant: ${Array.isArray(payload.slots) ? (payload.slots as { when?: string }[]).map((s) => s.when).filter(Boolean).join(', ') : 'slots'}`,
-          ),
-        )
-      }
+      // The meeting path keeps the calendar in step; it is loaded here because it uses this store.
+      const { scheduleMeeting } = await import('../lib/meetings')
+      // Every kind is carried out in one place (src/lib/proposals.ts), by the actions the screens already use.
+      const { messageId } = applyProposal(proposal, data, {
+        sendMessage: (message) => get().sendMessage(message),
+        addTask: (task) => get().addTask(task),
+        changeProfile: (studentId, patch, field) =>
+          change((d) => logActivity(patchStudent(d, studentId, (s) => applyProfilePatch(s, patch)), studentId, 'counselor', `Approved profile change from the assistant: ${field}`)),
+        noteMeetingTimes: (studentId, times) => change((d) => logActivity(d, studentId, 'counselor', `Recorded meeting times from the assistant: ${times.join(', ') || 'slots'}`)),
+        scheduleMeeting,
+        addTemplateTasks: (templateId, tasks) => get().addTemplateTasks(templateId, tasks),
+        addMessageDrafts: (drafts) => get().addMessageDrafts(drafts),
+        updateTask: (taskId, patch) => get().updateTask(taskId, patch),
+        markTaskDone: (taskId) => get().updateTaskProgress(taskId, { status: 'done' }, 'counselor'),
+        addCollege: (college) => get().addCollege(college),
+      })
 
       try {
         await decideAgentProposal(id, 'approved')

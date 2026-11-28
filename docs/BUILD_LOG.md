@@ -15,6 +15,21 @@ No new screens. This run connects what PR 39 left on main. On 2026-11-27 `npx su
 
 **Run by hand in the preview** (headless Chrome, 1440 wide): approve the open draft in the Inbox, see Undo, press Undo, approve again, wait out the 10 seconds, open Messages (the message is Sent, none left Queued), open Activity (the approved line, the cancelled line and the sent line are there). No console errors.
 
+### Part B: the assistant, central
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261211000001_agent_proposal_kinds.sql` (the kind check on `agent_proposals` takes four more kinds). Until it is pushed, the four new proposal tools fail at the insert and the assistant says so; everything else works.
+
+- **One mapping of rows to app data.** The row mappers and the load moved from `src/data/repo.ts` to `shared/caseload.ts` (`loadCaseload(client, firmId, userId)`). The browser's `loadAll` calls it, and the server calls it with the counselor's own client, so `list_pending_review` and `list_reminders_due` run `src/lib/inbox.ts` and `src/lib/reminders.ts` themselves. Loaded once per request (`ctx.caseload`).
+- **New read tools** in `server/agent/tools.ts`: `find_students` (general thread only, cap 50), `list_pending_review`, `list_meetings`, `list_reminders_due`, `list_files`, `list_college_list`, `list_essays`, `list_templates`, `list_calendar`. All read with `ctx.user`; on a student thread each refuses another student's id.
+- **Where the counselor is.** `AgentRequestSchema.page`; `agentRouteFor` and `agentItemFor` in `shared/agent.ts` turn the address and the open Inbox row into it; `server/agent/page.ts` looks the item up and writes the sentence.
+- **New proposal kinds**: `schedule_meeting` (replaces `meeting_times`; the tool `propose_meeting_times` is gone, old rows still render and decide), `apply_template`, `task_change`, `add_college`. Payload schemas and summary lines in `shared/agent.ts`; card bodies in `ApprovalCard.tsx` (`ProposedChange`); approving is `applyProposal` in `src/lib/proposals.ts`, a pure function over the store's actions so it can be checked offline. `propose_message` takes an optional `taskId` and refuses a second draft to the same person about a task that already has one waiting.
+- **Suggestions** (`src/lib/assistantPrompts.ts`): each names the tool behind it, per page.
+- **`scripts/test-assistant.ts`** (127 checks, in `test:notes`, also `npm run test:assistant`).
+- **Preview:** `?proposals=1` puts one pending proposal of each kind in the Inbox. `window.__store` is the store, for a script.
+- Two small things found on the way: a proposal card printed its reason twice (the source line and "Why:"); summaries printed dates as `2027-01-07`. Both fixed.
+
+**Run by hand in the preview** (`preview.html?path=/app&proposals=1`, headless Chrome): opened the meeting card, picked the second of three slots, approved: one meeting, at that slot. Approved the template card: two tasks. Approved the task change: the due date moved. Approved the college: on the list. No console errors. **Never run:** any of this with the real model or the real database.
+
 ## Accounts and landing (branch `accounts-and-landing`, from `main` at `c23ea84`)
 
 One branch, one pull request, a commit or more per part. **No migration in this branch has been pushed**, and no account flow has run against the real database. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261207000001` (templates and calendar included) on the remote.

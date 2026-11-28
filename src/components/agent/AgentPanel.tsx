@@ -11,7 +11,7 @@ import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { assistantPrompts } from '../../lib/assistantPrompts'
-import { proposalSummary, type AgentHistoryMessage, type AgentProposalKind, type AgentProposalOut, type AgentProposalStatus, type AgentTurnSource } from '../../../shared/agent'
+import { agentItemFor, agentRouteFor, proposalSummary, type AgentHistoryMessage, type AgentPage, type AgentProposalKind, type AgentProposalOut, type AgentProposalStatus, type AgentTurnSource } from '../../../shared/agent'
 import { useApprovalSends } from '../../lib/approvalSends'
 import { findStudent, fullName, proposalApproval } from '../../lib/derive'
 import agentClient, { AgentNetworkError, AgentRequestError } from '../../services/agentClient'
@@ -30,6 +30,10 @@ const KIND_LABEL: Record<AgentProposalKind, string> = {
   task: 'Task',
   profile_change: 'Profile change',
   meeting_times: 'Meeting times',
+  schedule_meeting: 'Meeting',
+  apply_template: 'Template',
+  task_change: 'Task change',
+  add_college: 'College',
 }
 
 const STATUS_LABEL: Record<AgentProposalStatus, string> = { pending: 'Pending', approved: 'Approved', discarded: 'Discarded' }
@@ -343,6 +347,14 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
     })
   }
 
+  /** Where the counselor is as they ask: a route from a fixed list, and on the Inbox the row that is open. No text is sent. */
+  const pageNow = (): AgentPage | undefined => {
+    const route = agentRouteFor(pathname)
+    if (!route) return undefined
+    const open = route === 'inbox' ? new URLSearchParams(search).get('item') : null
+    return { route, ...(open ? agentItemFor(open) : {}) }
+  }
+
   const submit = (text: string, retry = false) => {
     const body = text.trim()
     if (!body) return
@@ -369,7 +381,7 @@ export function AgentPanel({ open, onClose }: { open: boolean; onClose: () => vo
       messages: retry ? withoutRetry(current.messages, body) : [...current.messages, { id: nextId(), role: 'user', text: body }],
     }))
     void agentClient
-      .send(scope, body, requestId)
+      .send(scope, body, requestId, pageNow())
       .then((response) => {
         const seconds = (Date.now() - startedAt.current) / 1000
         console.debug(`[agent] reply in ${seconds.toFixed(1)}s`)

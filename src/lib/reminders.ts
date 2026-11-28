@@ -36,7 +36,7 @@ export interface ReminderDraft {
 }
 
 /** A reminder that went out this recently is not queued again. */
-const REPEAT_AFTER_DAYS = 3
+export const REPEAT_AFTER_DAYS = 3
 
 export type ReminderKind = 'upcoming' | 'late' | 'escalation'
 type Kind = ReminderKind
