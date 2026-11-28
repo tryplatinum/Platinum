@@ -17,10 +17,11 @@ import type { ParentReport, ReportSettings, Student } from '../../../types'
 import { UNDO_SECONDS } from '../../../../shared/outbox'
 
 const SCHEDULES: { value: ReportSettings['schedule']; label: string }[] = [
-  { value: 'after_meetings', label: 'After each meeting' },
-  { value: 'every_two_weeks', label: 'Every two weeks' },
-  { value: 'monthly', label: 'Monthly' },
   { value: 'manual', label: 'Only when I ask' },
+  // Saved, and nothing acts on them yet: there is no scheduler.
+  { value: 'after_meetings', label: 'After each meeting (not active yet)' },
+  { value: 'every_two_weeks', label: 'Every two weeks (not active yet)' },
+  { value: 'monthly', label: 'Monthly (not active yet)' },
 ]
 
 export default function ReportsTab({ student }: { student: Student }) {
@@ -109,7 +110,7 @@ export default function ReportsTab({ student }: { student: Student }) {
               </CheckRow>
             ))}
           </div>
-          <p className="text-xs text-muted">The schedule is a note to yourself: nothing is drafted on a timer. An update after a meeting is drafted when you log it. Language and channel are set on each parent in the Overview tab.</p>
+          <p className="text-xs text-muted">Only “Only when I ask” works today. The other choices are saved but not active yet: no report is drafted on a schedule. An update after a meeting is drafted when you log it, whichever is chosen. Language and channel are set on each parent in the Overview tab.</p>
         </Card>
 
         <Card className="flex flex-col gap-3 p-5">

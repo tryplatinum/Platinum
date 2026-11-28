@@ -35,6 +35,12 @@ export interface ReminderDraft {
   message: Omit<OutboxMessage, 'id' | 'sentAt' | 'status' | 'sendAfter' | 'approvedBy' | 'approvedAt' | 'providerMessageId' | 'error' | 'trigger'>
 }
 
+/**
+ * What each mode is called on screen. The stored value 'automatic' is unchanged, but nothing
+ * here sends by itself: such a reminder is queued for the next daily send, which a person starts.
+ */
+export const REMINDER_MODE_LABEL = { automatic: 'Next daily send', needs_approval: 'Ask me first', off: 'Off' } as const
+
 /** A reminder that went out this recently is not queued again. */
 export const REPEAT_AFTER_DAYS = 3
 
@@ -83,6 +89,15 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
       .filter((o) => o.status !== 'cancelled' && o.dedupeKey && daysBetween(o.sentAt.slice(0, 10), today) < REPEAT_AFTER_DAYS)
       .map((o) => o.dedupeKey),
   )
+  // A reminder about the task sent by hand (the "Remind" button, or one the assistant drafted)
+  // carries no rule key. It still counts: the same person is not reminded of the same task twice
+  // inside the repeat window.
+  const about = (taskId: ID, parentId: ID | undefined) => `${taskId}:${parentId ?? 'student'}`
+  const recentlyReminded = new Set(
+    data.outbox
+      .filter((o) => o.status !== 'cancelled' && o.taskId && daysBetween(o.sentAt.slice(0, 10), today) < REPEAT_AFTER_DAYS)
+      .map((o) => about(o.taskId!, o.toKind === 'parent' ? o.parentId : undefined)),
+  )
   const skipped = activeSkipKeys(data.reminderSkips ?? [], today)
   const queue: ReminderDraft[] = []
   const escalated = new Set<ID>()
@@ -90,7 +105,7 @@ export function reminderQueue(data: AppData): ReminderDraft[] {
 
   const add = (r: ReminderRule, s: Student, t: Task, message: ReminderDraft['message']) => {
     const key = `${r.id}:${t.id}:${message.parentId ?? 'student'}`
-    if (r.mode === 'off' || recentlySent.has(key) || skipped.has(key)) return
+    if (r.mode === 'off' || recentlySent.has(key) || recentlyReminded.has(about(t.id, message.parentId)) || skipped.has(key)) return
     queue.push({ key, ruleId: r.id, mode: r.mode, studentId: s.id, taskId: t.id, taskTitle: t.title, message: { ...message, dedupeKey: key } })
   }
 

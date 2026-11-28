@@ -188,8 +188,8 @@ const names = (AGENT_TOOLS as { name: string }[]).map((t) => t.name)
   check('list_pending_review returns exactly what the Inbox counts, from the Inbox’s own code', rows.length === inboxSize(inboxContents(store)) && rows.length > 0, `${rows.length} rows`)
   check('…including the reminder set to “Ask me first”, with its task and who it goes to', rows.some((r) => r.kind === 'Reminder' && r.taskId === TASK_LATE && r.to === 'Emily Chen'), text(rows))
   check('…and the essay feedback waiting for approval', rows.some((r) => r.kind === 'Essay feedback'))
-  const kevins = text((await data(general(), 'list_pending_review', { studentId: KEVIN }))?.waiting)
-  check('for one student it is that student’s only', !kevins.includes('Emily') && !kevins.includes(TASK_LATE), kevins)
+  const kevins = (await data(general(), 'list_pending_review', { studentId: KEVIN }))?.waiting as unknown[]
+  check('for one student it is that student’s only; Kevin’s reminder went out by hand yesterday, so none waits', kevins.length === 0, text(kevins))
 
   const meetings = await data(general(), 'list_meetings', { from: day(-10), to: day(10) })
   const list = (meetings?.meetings ?? []) as { id: string; status: string; notesLogged: boolean; student: string }[]
@@ -433,6 +433,27 @@ const caseload = (): Promise<AppData> => loadCaseload(user, FIRM, COUNSELOR)
   function general_() {
     return context(null)
   }
+}
+
+// ── A reminder sent by hand is not queued again by the rule ─────────────────
+{
+  const { reminderQueue, REMINDER_MODE_LABEL } = await import('../src/lib/reminders.js')
+  const lists = (store: AppData, taskId: string) => reminderQueue(store).some((r) => r.taskId === taskId && r.message.toKind === 'student')
+  const before = await caseload()
+  check('a late task with nothing sent is in the rule’s queue', lists(before, TASK_LATE))
+  // What the "Remind" button queues: the task, the person, and no rule key.
+  const byHand = { id: 'm', studentId: EMILY, sentAt: at(0), toKind: 'student' as const, toName: 'Emily Chen', channel: 'email' as const, language: 'en' as const, kind: 'reminder_late' as const, body: 'x', trigger: 'approved' as const, taskId: TASK_LATE, status: 'queued' as const, sendAfter: at(0) }
+  check('remind by hand, then the rule’s queue no longer lists it', !lists({ ...before, outbox: [...before.outbox, byHand] }, TASK_LATE))
+  check('…undo that reminder and it is listed again', lists({ ...before, outbox: [...before.outbox, { ...byHand, status: 'cancelled' as const }] }, TASK_LATE))
+  check('…a reminder to a parent about the task does not stand in for the student’s', lists({ ...before, outbox: [...before.outbox, { ...byHand, toKind: 'parent' as const, parentId: DAD, toName: 'Chen Chih-hao' }] }, TASK_LATE))
+  check(`…and after ${3} days it may be sent again`, lists({ ...before, outbox: [...before.outbox, { ...byHand, sentAt: at(-4) }] }, TASK_LATE))
+  check('a message about another task does not hide this one', lists({ ...before, outbox: [...before.outbox, { ...byHand, taskId: TASK_DOC }] }, TASK_LATE))
+
+  const src = (file: string) => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+  check('no mode is called “Automatic” on screen: it is the next daily send, which a person starts', REMINDER_MODE_LABEL.automatic === 'Next daily send' && ['screens/counselor/Settings.tsx', 'screens/counselor/Messages.tsx', 'screens/counselor/Meetings.tsx'].every((f) => !/[“"'>]Automatic|'automatic' : 'automatic'/.test(src(f))))
+  check('…and the stored value is unchanged', /export type ReminderMode = 'automatic' \| 'needs_approval' \| 'off'/.test(src('types.ts')))
+  const reports = src('screens/counselor/student/ReportsTab.tsx')
+  check('the report schedules that nothing acts on say “not active yet”', (reports.match(/\(not active yet\)/g) ?? []).length === 3 && /label: 'Only when I ask' }/.test(reports))
 }
 
 // ── One way to make, move or remove a meeting ───────────────────────────────
