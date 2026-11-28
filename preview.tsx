@@ -10,6 +10,8 @@
 //   signup=confirm                                  sign-up answers "confirm your address first"
 //   signin=none|invited|expired|on|off|young        one student's sign-in, on the student page
 //   lastowner=1                                     the firm page with a single owner
+// Saving and sending work here with no database: preview.backend.ts answers the store's calls in memory,
+// and a message approved in the Inbox is "sent" when its hold is over (nothing leaves the page).
 // Every person, firm and address here is invented.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -19,7 +21,9 @@ import '@fontsource-variable/manrope/wght.css'
 import './src/index.css'
 import App from './src/App'
 import { ToastProvider } from './src/components/ui'
+import { stableId, withFreshIds } from './src/data/ids'
 import { buildSeed } from './src/data/seed'
+import { previewBackend } from './preview.backend'
 import { supabase } from './src/lib/supabase'
 import { useStore } from './src/store/store'
 import type { FirmMember, PendingInvitation, StudentSignIn } from './shared/account'
@@ -27,8 +31,29 @@ import { maySignIn } from './shared/account'
 
 const params = new URLSearchParams(location.search)
 document.documentElement.dataset.theme = params.get('theme') ?? 'light'
-const path = params.get('path') ?? '/app'
-const seed = buildSeed()
+// The sample's readable ids ("s-kevin") become uuids, as the database needs, and the same ones every
+// time, so an address from one run opens in the next. A readable id in ?path= is swapped the same way.
+const readable = buildSeed()
+const seed = withFreshIds(buildSeed(), stableId)
+
+// ?proposals=1 puts one pending assistant proposal of each kind in the Inbox,
+// so the cards can be looked at and decided without a model.
+if (params.get('proposals')) {
+  const student = seed.students[0]
+  const task = seed.tasks.find((t) => t.studentId === student.id && t.status !== 'done')
+  const plan = seed.templates.find((t) => t.kind === 'task_plan' && !t.archived)
+  const soon = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
+  const proposal = (kind: (typeof seed.agentProposals)[number]['kind'], payload: Record<string, unknown>, rationale: string) => ({ id: stableId(`proposal-${kind}`), studentId: student.id, threadId: stableId('thread'), kind, payload, rationale, sources: [], status: 'pending' as const, createdAt: new Date().toISOString() })
+  seed.agentProposals.push(
+    proposal('schedule_meeting', { title: 'Essay check-in', durationMin: 45, slots: [{ date: soon(4), time: '16:00', reason: 'After school' }, { date: soon(5), time: '09:30', reason: 'Before your first meeting' }, { date: soon(6), time: '17:15' }], chosen: 0 }, 'You asked for a time next week.'),
+    ...(plan ? [proposal('apply_template', { templateKind: 'task_plan', templateId: plan.id, templateName: plan.name, tasks: [{ title: 'Ask a teacher for a recommendation', owner: 'student', dueDate: soon(7) }, { title: 'Send the brag sheet', owner: 'parent', dueDate: soon(14) }] }, 'You asked to start this plan.')] : []),
+    ...(task ? [proposal('task_change', { taskId: task.id, before: { title: task.title, owner: task.owner, dueDate: task.dueDate, status: task.status }, patch: { dueDate: soon(9) }, markDone: false }, 'They asked for one more week.')] : []),
+    proposal('add_college', { unitid: 100300, name: 'Alder University', plan: 'EA', deadline: soon(40) }, 'It came up in the last meeting.'),
+    proposal('meeting_times', { slots: [{ when: 'Tue 4:00 PM', reason: 'After school' }, { when: 'Wed 9:30 AM', reason: 'Before class' }] }, 'An older proposal, made before meetings could be scheduled from here.'),
+  )
+}
+const readableIds = [...readable.students.map((s) => s.id), ...readable.tasks.map((t) => t.id), ...readable.meetings.map((m) => m.id), ...readable.documents.map((d) => d.id)].sort((a, b) => b.length - a.length)
+const path = readableIds.reduce((address, id) => address.replaceAll(id, stableId(id)), params.get('path') ?? '/app')
 const who = params.get('account') ?? 'owner'
 const student = seed.students[0]
 const studentPage = { ...seed, students: [{ ...student, lastName: '', parents: [], counselorNotes: '' }], tasks: seed.tasks.filter((t) => t.studentId === student.id), meetings: seed.meetings.filter((m) => m.studentId === student.id), colleges: seed.colleges.filter((c) => c.studentId === student.id), documents: seed.documents.filter((d) => d.studentId === student.id) }
@@ -144,6 +169,9 @@ window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.includes('/api/student')) return new Response(JSON.stringify({ ok: true, data: studentPage }), { headers: { 'content-type': 'application/json' } })
   if (url.includes('/api/account')) return accountApi(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>)
+  // Saving, sending and the hold: answered in memory (preview.backend.ts). Nothing reaches a database or a transport.
+  const saved = previewBackend(url, init)
+  if (saved) return saved
   return real(input, init)
 }
 
@@ -196,3 +224,6 @@ createRoot(document.getElementById('root')!).render(
     </MemoryRouter>
   </StrictMode>,
 )
+
+// For a script driving the preview: the store, to read what a click changed.
+;(window as unknown as { __store: typeof useStore }).__store = useStore

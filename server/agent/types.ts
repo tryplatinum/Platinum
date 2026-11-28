@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgentProposalKind, AgentProposalSource } from '../../shared/agent.js'
 import type { Database, Json } from '../../src/lib/database.types.js'
+import type { AppData } from '../../src/types.js'
 
 export type Db = SupabaseClient<Database>
 
@@ -21,6 +22,8 @@ export interface AgentContext {
   service: Db
   /** Proposals created in this request. */
   createdProposals: CreatedProposal[]
+  /** The firm's caseload as the counselor can read it, loaded at most once a request (server/agent/tools.ts). */
+  caseload?: Promise<AppData>
 }
 
 export interface CreatedProposal {

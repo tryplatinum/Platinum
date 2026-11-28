@@ -3,7 +3,8 @@
 // The Inbox, the assistant panel and the student's own tabs all use this
 // card, so a draft reads and is edited the same way wherever it is met.
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { AddCollegePayload, ApplyTemplatePayload, ScheduleMeetingPayload, TaskChangePayload, slotWords } from '../../shared/agent'
 import { Link } from 'react-router-dom'
 import { STUDENT_LINK_PLACEHOLDER, STUDENT_LINK_PREVIEW, previewStudentLink } from '../../shared/dispatch'
 import { UNDO_SECONDS } from '../../shared/outbox'
@@ -15,7 +16,8 @@ import { WEEKLY_TEXT_MAX, reminderQueue } from '../lib/reminders'
 import { copyText, textWithStudentLink } from '../lib/studentLinks'
 import { translateProposal } from '../services/agentClient'
 import { ProposalNotDecided, useData, useStore } from '../store/store'
-import type { DraftParentUpdate, DraftTask, ID, OwnerType, ProfileChange, ProfilePatch } from '../types'
+import { formatDate } from '../lib/dates'
+import type { AgentProposal, DraftParentUpdate, DraftTask, ID, OwnerType, ProfileChange, ProfilePatch } from '../types'
 import { TimeLeft, focusPage, useLeaving } from './motion'
 import { WeeklyTextSend, WeeklyTextSendNote, weeklyTextLength, weeklyTextTooLong } from './WeeklyTextSend'
 import { Button, Field, Modal, Pill, SendLabel, cx, inputBase, inputClass, textareaClass, useToast } from './ui'
@@ -89,6 +91,8 @@ export function ApprovalCard({
   const weekly = item.kind === 'weekly_text' ? data.weeklyTexts.find((w) => w.id === item.weeklyTextId) : undefined
   const meeting = item.meetingId ? data.meetings.find((m) => m.id === item.meetingId) : undefined
   const profile = item.kind === 'profile' ? meeting?.ai?.profileChanges.find((c) => c.id === item.draftId) : undefined
+  // A proposal that is a change to the record, drawn from the proposal itself.
+  const proposed = DRAWN_FROM_THE_PROPOSAL.includes(item.kind) && item.proposalId ? data.agentProposals.find((p) => p.id === item.proposalId) : undefined
   const recap = item.kind === 'recap' ? meeting?.recap : undefined
   // Nothing to send or save: the database would refuse it.
   const blank = (!item.preview.trim() && (item.isSend || item.kind === 'remember' || item.kind === 'task')) || Boolean(item.problem)
@@ -188,6 +192,8 @@ export function ApprovalCard({
           {item.caution && !leaving && <p className="mt-1 text-[13px] font-medium text-warn">{item.caution}</p>}
           {children ? (
             <div className="mt-3">{children}</div>
+          ) : proposed ? (
+            <ProposedChange proposal={proposed} disabled={Boolean(leaving) || busy} />
           ) : profile ? (
             <div className="mt-2 text-sm leading-relaxed">
               <p className="font-medium">{profile.label}</p>
@@ -211,7 +217,7 @@ export function ApprovalCard({
             </>
           )}
           {/* The assistant's source line is its reason, which the panel shows once, below. */}
-          {!children && !(compact && item.rationale) && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
+          {!children && !(compact && item.rationale) && item.sourceLine !== item.rationale && <p className="mt-1 text-[13px] text-muted">{item.sourceLine}</p>}
           {(item.kind === 'agent_message' || item.kind === 'agent_parent_update') && item.language && item.language !== 'en' && item.proposalId && <ShowInEnglish proposalId={item.proposalId} />}
           {item.rationale && item.kind.startsWith('agent_') && <p className="mt-1 text-[13px] text-ink-soft">Why: {item.rationale}</p>}
           {item.sourcesLine && <p className="mt-0.5 text-[13px] text-muted">Sources: {item.sourcesLine}</p>}
@@ -426,6 +432,111 @@ export function ApproveAll({ items, title = 'Approve all in this group?' }: { it
   )
 }
 
+const OWNER_WORD = { student: 'Student', parent: 'Parent', counselor: 'You' } as const
+
+/**
+ * What the assistant proposes, drawn from the proposal itself, for the kinds
+ * that are a change to the record and not a message: a meeting with times to
+ * choose from, a template's dated tasks, a task before and after, a college.
+ * The same on the card in the chat and the card in the Inbox. Choosing a time
+ * saves the choice on the proposal, so both cards agree and approving
+ * schedules that one.
+ */
+function ProposedChange({ proposal, disabled }: { proposal: AgentProposal; disabled: boolean }) {
+  const group = useId()
+  if (proposal.kind === 'schedule_meeting') {
+    const meeting = ScheduleMeetingPayload.safeParse(proposal.payload)
+    if (!meeting.success) return <p className="mt-2 text-sm text-bad">This proposal could not be read. Discard it and ask again.</p>
+    const { slots, chosen, title, durationMin, location } = meeting.data
+    const at = Math.min(chosen, slots.length - 1)
+    return (
+      <fieldset className="mt-2 flex flex-col gap-1 text-sm" disabled={disabled}>
+        <legend className="font-medium">
+          {title} · {durationMin} minutes{location ? ` · ${location}` : ''}
+        </legend>
+        {slots.length > 1 && <p className="text-[13px] text-muted">Choose a time. Approving schedules that one only.</p>}
+        {slots.map((slot, i) => (
+          <label key={`${slot.date}${slot.time}`} className="check-row">
+            <input type="radio" name={group} checked={i === at} onChange={() => useStore.getState().updateAgentProposal(proposal.id, { ...proposal.payload, chosen: i })} />
+            <span className="min-w-0">
+              <span className="font-semibold">{slotWords(slot)}</span>
+              {slot.reason && <span className="block text-[13px] text-muted">{slot.reason}</span>}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+    )
+  }
+  if (proposal.kind === 'apply_template') {
+    const use = ApplyTemplatePayload.safeParse(proposal.payload)
+    if (!use.success) return <p className="mt-2 text-sm text-bad">This proposal could not be read. Discard it and ask again.</p>
+    if (use.data.templateKind === 'message') {
+      return (
+        <p className="mt-2 max-w-prose text-sm leading-relaxed">
+          Use the message template <span className="font-semibold">“{use.data.templateName}”</span> for the {use.data.to}
+          {use.data.dueDate ? `, with ${formatDate(use.data.dueDate)} as the due date it mentions` : ''}. Approving puts its draft in the Inbox for you to read. Nothing is sent by this.
+        </p>
+      )
+    }
+    return (
+      <div className="mt-2 text-sm leading-relaxed">
+        <p className="font-medium">
+          From the plan “{use.data.templateName}”: {use.data.tasks.length} {use.data.tasks.length === 1 ? 'task' : 'tasks'}
+          {use.data.anchor ? `, counted back from ${formatDate(use.data.anchor)}` : ''}
+        </p>
+        <ul className="mt-1 flex flex-col gap-0.5">
+          {use.data.tasks.map((task) => (
+            <li key={`${task.title}${task.dueDate}`} className="flex flex-wrap justify-between gap-x-4">
+              <span className="min-w-0">{task.title}</span>
+              <span className="nums shrink-0 text-[13px] text-muted">
+                {OWNER_WORD[task.owner]} · due {formatDate(task.dueDate)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  if (proposal.kind === 'task_change') {
+    const change = TaskChangePayload.safeParse(proposal.payload)
+    if (!change.success) return <p className="mt-2 text-sm text-bad">This proposal could not be read. Discard it and ask again.</p>
+    const { before, patch, markDone } = change.data
+    const rows: [label: string, was: string, now: string][] = [
+      ['Title', before.title, patch.title ?? before.title],
+      ['Due', formatDate(before.dueDate), formatDate(patch.dueDate ?? before.dueDate)],
+      ['Owner', OWNER_WORD[before.owner], OWNER_WORD[patch.owner ?? before.owner]],
+      ['Status', before.status === 'done' ? 'Done' : 'Open', markDone ? 'Done' : before.status === 'done' ? 'Done' : 'Open'],
+    ]
+    return (
+      <div className="mt-2 text-sm leading-relaxed">
+        <p className="font-medium">{before.title}</p>
+        <dl className="mt-1 flex flex-col gap-0.5">
+          {rows
+            .filter(([, was, now]) => was !== now)
+            .map(([label, was, now]) => (
+              <div key={label} className="flex flex-wrap gap-x-2">
+                <dt className="w-14 shrink-0 text-[13px] text-muted">{label}</dt>
+                <dd className="min-w-0">
+                  <span className="text-muted line-through">{was}</span> <span aria-label="changes to">→</span> <span className="font-semibold">{now}</span>
+                </dd>
+              </div>
+            ))}
+        </dl>
+      </div>
+    )
+  }
+  const college = AddCollegePayload.safeParse(proposal.payload)
+  if (!college.success) return <p className="mt-2 text-sm text-bad">This proposal could not be read. Discard it and ask again.</p>
+  return (
+    <div className="mt-2 text-sm leading-relaxed">
+      <p className="font-medium">Add {college.data.name} to the college list</p>
+      <p className="text-[13px] text-muted">
+        {[college.data.plan && `Plan ${college.data.plan}`, college.data.deadline && `deadline ${formatDate(college.data.deadline)}`].filter(Boolean).join(' · ') || 'No plan or deadline yet'}. Its figures come from the college directory.
+      </p>
+    </div>
+  )
+}
+
 function ShowInEnglish({ proposalId }: { proposalId: string }) {
   const data = useData()
   const proposal = data.agentProposals.find((row) => row.id === proposalId)
@@ -462,9 +573,12 @@ function ShowInEnglish({ proposalId }: { proposalId: string }) {
   )
 }
 
+const DRAWN_FROM_THE_PROPOSAL: ApprovalItem['kind'][] = ['agent_schedule_meeting', 'agent_apply_template', 'agent_task_change', 'agent_add_college']
+
 function canEdit(item: ApprovalItem): boolean {
-  // Reminders use fixed wording — Skip instead of edit.
-  return item.kind !== 'reminder'
+  // Reminders use fixed wording: Skip instead of edit. A proposed change is taken or left as it is
+  // (a meeting's time is chosen on the card itself); anything else is asked of the assistant again.
+  return item.kind !== 'reminder' && !DRAWN_FROM_THE_PROPOSAL.includes(item.kind)
 }
 
 function canDiscard(item: ApprovalItem): boolean {
@@ -962,6 +1076,10 @@ export function approveItem(item: ApprovalItem): void | Promise<void> {
     case 'agent_task':
     case 'agent_profile_change':
     case 'agent_meeting_times':
+    case 'agent_schedule_meeting':
+    case 'agent_apply_template':
+    case 'agent_task_change':
+    case 'agent_add_college':
       if (item.proposalId) return approveProposal(item.proposalId)
       break
   }
@@ -1014,6 +1132,10 @@ export function discardItem(item: ApprovalItem): void | Promise<void> {
     case 'agent_task':
     case 'agent_profile_change':
     case 'agent_meeting_times':
+    case 'agent_schedule_meeting':
+    case 'agent_apply_template':
+    case 'agent_task_change':
+    case 'agent_add_college':
       if (item.proposalId) {
         const id = item.proposalId
         return deciding(id, () => s.discardAgentProposal(id))

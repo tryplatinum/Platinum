@@ -103,10 +103,10 @@ Status: **Working** (in use end to end), **Partial** (works with a stated piece 
 | Activity | Firm-wide log, newest first, filters, Load more | `activity` table; counselor lines carry `actor_user`; AI and system lines come from functions or the server | `src/screens/counselor/Activity.tsx` | Working |
 | Parent updates and reports | Bilingual drafts in English, Simplified or Traditional Chinese, per `Parent.language` | `parentReport` and meeting drafts; facts computed in code. Chinese has not been reviewed by a native speaker | `src/screens/counselor/student/ReportsTab.tsx`, `src/lib/facts.ts`, `src/components/Bilingual.tsx` | Working |
 | Weekly texts | Messages → Weekly texts: one short text per student per week, Draft all, Copy, Open in Messages | `weeklyText` feature; facts and link from `reminders.ts`; model picks which task leads. English only | `src/screens/counselor/WeeklyTexts.tsx`, `src/lib/reminders.ts` | Working |
-| Reminders and skips | Messages → Scheduled reminders; rules in Settings; "Run the daily send now"; Skip once or until turned back on | Rules per firm; queue computed in the browser; skips in `reminder_skips`. No scheduler | `src/lib/reminders.ts`, `src/screens/counselor/Messages.tsx`, `src/components/ReminderComposer.tsx` | Partial |
+| Reminders and skips | Messages → Scheduled reminders; rules in Settings, each "Next daily send" (stored as `automatic`), "Ask me first" or "Off"; "Run the daily send now"; Skip once or until turned back on | Rules per firm; queue computed in the browser; skips in `reminder_skips`. A reminder about a task already sent to the same person in the last 3 days, by a rule or by hand, is not queued again. No scheduler | `src/lib/reminders.ts`, `src/screens/counselor/Messages.tsx`, `src/components/ReminderComposer.tsx` | Partial |
 | Student page with a sign-in | `/me` on the student's phone: the same home as the link, under a header that names the firm and the student, plus `/me/account` (the address, change password, sign out, delete my sign-in, what counselors can see). No counselor navigation | The session's token is sent to `/api/student` in place of a link token; the screens are the link's own (`StudentHome`), not a copy. `docs/student-api.md` describes the API for a phone app | `src/screens/student/Me.tsx`, `src/screens/student/StudentView.tsx`, `src/services/studentLink.ts`, `docs/student-api.md` | Working in the preview. **Not run against a real database** |
 | Student link page | `/s#<secret>` on the student's phone (the secret is in the fragment and is removed from the address bar at once; an older `/s/<secret>` link still opens and is replaced the same way; `Referrer-Policy: no-referrer` on these pages): tasks, meetings, deadlines, latest recap, essay feedback, Add a file | `/api/student` finds the link by token hash and returns a page built field by field. Three writes plus upload | `api/student.ts`, `server/studentLink.ts`, `src/screens/student/StudentView.tsx`, `src/components/StudentLinkModal.tsx` | Working |
-| Assistant panel and tools | Side panel per student plus a general thread; suggested prompts, source chips, proposals as approval cards (`ApprovalCard.tsx`), decided in the panel or the Inbox | `POST /api/agent` runs a tool loop; writes only pending proposals | `src/components/agent/AgentPanel.tsx`, `api/agent.ts`, `server/agent/*` | Working |
+| Assistant panel and tools | Side panel per student plus a general thread; suggested prompts that change with the page (each one backed by a tool, `src/lib/assistantPrompts.ts`), source chips, proposals as approval cards (`ApprovalCard.tsx`), decided in the panel or the Inbox. Nine proposal kinds: message, parent update, task, profile change, meeting, template, task change, college, and the older meeting times | `POST /api/agent` runs a tool loop; writes only pending proposals. Approving runs the screen's own action (`src/lib/proposals.ts`). The server reads the caseload with the counselor's client through `shared/caseload.ts`, the same mapping the browser uses | `src/components/agent/AgentPanel.tsx`, `api/agent.ts`, `server/agent/*` | Working |
 | Meeting brief | Brief card before a meeting; also from the assistant ("Prep me…") | `preMeetingBrief` feature; computed facts beside the AI part. Prepared on request only | `src/components/meeting/BriefCard.tsx`, `server/agent/brief.ts` | Working |
 | Essay feedback and brainstorm | Notes on a pasted essay (observation, question, location); brainstormed angles from the assistant | Output schemas have no field for replacement text. The UI says Platinum never writes or rewrites essay text | `src/screens/counselor/student/EssaysTab.tsx`, `shared/contract.ts`, `server/agent/essay.ts` | Working |
 | College directory and list drafts | Type-ahead "Add college" with Scorecard figures; "Draft a list" grouped Reach / Target / Likely | Directory imported by hand. Bands set by code rules; the AI only chooses candidates and writes checked reasons. "Add to list" is `add_draft_to_college_list` | `api/colleges.ts`, `server/collegeTools.ts`, `server/collegeListDrafts.ts`, `src/lib/collegeBands.ts`, `src/screens/counselor/ListDraft.tsx` | Working |
@@ -133,18 +133,32 @@ All tools are in `server/agent/tools.ts`. Read tools use the counselor's own Sup
 | `search_meetings` | Meeting notes, transcript and recap by keyword or date range |
 | `list_recent_messages` | Recent outbox rows for a student: status, kind, date |
 | `get_notes_to_remember` | Approved "things to remember" for the student |
+| `find_students` | General thread only: active students by name, class year or status, with ids (at most 50). The assistant uses it to turn a name into an id, and asks which student when two match |
+| `list_pending_review` | What waits in the Inbox, from the Inbox's own code (`src/lib/inbox.ts`), for the firm or one student. Also checked before drafting a message about a task, so a second draft is not made |
+| `list_meetings` | Meetings in a date range with status and whether notes are logged (never the notes), plus students with no meeting scheduled |
+| `list_reminders_due` | The reminder queue the Messages screen computes, and which reminders went out recently |
+| `list_files` | A student's files: title, folder, who added it, date, and tasks still missing a document. Never contents. Read with the counselor's own client, so an owner-only file stays hidden from a counselor |
+| `list_college_list` | A student's colleges: plan, deadline, status, band |
+| `list_essays` | A student's essays: prompt, word limit, status, whether feedback is waiting. Never the essay text |
+| `list_templates` | The firm's active templates by kind, with what each needs (a date to count back from, a message's blanks) |
+| `list_calendar` | The counselor's own Google Calendar events in a range of up to two months. Says so when Calendar is not connected |
 | `list_students_needing_attention` | General thread only: students who are overdue, stalled or without a recent meeting |
 | `propose_message` | Pending message for the Inbox. Server refuses over 120 words (text, LINE, WeChat) or 200 (email) |
 | `propose_parent_update` | Pending parent update, same limits |
 | `propose_task` | Pending new task |
 | `propose_profile_change` | Pending profile field change |
-| `propose_meeting_times` | Two or three time slots with reasons. Approving records the choice; no calendar write |
+| `propose_schedule_meeting` | One to three dated time slots for a meeting. The card lets the counselor pick one; approving creates exactly one meeting, through the same path as "Schedule a meeting" (so the calendar sync runs). Replaces `propose_meeting_times`: old `meeting_times` rows still show and can still be decided, and none are created |
+| `propose_apply_template` | A task plan (the dated tasks are worked out by the same code as "From a template") or a message template (who it goes to). Approving adds the plan's tasks, or makes a pending message draft that waits for its own approval |
+| `propose_task_change` | A new due date, title or owner for one task, or mark it done. The card shows before and after |
+| `propose_add_college` | One college from the directory, by its directory id; the name comes from the directory, not the model. No figures |
 | `prepare_meeting_brief` | Runs the brief and returns it as the reply. Not a proposal |
 | `essay_brainstorm` | Brainstorms essay angles from the prompt and the student's record. Never writes essay text |
 
 ### How a request runs
 
 `POST /api/agent` (`api/agent.ts` → `server/agent/run.ts`):
+
+The panel sends where the counselor is with each message: `page: { route, itemKind?, itemId? }` (`shared/agent.ts`). The route is one of a fixed list and the item kind one of a fixed list; the server looks the item up with the counselor's own client and writes one sentence for the system prompt (`server/agent/page.ts`). An item it cannot find, or one that belongs to another student on a student thread, is dropped. No text from the browser reaches the prompt.
 
 1. Rate limit by address, then `identify()`, then per-person rate limit. Body under 20,000 bytes; `message` 1 to 8,000 characters (`shared/agent.ts`).
 2. Take one model call from the firm's daily budget (`reserve_agent_call`). None left: 429 "Daily assistant limit reached."
@@ -429,7 +443,8 @@ Set in `.env` (or `.env.local`, which overrides) locally and in Vercel project s
 | `preview` | Serve `dist/` (no functions) | No |
 | `typecheck` | TypeScript only | No |
 | `lint` | ESLint | No |
-| `test:notes` | Things-to-remember checks, then `test:google`, `test:templates`, `test:calendar`, `test:accounts` and `test:accounts:db` | No (offline) |
+| `test:notes` | Things-to-remember checks, then `test:google`, `test:templates`, `test:calendar`, `test:accounts`, `test:accounts:db` and `test:assistant` | No (offline) |
+| `test:assistant` | The assistant's tools and proposals with no model: every tool against the in-memory Supabase, the student lock, each proposal kind approved and discarded, and in PGlite the kinds the database accepts and a counselor not reading an owner-only file | No (offline) |
 | `test:accounts` | `/api/account` against the in-memory Supabase: who may ask, what reaches the database, what comes back | No (offline) |
 | `test:accounts:db` | What the database enforces about roles and invitations: the whole migration chain in PGlite, each check run as a signed-in person. PGlite is not a dependency; without it the script says it was skipped and checks nothing (`npm install --no-save --no-package-lock @electric-sql/pglite`, or set `PGLITE_DIR`) | No (offline) |
 | `test:google` | Google connection and Drive import against fakes | No (offline) |
@@ -489,6 +504,7 @@ Before reporting work done: `typecheck`, `lint`, `test:notes`. Do not run `test:
 | `20261205000001_undo_ten_seconds.sql` | `queue_message` holds a message 10 seconds, not 60 |
 | `20261206000001_templates.sql` | Templates, message drafts, `tasks.template_id` |
 | `20261207000001_calendar.sql` | Google Calendar columns on meetings |
+| `20261211000001_agent_proposal_kinds.sql` | **Not pushed.** `agent_proposals.kind` also accepts `schedule_meeting`, `apply_template`, `task_change` and `add_college` |
 | `20261210000001_owner_delete_and_stored_files.sql` | **Not pushed.** Only an owner can delete a `students` row; a stored file is readable only while its document row exists |
 | `20261209000001_student_accounts.sql` | **Not pushed.** Student accounts, the consent record, one kind of account per sign-in, `create_firm` refuses a student, student invitations, turning a sign-in off |
 | `20261208000001_roles_and_invitations.sql` | **Not pushed.** `firm_members` is read-only for signed-in people; invitations; role, removal, leave and rename functions; a firm keeps an owner; only an owner deletes a student; `activity.student_id` may be empty |

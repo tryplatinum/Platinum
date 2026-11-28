@@ -68,6 +68,26 @@ export function sourcesFromTool(name: string, data: unknown): AgentTurnSource[] 
     for (const row of asList(data)) push(chip('note', idOf(row), String(row.text ?? '')))
   } else if (name === 'list_students_needing_attention') {
     for (const row of asList(data)) push(chip('student', idOf(row), String(row.name ?? '')))
+  } else if (name === 'find_students') {
+    for (const row of asList(asRecord(data)?.matches)) push(chip('student', idOf(row), String(row.name ?? '')))
+  } else if (name === 'list_pending_review') {
+    for (const row of asList(asRecord(data)?.waiting)) push(chip('waiting', String(row.key ?? ''), `${String(row.kind ?? '')}${row.student ? `, ${String(row.student)}` : ''}`))
+  } else if (name === 'list_meetings') {
+    for (const row of asList(asRecord(data)?.meetings)) push(chip('meeting', idOf(row), `${typeof row.date === 'string' ? shortDate(row.date) : ''}${row.student ? `, ${String(row.student)}` : ''}`))
+  } else if (name === 'list_reminders_due') {
+    for (const row of asList(asRecord(data)?.due)) push(chip('task', String(row.taskId ?? ''), String(row.task ?? '')))
+    for (const row of asList(asRecord(data)?.alreadySent)) push(chip('message', idOf(row), String(row.to ?? '')))
+  } else if (name === 'list_files') {
+    for (const row of asList(asRecord(data)?.files)) push(chip('file', idOf(row), String(row.title ?? '')))
+    for (const row of asList(asRecord(data)?.tasksMissingADocument)) push(chip('task', idOf(row), String(row.title ?? '')))
+  } else if (name === 'list_college_list') {
+    for (const row of asList(data)) push(chip('college', idOf(row), String(row.name ?? '')))
+  } else if (name === 'list_essays') {
+    for (const row of asList(data)) push(chip('essay', idOf(row), String(row.name ?? '')))
+  } else if (name === 'list_templates') {
+    for (const row of asList(data)) push(chip('template', idOf(row), String(row.name ?? '')))
+  } else if (name === 'list_calendar') {
+    for (const row of asList(asRecord(data)?.events)) push(chip('event', idOf(row), `${typeof row.date === 'string' ? shortDate(row.date) : ''} ${String(row.title ?? '')}`))
   } else if (name === 'prepare_meeting_brief') {
     const row = asRecord(data)
     if (row) {

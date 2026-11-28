@@ -97,6 +97,7 @@ export async function POST(request: Request): Promise<Response> {
       studentId: body.data.studentId,
       message: body.data.message.trim(),
       requestId: body.data.requestId,
+      page: body.data.page,
     })
     return json({ ok: true, threadId: result.threadId, reply: result.reply, proposals: result.proposals, sources: result.sources, timing: result.timing })
   } catch (error) {

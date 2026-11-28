@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { alreadyKept, googleChange, suggestStudent, type CalendarEvent, type GoogleChange } from '../../../shared/calendar'
 import { removeMeetingFromCalendar, syncMeetingToCalendar } from '../../lib/calendarSync'
+import { changeMeeting, removeMeeting, scheduleMeeting } from '../../lib/meetings'
 import { formatDateLong, formatTime } from '../../lib/dates'
 import { activeStudents, fullName } from '../../lib/derive'
 import { calendarReady, useGoogleStatus } from '../../services/google'
@@ -63,7 +64,6 @@ function LinkEventModal({ event, onClose }: { event: CalendarEvent; onClose: () 
   const [studentId, setStudentId] = useState(suggested?.id ?? '')
   // The title was typed in Google by whoever could write to the calendar. The counselor sees it and can change it before it becomes a meeting's title.
   const [title, setTitle] = useState(event.title)
-  const addMeeting = useStore((s) => s.addMeeting)
   const toast = useToast()
   return (
     <Modal title="Link to a student" onClose={onClose}>
@@ -74,7 +74,7 @@ function LinkEventModal({ event, onClose }: { event: CalendarEvent; onClose: () 
           const student = students.find((s) => s.id === studentId)
           if (!student || !event.time) return
           // Tied to the event that is already there. Platinum did not make it, and will never delete it.
-          addMeeting({ studentId, title: title.trim() || 'Meeting', date: event.date, time: event.time, durationMin: event.durationMin || 45, location: event.location, googleEventId: event.id, googleSync: 'linked' })
+          scheduleMeeting({ studentId, title: title.trim() || 'Meeting', date: event.date, time: event.time, durationMin: event.durationMin || 45, location: event.location, googleEventId: event.id, googleSync: 'linked' })
           toast(`“${title.trim() || 'Meeting'}” is now a meeting with ${student.firstName}.`)
           onClose()
         }}
@@ -112,7 +112,7 @@ function LinkEventModal({ event, onClose }: { event: CalendarEvent; onClose: () 
 /** "Changed in Google Calendar: now Tue 4:00 PM. Update the meeting?" Platinum never moves or removes a meeting by itself. */
 export function GoogleChangeNote({ meeting, events, className, name }: { meeting: Meeting; events: CalendarEvent[]; className?: string; /** Whose meeting it is, where several are listed together. */ name?: string }) {
   const found = changeFor(meeting, events)
-  const { updateMeeting, setMeetingCalendar, deleteMeeting } = useStore.getState()
+  const { setMeetingCalendar } = useStore.getState()
   const confirm = useConfirm()
   if (!found) return null
   const { change, event } = found
@@ -132,12 +132,12 @@ export function GoogleChangeNote({ meeting, events, className, name }: { meeting
       </p>
       <div className="flex flex-wrap gap-2">
         {change.kind === 'moved' ? (
-          <Button onClick={() => updateMeeting(meeting.id, { date: change.date, time: change.time, durationMin: change.durationMin })}>Update</Button>
+          <Button onClick={() => changeMeeting(meeting.id, { date: change.date, time: change.time, durationMin: change.durationMin })}>Update</Button>
         ) : (
           <Button
             variant="danger"
             onClick={async () => {
-              if (await confirm({ title: 'Remove meeting', body: 'Remove this meeting from Platinum? Its notes go with it. Tasks that came from it are kept.', action: 'Remove meeting' })) deleteMeeting(meeting.id)
+              if (await confirm({ title: 'Remove meeting', body: 'Remove this meeting from Platinum? Its notes go with it. Tasks that came from it are kept.', action: 'Remove meeting' })) removeMeeting(meeting, { calendar: false })
             }}
           >
             Remove meeting

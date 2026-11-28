@@ -19,7 +19,7 @@ import { formatTimestamp } from '../../lib/dates'
 import { canDeliver, messageStatusLabel, notConnectedLine } from '../../lib/delivery'
 import { activeStudents, findStudent, fullName, weeklyTextRows } from '../../lib/derive'
 import { CHANNEL_LABEL, LANGUAGE_LABEL } from '../../lib/language'
-import { reminderQueue, type ReminderDraft } from '../../lib/reminders'
+import { REMINDER_MODE_LABEL, reminderQueue, type ReminderDraft } from '../../lib/reminders'
 import { useData, useStore } from '../../store/store'
 import type { OutboxKind, OutboxMessage } from '../../types'
 import WeeklyTexts from './WeeklyTexts'
@@ -64,7 +64,7 @@ export default function Messages() {
       />
       <Reveal open={how.open} id={how.id} className="-mt-3">
         <p className="rounded-card border border-accent-line bg-accent-soft px-4 py-3 text-sm text-ink-soft">
-          <strong className="text-ink">Approved messages wait {UNDO_SECONDS} seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself.
+          <strong className="text-ink">Approved messages wait {UNDO_SECONDS} seconds.</strong> Undo is on the toast. After that they are sent through the allowlist. You can still copy a message into email, text, WeChat or LINE yourself. A reminder rule set to “{REMINDER_MODE_LABEL.automatic}” does not send by itself: its reminders wait under Scheduled reminders until you press “Run the daily send now”.
         </p>
       </Reveal>
       <Tabs tabs={tabs} label="Messages" />
@@ -415,9 +415,9 @@ function Queue({ queue }: { queue: ReminderDraft[] }) {
         <CardHeader
           size="section"
           className="px-5 py-4"
-          title="Automatic"
+          title={REMINDER_MODE_LABEL.automatic}
           count={automatic.length}
-          sub="Rules set to “Automatic”. They are queued when you press the button; nothing goes out on a timer."
+          sub={`Rules set to “${REMINDER_MODE_LABEL.automatic}”. These wait here until you press the button. Nothing goes out on a timer.`}
           action={sendable.length > 0 && <Button onClick={runDailySend}>{byHand > 0 ? `Run the daily send now · ${sendable.length} of ${automatic.length}` : 'Run the daily send now'}</Button>}
         />
         {automatic.length === 0 ? (

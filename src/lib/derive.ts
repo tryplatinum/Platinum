@@ -2,6 +2,7 @@
 // are computed here from the data, and nowhere else, so every screen agrees.
 // The AI is given these facts; it never produces them.
 
+import { proposalSummary } from '../../shared/agent'
 import { draftProblems } from '../../shared/templates'
 import type {
   MessageDraft,
@@ -293,6 +294,10 @@ export type ApprovalKind =
   | 'agent_task'
   | 'agent_profile_change'
   | 'agent_meeting_times'
+  | 'agent_schedule_meeting'
+  | 'agent_apply_template'
+  | 'agent_task_change'
+  | 'agent_add_college'
   | 'template_message'
 
 export const APPROVAL_TYPE_LABEL: Record<ApprovalKind, string> = {
@@ -312,6 +317,10 @@ export const APPROVAL_TYPE_LABEL: Record<ApprovalKind, string> = {
   agent_task: 'Task',
   agent_profile_change: 'Profile change',
   agent_meeting_times: 'Meeting times',
+  agent_schedule_meeting: 'Meeting',
+  agent_apply_template: 'Template',
+  agent_task_change: 'Task change',
+  agent_add_college: 'College',
   template_message: 'Message',
 }
 
@@ -401,13 +410,21 @@ const PROPOSAL_KIND = {
   task: 'agent_task',
   profile_change: 'agent_profile_change',
   meeting_times: 'agent_meeting_times',
+  schedule_meeting: 'agent_schedule_meeting',
+  apply_template: 'agent_apply_template',
+  task_change: 'agent_task_change',
+  add_college: 'agent_add_college',
 } as const
+
+/** The proposal kinds whose card is drawn from the payload itself, in src/components/ApprovalCard.tsx. */
+const DRAWN_ON_THE_CARD = ['schedule_meeting', 'apply_template', 'task_change', 'add_college']
 
 /** An assistant proposal as an approval. The assistant panel and the Inbox both build their card from this. */
 export function proposalApproval(p: AgentProposal): ApprovalItem {
   const payload = p.payload
-  const preview =
-    typeof payload.body === 'string'
+  const preview = DRAWN_ON_THE_CARD.includes(p.kind)
+    ? proposalSummary(p)
+    : typeof payload.body === 'string'
       ? payload.body
       : typeof payload.title === 'string'
         ? payload.title

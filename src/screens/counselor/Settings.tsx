@@ -2,6 +2,7 @@
 // reminder rules, appearance, and the demo data controls. Links can point at a
 // section by its id (/app/settings#reminder-rules).
 
+import { REMINDER_MODE_LABEL } from '../../lib/reminders'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { FolderSettings } from '../../components/files/FolderSettings'
@@ -98,18 +99,14 @@ function FirmForm() {
 
 // ── Reminder rules ──────────────────────────────────────────────────────────
 
-const MODES: { value: ReminderMode; label: string }[] = [
-  { value: 'automatic', label: 'Automatic' },
-  { value: 'needs_approval', label: 'Ask me first' },
-  { value: 'off', label: 'Off' },
-]
+const MODES: { value: ReminderMode; label: string }[] = (['automatic', 'needs_approval', 'off'] as const).map((value) => ({ value, label: REMINDER_MODE_LABEL[value] }))
 
 function ReminderRules() {
   const { reminderRules: rules, firm } = useData()
   const { updateRule, updateFirm } = useStore.getState()
   return (
     <Card>
-      <CardHeader size="section" className="px-5 py-4" title="Reminder rules" sub="These decide which reminders are scheduled, and whether they wait for you." />
+      <CardHeader size="section" className="px-5 py-4" title="Reminder rules" sub="These decide which reminders are due, and whether each waits for you. Nothing is sent on a timer: “Next daily send” puts a reminder in the queue that goes out when you press “Run the daily send now” in Messages." />
       <ul>
         {rules.map((rule) => (
           <li key={rule.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">

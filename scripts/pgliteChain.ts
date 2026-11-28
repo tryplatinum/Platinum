@@ -2,11 +2,10 @@
 // offline checks of what the database itself enforces: policies, grants and
 // functions. No network and no real project.
 //
-// PGlite is not one of this project's dependencies. The checks that use this
-// file look for it in node_modules, or in the folder named by PGLITE_DIR, and
-// say plainly that they were skipped when it is not there:
-//
-//   npm install --no-save --no-package-lock @electric-sql/pglite
+// PGlite is a devDependency, so `npm install` brings it. A check that cannot
+// find it FAILS: it never reports a skip as a pass. (PGLITE_DIR may name
+// another copy of the package, for a machine where node_modules cannot be
+// changed.)
 //
 // Supabase's own schemas are replaced by small stand-ins: the three roles,
 // auth.users, auth.uid() read from a setting, and the two storage tables the
@@ -80,12 +79,13 @@ async function loadPglite(): Promise<Lib | undefined> {
 }
 
 /**
- * A fresh database with every migration applied, or undefined when PGlite is
- * not installed. `upTo` stops before the first file whose name sorts after it.
+ * A fresh database with every migration applied. Throws when PGlite is not
+ * installed: nothing was checked, and that is a failure. `upTo` stops before
+ * the first file whose name sorts after it.
  */
-export async function chain(upTo?: string): Promise<{ db: Db; applied: string[] } | undefined> {
+export async function chain(upTo?: string): Promise<{ db: Db; applied: string[] }> {
   const lib = await loadPglite()
-  if (!lib) return undefined
+  if (!lib) throw new Error('PGlite is not installed, so no database check ran. Run `npm install` (it is a devDependency), then run this again.')
   const db = new lib.PGlite({ extensions: { pg_trgm: lib.trgm } })
   await db.exec(STUBS)
   const applied: string[] = []

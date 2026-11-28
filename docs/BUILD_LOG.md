@@ -1,5 +1,58 @@
 # Build log
 
+## Consolidation (branch `consolidation`, from `main` at `d9548d9`)
+
+No new screens. This run connects what PR 39 left on main. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261210000001` on the remote, so the three account migrations from PR 39 have been pushed.
+
+**Found at the start, not mine:** `src/lib/database.types.ts` had an uncommitted change that removed the types for the three account migrations (it looks like `npm run db:types` run before they were pushed). It is set aside as a git stash, not deleted: `git stash list` shows it. Now that the migrations are on the remote, running `npm run db:types` again is the right way to refresh that file.
+
+### Part A: a test path without the live database
+
+- **`@electric-sql/pglite` is a devDependency** in `package.json`. The install command itself was refused by the permission check on this machine, so the entry was added by hand: **run `npm install` once.** `scripts/pgliteChain.ts` now throws when PGlite is missing, so `test:accounts:db` (and with it `test:notes`) fails instead of printing SKIPPED. `PGLITE_DIR` can still name another copy of the package.
+- **The preview's ids are uuids.** `withFreshIds` in `src/data/ids.ts` takes an optional id maker, and `stableId` gives the same uuid for the same readable id, so `preview.tsx` loads the sample with uuid ids that do not change between runs. A readable id in `?path=` (such as `s-kevin`) is swapped the same way, so old addresses still open.
+- **`preview.backend.ts`** answers, in memory and in the preview only, what the store calls when saving: `apply_changes`, `queue_message`, `cancel_message`, `decide_agent_proposal`, `edit_agent_proposal`, `log_meeting_drafts_ready`, the reminder skip writes, and `/api/dispatch`. A queued message is marked sent once its hold is over, in Messages and in Activity, and the line says nothing left the page. No transport is called. `test:notes` checks that nothing under `src`, `api`, `server` or `shared` imports it and that `index.html` does not load the preview.
+- **`docs/CLICK_THROUGH.md`**: 16 numbered steps for a founder on a real test project, each with what should be on screen afterwards. **`docs/TEST_PROJECT.md`**: pointing `.env.local` at a second project, pushing the chain to it, loading the sample. Neither creates a project or holds a key.
+
+**Run by hand in the preview** (headless Chrome, 1440 wide): approve the open draft in the Inbox, see Undo, press Undo, approve again, wait out the 10 seconds, open Messages (the message is Sent, none left Queued), open Activity (the approved line, the cancelled line and the sent line are there). No console errors.
+
+### Part B: the assistant, central
+
+**Migration, written and NOT pushed:** `supabase/migrations/20261211000001_agent_proposal_kinds.sql` (the kind check on `agent_proposals` takes four more kinds). Until it is pushed, the four new proposal tools fail at the insert and the assistant says so; everything else works.
+
+- **One mapping of rows to app data.** The row mappers and the load moved from `src/data/repo.ts` to `shared/caseload.ts` (`loadCaseload(client, firmId, userId)`). The browser's `loadAll` calls it, and the server calls it with the counselor's own client, so `list_pending_review` and `list_reminders_due` run `src/lib/inbox.ts` and `src/lib/reminders.ts` themselves. Loaded once per request (`ctx.caseload`).
+- **New read tools** in `server/agent/tools.ts`: `find_students` (general thread only, cap 50), `list_pending_review`, `list_meetings`, `list_reminders_due`, `list_files`, `list_college_list`, `list_essays`, `list_templates`, `list_calendar`. All read with `ctx.user`; on a student thread each refuses another student's id.
+- **Where the counselor is.** `AgentRequestSchema.page`; `agentRouteFor` and `agentItemFor` in `shared/agent.ts` turn the address and the open Inbox row into it; `server/agent/page.ts` looks the item up and writes the sentence.
+- **New proposal kinds**: `schedule_meeting` (replaces `meeting_times`; the tool `propose_meeting_times` is gone, old rows still render and decide), `apply_template`, `task_change`, `add_college`. Payload schemas and summary lines in `shared/agent.ts`; card bodies in `ApprovalCard.tsx` (`ProposedChange`); approving is `applyProposal` in `src/lib/proposals.ts`, a pure function over the store's actions so it can be checked offline. `propose_message` takes an optional `taskId` and refuses a second draft to the same person about a task that already has one waiting.
+- **Suggestions** (`src/lib/assistantPrompts.ts`): each names the tool behind it, per page.
+- **`scripts/test-assistant.ts`** (127 checks, in `test:notes`, also `npm run test:assistant`).
+- **Preview:** `?proposals=1` puts one pending proposal of each kind in the Inbox. `window.__store` is the store, for a script.
+- Two small things found on the way: a proposal card printed its reason twice (the source line and "Why:"); summaries printed dates as `2027-01-07`. Both fixed.
+
+**Run by hand in the preview** (`preview.html?path=/app&proposals=1`, headless Chrome): opened the meeting card, picked the second of three slots, approved: one meeting, at that slot. Approved the template card: two tasks. Approved the task change: the due date moved. Approved the college: on the list. No console errors. **Never run:** any of this with the real model or the real database.
+
+### Part C: four seams
+
+1. **A reminder sent twice.** A reminder from the "Remind" button (and one the assistant drafts with a `taskId`) carries the task and no rule key, so the rule's queue used to list the same reminder again. `reminderQueue` in `src/lib/reminders.ts` now also leaves out a task when a message about that task to that same person went out (or is queued) inside the repeat window, 3 days. An undone message does not count. Checked in `scripts/test-assistant.ts`: "remind by hand, then the rule's queue no longer lists it".
+2. **"Automatic" is now "Next daily send"** in Settings, Messages (the card, its line, and How sending works) and the Meetings screen. One constant, `REMINDER_MODE_LABEL` in `src/lib/reminders.ts`. The stored value is still `automatic`.
+3. **Parent reports, Schedule:** "Only when I ask" is first; the other three say "(not active yet)", and the note under them says only the first works today. Nothing was built.
+4. **One function for a meeting** (committed with Part B, because approving a meeting proposal uses it): `scheduleMeeting`, `changeMeeting` and `removeMeeting` in `src/lib/meetings.ts` each run the calendar sync. Every screen that made, moved or removed a meeting now calls them; a check fails if a file under `src/` other than the store and that file calls the store's meeting actions.
+
+**Looked at in the preview:** Settings at 1440 and 390 wide (the three-way control still fits), Messages → Scheduled reminders, a student's Parent reports tab. No console errors.
+
+### What has never run (this whole branch)
+
+- The assistant with a real model: no new tool or proposal kind has been called by Claude. `test:agent` was not run and still names no new tool.
+- Anything against the real database: migration `20261211000001` is not pushed, and until it is the four new proposal kinds are refused by the kind check.
+- Real Google: `list_calendar` and the calendar sync from an approved meeting proposal ran only against the fake.
+- `docs/CLICK_THROUGH.md` on a real test project.
+
+### For the next person
+
+- Run `npm install` (PGlite is in `package.json` but was never installed here; without it `test:notes` fails by design).
+- Push `20261211000001_agent_proposal_kinds.sql`, then `npm run db:types` is not needed (no new column or function).
+- `git stash list` holds the `database.types.ts` change found at the start. Drop it or apply it.
+- Add cases for the new tools to `scripts/test-agent.ts` and run it once with a key.
+
 ## Accounts and landing (branch `accounts-and-landing`, from `main` at `c23ea84`)
 
 One branch, one pull request, a commit or more per part. **No migration in this branch has been pushed**, and no account flow has run against the real database. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261207000001` (templates and calendar included) on the remote.

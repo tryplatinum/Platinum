@@ -3,7 +3,12 @@
 
 import { z } from 'zod'
 
-export const AGENT_PROPOSAL_KINDS = ['message', 'parent_update', 'task', 'profile_change', 'meeting_times'] as const
+/**
+ * What the assistant can propose. `meeting_times` is no longer made (a
+ * `schedule_meeting` proposal replaced it) but older rows of that kind are
+ * still read and shown.
+ */
+export const AGENT_PROPOSAL_KINDS = ['message', 'parent_update', 'task', 'profile_change', 'meeting_times', 'schedule_meeting', 'apply_template', 'task_change', 'add_college'] as const
 export type AgentProposalKind = (typeof AGENT_PROPOSAL_KINDS)[number]
 
 export const AGENT_PROPOSAL_STATUSES = ['pending', 'approved', 'discarded'] as const
@@ -20,11 +25,54 @@ export const EssayBrainstormSchema = z.object({
 })
 export type EssayBrainstorm = z.infer<typeof EssayBrainstormSchema>
 
+/** The places in the app the assistant can be told the counselor is. Nothing else is accepted from the browser. */
+export const AGENT_ROUTES = ['today', 'inbox', 'students', 'student', 'meetings', 'messages', 'documents', 'templates', 'settings', 'firm'] as const
+export type AgentRoute = (typeof AGENT_ROUTES)[number]
+
+/**
+ * Where the counselor is when they ask. `route` is one of a fixed list.
+ * `itemKind` and `itemId` name what is open (on the Inbox, the row in `?item=`).
+ * The server looks the item up as the counselor and drops it if it is not
+ * theirs to see: no text from the browser reaches the prompt.
+ */
+export const AgentPageSchema = z.object({
+  route: z.enum(AGENT_ROUTES),
+  itemKind: z.string().regex(/^[a-z_]{1,24}$/).optional(),
+  itemId: z.string().max(200).optional(),
+})
+export type AgentPage = z.infer<typeof AgentPageSchema>
+
+/** The route for an address in the app, or undefined when the assistant is not told where it is. */
+export function agentRouteFor(pathname: string): AgentRoute | undefined {
+  if (pathname === '/app' || pathname === '/app/') return 'inbox'
+  const [, , area, id] = pathname.split('/')
+  if (area === 'students') return id ? 'student' : 'students'
+  return (AGENT_ROUTES as readonly string[]).includes(area ?? '') ? (area as AgentRoute) : undefined
+}
+
+/**
+ * What an Inbox row's key (`?item=` in the address) names, as a kind from a
+ * fixed list and the id of one record. Undefined for a key that names nothing
+ * the server can look up.
+ */
+export function agentItemFor(key: string): Pick<AgentPage, 'itemKind' | 'itemId'> | undefined {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const [head, ...rest] = key.split(':')
+  const named: Record<string, string> = { agent: 'proposal', report: 'report', essay: 'essay', draft: 'message_draft', file: 'file', list: 'college_list', weekly: 'weekly_text', 'weekly-parent': 'weekly_text' }
+  if (named[head] && uuid.test(rest[0] ?? '')) return { itemKind: named[head], itemId: rest[0] }
+  // "reminder:<rule>:<task id>:<recipient>": the task is the record.
+  if (head === 'reminder' && uuid.test(rest[1] ?? '')) return { itemKind: 'reminder', itemId: rest[1] }
+  // "<meeting id>:notes", "<meeting id>:task:<draft>": a draft from a meeting.
+  if (uuid.test(head) && rest.length > 0) return { itemKind: 'meeting_draft', itemId: head }
+  return undefined
+}
+
 export const AgentRequestSchema = z.object({
   studentId: z.string().uuid().nullable(),
   message: z.string().min(1).max(8_000),
   /** Panel poll key. Optional so older clients still work. */
   requestId: z.string().uuid().optional(),
+  page: AgentPageSchema.optional(),
 })
 export type AgentRequest = z.infer<typeof AgentRequestSchema>
 
@@ -102,12 +150,112 @@ export const AgentHistorySchema = z.object({
 })
 export type AgentHistory = z.infer<typeof AgentHistorySchema>
 
+// ── What each newer kind of proposal carries ────────────────────────────────
+// The server writes these, the card shows them, and approving one calls the
+// store action the screen already uses. Each is checked again in the browser
+// before anything is done with it.
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const clock = z.string().regex(/^[0-2][0-9]:[0-5][0-9]$/)
+
+/** A meeting to put on the calendar. The counselor picks one of the slots on the card before approving. */
+export const ScheduleMeetingPayload = z.object({
+  title: z.string().min(1).max(120),
+  durationMin: z.number().int().min(15).max(240),
+  location: z.string().max(200).optional(),
+  slots: z.array(z.object({ date: isoDate, time: clock, reason: z.string().max(200).optional() })).min(1).max(3),
+  /** Which slot is chosen. The first, until the counselor picks another. */
+  chosen: z.number().int().min(0).max(2).default(0),
+})
+export type ScheduleMeetingPayload = z.infer<typeof ScheduleMeetingPayload>
+
+/** A template to use on this student. A task plan carries its dated tasks, worked out by code, so the card shows them first. */
+export const ApplyTemplatePayload = z.discriminatedUnion('templateKind', [
+  z.object({
+    templateKind: z.literal('task_plan'),
+    templateId: z.string().uuid(),
+    templateName: z.string().max(120),
+    /** The date a "days before" task counts back from, when the plan has one. */
+    anchor: isoDate.optional(),
+    tasks: z.array(z.object({ title: z.string().min(1).max(300), owner: z.enum(['student', 'parent', 'counselor']), dueDate: isoDate, detail: z.string().max(2000).optional() })).min(1).max(40),
+  }),
+  z.object({
+    templateKind: z.literal('message'),
+    templateId: z.string().uuid(),
+    templateName: z.string().max(120),
+    to: z.enum(['student', 'parent']),
+    /** The due date the message mentions, when its text has that blank. */
+    dueDate: isoDate.optional(),
+  }),
+])
+export type ApplyTemplatePayload = z.infer<typeof ApplyTemplatePayload>
+
+/** A change to one existing task. `before` is what the record held when it was proposed; the card shows both. */
+export const TaskChangePayload = z.object({
+  taskId: z.string().uuid(),
+  before: z.object({ title: z.string(), owner: z.enum(['student', 'parent', 'counselor']), dueDate: isoDate, status: z.enum(['todo', 'in_progress', 'done']) }),
+  patch: z.object({ title: z.string().min(1).max(300).optional(), owner: z.enum(['student', 'parent', 'counselor']).optional(), ownerParentId: z.string().uuid().optional(), dueDate: isoDate.optional() }),
+  markDone: z.boolean().default(false),
+})
+export type TaskChangePayload = z.infer<typeof TaskChangePayload>
+
+/** A college from the directory, by its id. The name comes from the directory; no figure is typed by a model. */
+export const AddCollegePayload = z.object({
+  unitid: z.number().int().positive(),
+  name: z.string().min(1).max(200),
+  plan: z.enum(['ED', 'ED2', 'EA', 'REA', 'RD', 'Rolling', 'UC']).optional(),
+  deadline: isoDate.optional(),
+})
+export type AddCollegePayload = z.infer<typeof AddCollegePayload>
+
+const OWNER_WORD = { student: 'the student', parent: 'a parent', counselor: 'the counselor' } as const
+
+/** What a task change does, in words: one phrase per thing that changes. */
+export function taskChangeWords(change: TaskChangePayload): string[] {
+  const { before, patch } = change
+  return [
+    patch.title && patch.title !== before.title ? `title: “${before.title}” → “${patch.title}”` : '',
+    patch.dueDate && patch.dueDate !== before.dueDate ? `due: ${dayWords(before.dueDate)} → ${dayWords(patch.dueDate)}` : '',
+    patch.owner && patch.owner !== before.owner ? `owner: ${OWNER_WORD[before.owner]} → ${OWNER_WORD[patch.owner]}` : '',
+    change.markDone && before.status !== 'done' ? 'mark it done' : '',
+  ].filter(Boolean)
+}
+
+/** A date as a person would say it: "Tue, Dec 1". */
+export function dayWords(date: string): string {
+  const day = new Date(`${date}T12:00:00Z`)
+  return Number.isNaN(day.getTime()) ? date : day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
+/** A slot as a counselor reads it: "Tue, Dec 1 at 4:00 PM". No time zone: a meeting's time is the counselor's own clock. */
+export function slotWords(slot: { date: string; time: string }): string {
+  const when = dayWords(slot.date)
+  const [h, m] = slot.time.split(':').map(Number)
+  return `${when} at ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
 /** One line for a proposal card. Prefers the drafted title or body over the rationale. */
 export function proposalSummary(proposal: { kind: string; rationale?: string; payload: unknown }): string {
   const payload =
     proposal.payload && typeof proposal.payload === 'object' && !Array.isArray(proposal.payload)
       ? (proposal.payload as Record<string, unknown>)
       : {}
+  if (proposal.kind === 'schedule_meeting') {
+    const meeting = ScheduleMeetingPayload.safeParse(payload)
+    if (meeting.success) return clip(`${meeting.data.title}: ${meeting.data.slots.map(slotWords).join(' · ')}`)
+  }
+  if (proposal.kind === 'apply_template') {
+    const use = ApplyTemplatePayload.safeParse(payload)
+    if (use.success) return clip(use.data.templateKind === 'task_plan' ? `“${use.data.templateName}”: ${use.data.tasks.length} ${use.data.tasks.length === 1 ? 'task' : 'tasks'}` : `“${use.data.templateName}”: a message draft to the ${use.data.to}`)
+  }
+  if (proposal.kind === 'task_change') {
+    const change = TaskChangePayload.safeParse(payload)
+    if (change.success) return clip(`${change.data.before.title}: ${taskChangeWords(change.data).join('; ') || 'no change'}`)
+  }
+  if (proposal.kind === 'add_college') {
+    const college = AddCollegePayload.safeParse(payload)
+    if (college.success) return clip([college.data.name, college.data.plan, college.data.deadline && `deadline ${dayWords(college.data.deadline)}`].filter(Boolean).join(' · '))
+  }
   if (typeof payload.title === 'string' && payload.title.trim()) return clip(payload.title)
   if (typeof payload.body === 'string' && payload.body.trim()) {
     const lines = payload.body.split('\n').map((line) => line.trim()).filter(Boolean)

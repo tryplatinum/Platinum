@@ -5,8 +5,8 @@
 //
 //   npm run test:accounts:db      (also run by npm run test:notes)
 //
-// PGlite is not a dependency of this project. Without it this script says so
-// and exits 0, having checked nothing. See scripts/pgliteChain.ts.
+// PGlite is a devDependency. Without it this script fails: it never reports
+// "skipped" as a pass. See scripts/pgliteChain.ts.
 //
 // One connection, so "two requests at once" cannot be raced here. What is
 // checked is that the second of two accepts is refused, and that the function
@@ -26,11 +26,6 @@ function check(name: string, pass: boolean, detail = ''): void {
 }
 
 const made = await chain()
-if (!made) {
-  console.log('SKIPPED  database checks for accounts: PGlite is not installed, so NOTHING here was checked.')
-  console.log('         npm install --no-save --no-package-lock @electric-sql/pglite   (or set PGLITE_DIR), then run again.')
-  process.exit(0)
-}
 const { db, applied } = made
 check(`the whole migration chain runs clean (${applied.length} files, through ${applied.at(-1)})`, applied.length > 0)
 

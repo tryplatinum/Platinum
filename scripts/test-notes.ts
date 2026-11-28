@@ -163,5 +163,22 @@ check('the student link never selects a meeting’s AI drafts', !/select\('[^']*
   check('every tag has its rule in words', (['behind', 'slipping', 'on_track', 'new'] as const).every((k) => ATTENTION_RULE[k].length > 20))
 }
 
+// ── The preview's stand-in backend never reaches the production build ──
+{
+  const { readdirSync, statSync } = await import('node:fs')
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => (statSync(`${dir}/${name}`).isDirectory() ? walk(`${dir}/${name}`) : /\.(ts|tsx|html)$/.test(name) ? [`${dir}/${name}`] : []))
+  const root = new URL('..', import.meta.url).pathname
+  const importers = ['src', 'api', 'server', 'shared'].flatMap((dir) => walk(`${root}${dir}`)).filter((file) => /preview\.backend|['"]\.\.?\/(\.\.\/)*preview['"]/.test(readFileSync(file, 'utf8')))
+  check('nothing under src, api, server or shared imports the preview or its stand-in backend', importers.length === 0, importers.join(', '))
+  check('the production entry page does not load the preview', !/preview/.test(readFileSync(`${root}index.html`, 'utf8')))
+  const { stableId, withFreshIds } = await import('../src/data/ids.js')
+  const { validateQueuePayload } = await import('../shared/outbox.js')
+  const sample = withFreshIds(buildSeed(), stableId)
+  const student = sample.students[0]
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+  check('the preview’s sample has uuid ids, the same every time', uuid.test(student.id) && student.id === withFreshIds(buildSeed(), stableId).students[0].id && sample.tasks.every((t) => uuid.test(t.id) && uuid.test(t.studentId)))
+  check('so a send from the preview passes the same check the real app makes', validateQueuePayload({ id: stableId('m'), studentId: student.id, toKind: 'parent', toName: 'P', parentId: student.parents[0].id, channel: 'email', language: 'en', kind: 'parent_report', body: 'Hello' }).ok && !validateQueuePayload({ id: stableId('m'), studentId: 's-kevin', toKind: 'student', toName: 'K', channel: 'email', language: 'en', kind: 'parent_report', body: 'Hello' }).ok)
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed')
 process.exit(failed ? 1 : 0)

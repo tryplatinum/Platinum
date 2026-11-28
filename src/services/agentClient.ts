@@ -3,7 +3,7 @@
 // client for offline UI work. The assistant proposes. This client never approves.
 
 import { AGENT_ENDPOINT } from '../../shared/constants'
-import type { AgentHistory, AgentResponse } from '../../shared/agent'
+import type { AgentHistory, AgentResponse, AgentPage } from '../../shared/agent'
 import { accessToken } from '../store/session'
 import { mockAgentClient } from './agentClient.mock'
 
@@ -29,7 +29,7 @@ export class AgentNetworkError extends Error {
 
 export interface AgentClient {
   /** Send one counselor message. `studentId` null is the general thread. `requestId` lets the panel poll progress. */
-  send(studentId: string | null, message: string, requestId?: string): Promise<AgentResponse>
+  send(studentId: string | null, message: string, requestId?: string, page?: AgentPage): Promise<AgentResponse>
   /** The saved thread for this page. Empty when this counselor has not written here yet. */
   loadThread(studentId: string | null): Promise<AgentHistory>
   /** The step label for a request still running, or null. */
@@ -80,12 +80,13 @@ function asOk<T extends { ok: true }>(status: number, body: unknown): T {
 }
 
 const realAgentClient: AgentClient = {
-  async send(studentId, message, requestId) {
+  async send(studentId, message, requestId, page) {
     const response = await withToken((token) =>
       fetch(AGENT_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ studentId, message, requestId }),
+        // `page` is a route from a fixed list and at most one record's id. The server looks the record up itself.
+        body: JSON.stringify({ studentId, message, requestId, page }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       }),
     )

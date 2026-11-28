@@ -262,7 +262,7 @@ function StudentMeetingPanel({ summary, onModal }: { summary: StudentSummary; on
               <ul className="list-disc space-y-1 pl-5 text-sm">
                 {reminders.slice(0, 5).map((r) => (
                   <li key={r.key}>
-                    To {r.message.toName}: {r.taskTitle} <span className="text-muted">· {r.mode === 'automatic' ? 'automatic' : 'waits for you'}</span>
+                    To {r.message.toName}: {r.taskTitle} <span className="text-muted">· {r.mode === 'automatic' ? 'next daily send' : 'waits for you'}</span>
                   </li>
                 ))}
               </ul>
