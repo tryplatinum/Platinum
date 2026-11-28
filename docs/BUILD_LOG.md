@@ -1,5 +1,20 @@
 # Build log
 
+## Consolidation (branch `consolidation`, from `main` at `d9548d9`)
+
+No new screens. This run connects what PR 39 left on main. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261210000001` on the remote, so the three account migrations from PR 39 have been pushed.
+
+**Found at the start, not mine:** `src/lib/database.types.ts` had an uncommitted change that removed the types for the three account migrations (it looks like `npm run db:types` run before they were pushed). It is set aside as a git stash, not deleted: `git stash list` shows it. Now that the migrations are on the remote, running `npm run db:types` again is the right way to refresh that file.
+
+### Part A: a test path without the live database
+
+- **`@electric-sql/pglite` is a devDependency** in `package.json`. The install command itself was refused by the permission check on this machine, so the entry was added by hand: **run `npm install` once.** `scripts/pgliteChain.ts` now throws when PGlite is missing, so `test:accounts:db` (and with it `test:notes`) fails instead of printing SKIPPED. `PGLITE_DIR` can still name another copy of the package.
+- **The preview's ids are uuids.** `withFreshIds` in `src/data/ids.ts` takes an optional id maker, and `stableId` gives the same uuid for the same readable id, so `preview.tsx` loads the sample with uuid ids that do not change between runs. A readable id in `?path=` (such as `s-kevin`) is swapped the same way, so old addresses still open.
+- **`preview.backend.ts`** answers, in memory and in the preview only, what the store calls when saving: `apply_changes`, `queue_message`, `cancel_message`, `decide_agent_proposal`, `edit_agent_proposal`, `log_meeting_drafts_ready`, the reminder skip writes, and `/api/dispatch`. A queued message is marked sent once its hold is over, in Messages and in Activity, and the line says nothing left the page. No transport is called. `test:notes` checks that nothing under `src`, `api`, `server` or `shared` imports it and that `index.html` does not load the preview.
+- **`docs/CLICK_THROUGH.md`**: 16 numbered steps for a founder on a real test project, each with what should be on screen afterwards. **`docs/TEST_PROJECT.md`**: pointing `.env.local` at a second project, pushing the chain to it, loading the sample. Neither creates a project or holds a key.
+
+**Run by hand in the preview** (headless Chrome, 1440 wide): approve the open draft in the Inbox, see Undo, press Undo, approve again, wait out the 10 seconds, open Messages (the message is Sent, none left Queued), open Activity (the approved line, the cancelled line and the sent line are there). No console errors.
+
 ## Accounts and landing (branch `accounts-and-landing`, from `main` at `c23ea84`)
 
 One branch, one pull request, a commit or more per part. **No migration in this branch has been pushed**, and no account flow has run against the real database. On 2026-11-27 `npx supabase migration list --remote` showed every migration through `20261207000001` (templates and calendar included) on the remote.

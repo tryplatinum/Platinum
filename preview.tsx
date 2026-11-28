@@ -10,6 +10,8 @@
 //   signup=confirm                                  sign-up answers "confirm your address first"
 //   signin=none|invited|expired|on|off|young        one student's sign-in, on the student page
 //   lastowner=1                                     the firm page with a single owner
+// Saving and sending work here with no database: preview.backend.ts answers the store's calls in memory,
+// and a message approved in the Inbox is "sent" when its hold is over (nothing leaves the page).
 // Every person, firm and address here is invented.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -19,7 +21,9 @@ import '@fontsource-variable/manrope/wght.css'
 import './src/index.css'
 import App from './src/App'
 import { ToastProvider } from './src/components/ui'
+import { stableId, withFreshIds } from './src/data/ids'
 import { buildSeed } from './src/data/seed'
+import { previewBackend } from './preview.backend'
 import { supabase } from './src/lib/supabase'
 import { useStore } from './src/store/store'
 import type { FirmMember, PendingInvitation, StudentSignIn } from './shared/account'
@@ -27,8 +31,12 @@ import { maySignIn } from './shared/account'
 
 const params = new URLSearchParams(location.search)
 document.documentElement.dataset.theme = params.get('theme') ?? 'light'
-const path = params.get('path') ?? '/app'
-const seed = buildSeed()
+// The sample's readable ids ("s-kevin") become uuids, as the database needs, and the same ones every
+// time, so an address from one run opens in the next. A readable id in ?path= is swapped the same way.
+const readable = buildSeed()
+const seed = withFreshIds(buildSeed(), stableId)
+const readableIds = [...readable.students.map((s) => s.id), ...readable.tasks.map((t) => t.id), ...readable.meetings.map((m) => m.id), ...readable.documents.map((d) => d.id)].sort((a, b) => b.length - a.length)
+const path = readableIds.reduce((address, id) => address.replaceAll(id, stableId(id)), params.get('path') ?? '/app')
 const who = params.get('account') ?? 'owner'
 const student = seed.students[0]
 const studentPage = { ...seed, students: [{ ...student, lastName: '', parents: [], counselorNotes: '' }], tasks: seed.tasks.filter((t) => t.studentId === student.id), meetings: seed.meetings.filter((m) => m.studentId === student.id), colleges: seed.colleges.filter((c) => c.studentId === student.id), documents: seed.documents.filter((d) => d.studentId === student.id) }
@@ -144,6 +152,9 @@ window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.includes('/api/student')) return new Response(JSON.stringify({ ok: true, data: studentPage }), { headers: { 'content-type': 'application/json' } })
   if (url.includes('/api/account')) return accountApi(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>)
+  // Saving, sending and the hold: answered in memory (preview.backend.ts). Nothing reaches a database or a transport.
+  const saved = previewBackend(url, init)
+  if (saved) return saved
   return real(input, init)
 }
 

@@ -19,9 +19,31 @@ export function swapIds<T>(value: T, ids: Map<string, string>): T {
   return swap(value) as T
 }
 
-export function withFreshIds(data: AppData): AppData {
+/**
+ * A uuid made from a readable id, the same every time. For the preview, so
+ * "s-kevin" is always the same uuid: an address copied from one run opens in
+ * the next. Not random, so never for the database.
+ */
+export function stableId(readable: string): string {
+  let a = 0x811c9dc5
+  let b = 0x01000193
+  let c = 0xdeadbeef
+  let d = 0x41c6ce57
+  for (let i = 0; i < readable.length; i++) {
+    const k = readable.charCodeAt(i)
+    a = Math.imul(a ^ k, 0x01000193)
+    b = Math.imul(b ^ k, 0x85ebca6b)
+    c = Math.imul(c ^ k, 0xc2b2ae35)
+    d = Math.imul(d ^ k, 0x27d4eb2f)
+  }
+  const hex = [a, b, c, d].map((n) => (n >>> 0).toString(16).padStart(8, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+/** The dataset with uuid ids. Random by default; `make` can give the same uuid for the same readable id. */
+export function withFreshIds(data: AppData, make: (id: string) => string = () => crypto.randomUUID()): AppData {
   const ids = new Map<string, string>()
-  const add = (id: string) => ids.set(id, crypto.randomUUID())
+  const add = (id: string) => ids.set(id, make(id))
   for (const s of data.students) {
     add(s.id)
     s.parents.forEach((p) => add(p.id))
